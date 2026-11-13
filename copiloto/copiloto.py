@@ -42,6 +42,12 @@ AVISO = ("Avisa al comandante y al responsable médico de la tripulación y, si 
 ADVERTENCIA = "Esto es solo una sugerencia temporal: busca atención de personal capacitado lo antes posible."
 MEDIDA_SIN_FICHA = "Detén la tarea y quédate en un lugar seguro."
 
+# Recordatorio fijo (sin el modelo) al final de las respuestas cuya ficha principal es de salud.
+RECORDATORIO = "Si no mejora, busca la ayuda de personal capacitado."
+FICHAS_DE_SALUD = ("Falta de sueño", "Reacción lenta y lapsos de atención", "Ojos cansados y somnolencia",
+                   "Estrés y variabilidad del pulso", "Pulso en reposo elevado", "Oxígeno en sangre bajo",
+                   "Fatiga en la voz")
+
 CARPETA_AUDIO = config.RAIZ / "datos" / "copiloto"
 PALABRAS_RESULTADO = ("por qué", "porque", "semáforo", "semaforo", "resultado", "color", "apto",
                       "estoy", "amarillo", "rojo", "verde", "mi evaluación", "mi evaluacion", "puedo")
@@ -239,12 +245,32 @@ def _frase_contradice(frase: str, tarea: str) -> bool:
     return bool(_PERMISO.search(f) or re.search(r"\b(salir|ir) a (la |el |hacer (la |el )?)?" + tarea, f))
 
 
+def quitar_contradicciones(texto: str, ev: dict | None) -> tuple[str, int]:
+    """Quita las frases que dan permiso para la tarea con semáforo amarillo o rojo.
+
+    Devuelve el texto que queda y cuántas frases se quitaron.
+    """
+    if not ev or ev.get("color") not in ("amarillo", "rojo"):
+        return texto, 0
+    patron = _patron_tarea(ev.get("tarea", ""))
+    frases = [f for f in re.split(r"(?<=[.!?;])\s+", texto or "") if f.strip()]
+    quedan = [f for f in frases if not _frase_contradice(f, patron)]
+    return " ".join(quedan), len(frases) - len(quedan)
+
+
 def contradice(texto: str, ev: dict | None) -> bool:
     """True si alguna frase da permiso para la tarea cuando el semáforo es amarillo o rojo."""
-    if not ev or ev.get("color") not in ("amarillo", "rojo"):
-        return False
-    patron = _patron_tarea(ev.get("tarea", ""))
-    return any(_frase_contradice(f, patron) for f in re.split(r"(?<=[.!?;])\s+", texto or "") if f.strip())
+    return quitar_contradicciones(texto, ev)[1] > 0
+
+
+def con_recordatorio(texto: str, fichas: list) -> str:
+    """Agrega RECORDATORIO si la ficha principal es de salud y la respuesta no lo dice ya."""
+    if not fichas or fichas[0].titulo not in FICHAS_DE_SALUD:
+        return texto
+    t = _normalizar(texto)
+    if "personal capacitado" in t or "responsable medico" in t:
+        return texto
+    return f"{texto} {RECORDATORIO}"
 
 
 def primeras_frases(texto: str, n: int = 2) -> str:
@@ -355,9 +381,14 @@ class Copiloto:
                 elif ev and pregunta_sobre_resultado(pregunta):
                     texto, modo = self._respuesta_resultado(pregunta, ev, persona, fichas, usar_llm)
                 elif usar_llm:
-                    texto = self.llm.responder(pregunta, ev, fichas)
+                    texto = self.llm.responder(pregunta, ev, fichas)  # máximo 3 frases
                     modo = "llm"
-                    if contradice(texto, ev):
+                    limpio, quitadas = quitar_contradicciones(texto, ev)
+                    if quitadas and limpio:
+                        # Solo se quitan las frases que contradicen la evaluación; el resto se conserva.
+                        print(f"   [aviso] Se quitaron {quitadas} frase(s) que contradecían la evaluación.")
+                        texto, modo = limpio, "llm (corregido)"
+                    elif quitadas:
                         print("   [aviso] El modelo contradijo la evaluación; uso la respuesta fija.")
                         texto = self._respuesta_sin_llm(pregunta, ev, fichas, forzar_resumen=True)
                         modo = "fichas (corregido)"
@@ -369,6 +400,10 @@ class Copiloto:
                 modo = "fichas"
                 if alarma:  # pase lo que pase, ante una alarma se dicen la medida, el aviso y la advertencia
                     texto, modo = f"{MEDIDA_SIN_FICHA} {AVISO} {ADVERTENCIA}", "alarma"
+            if modo in ("llm", "llm (corregido)", "fichas", "fichas (corregido)"):
+                # Consejos del modelo o de las fichas: recordatorio fijo, aparte de las 3 frases del modelo.
+                # La alarma ya trae su ADVERTENCIA, y los resúmenes fijos no lo necesitan.
+                texto = con_recordatorio(texto, fichas)
             print(f"   [{modo}, {time.time() - t0:.1f} s, fichas: {', '.join(f.titulo for f in fichas) or 'ninguna'}]")
 
             self.locutor.decir(texto)

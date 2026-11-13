@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from copiloto import contradice  # noqa: E402
+from copiloto import contradice, quitar_contradicciones  # noqa: E402
 
 AMARILLO = {"persona": "xone", "color": "amarillo", "tarea": "caminata espacial"}
 VERDE = {**AMARILLO, "color": "verde"}
@@ -34,6 +34,16 @@ CASOS = [
     ("Sí, puedes hacer la caminata espacial.", VERDE, False),                  # en verde no hay contradicción
 ]
 
+# Descarte parcial: quitar_contradicciones() quita solo las frases marcadas.
+# (texto del modelo, evaluación, texto que debe quedar)
+CASOS_DESCARTE = [
+    ("Realiza respiraciones lentas durante 2 minutos. Si te sientes mejor, puedes continuar con la tarea. "
+     "Si no mejora, avisa al comandante.", AMARILLO,
+     "Realiza respiraciones lentas durante 2 minutos. Si no mejora, avisa al comandante."),
+    ("Sí, puedes hacer la caminata espacial.", AMARILLO, ""),  # no queda nada: se usa la respuesta fija
+    ("Descansa bien. Puedes hacer la caminata.", VERDE, "Descansa bien. Puedes hacer la caminata."),  # verde: no se toca
+]
+
 
 def main() -> int:
     fallas = 0
@@ -43,7 +53,14 @@ def main() -> int:
         fallas += not ok
         print(f"{'OK   ' if ok else 'FALLA'}  esperado={'sí' if esperado else 'no'}  "
               f"obtenido={'sí' if obtenido else 'no'}  [{ev['color']}]  {frase}")
-    print(f"\n{len(CASOS) - fallas} de {len(CASOS)} pasaron.")
+    print("\n--- descarte parcial ---")
+    for texto, ev, esperado in CASOS_DESCARTE:
+        obtenido, _ = quitar_contradicciones(texto, ev)
+        ok = obtenido == esperado
+        fallas += not ok
+        print(f"{'OK   ' if ok else 'FALLA'}  [{ev['color']}]  {texto!r}\n       -> {obtenido!r}")
+    total = len(CASOS) + len(CASOS_DESCARTE)
+    print(f"\n{total - fallas} de {total} pasaron.")
     return 1 if fallas else 0
 
 
