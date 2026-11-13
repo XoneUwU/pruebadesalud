@@ -86,8 +86,9 @@ def main():
             if op == "q":
                 break
             if op == "t":  # tripulación de ejemplo para probar «¿quién está más apto?»
-                for p, c, pts in (("xone", "amarillo", 0.62), ("eric", "verde", 0.88),
-                                  ("danilo", "rojo", 0.31), ("sebas", "verde", 0.81)):
+                for p, c, pts in (("bri", "amarillo", 0.62), ("erick", "verde", 0.88),
+                                  ("sebas", "verde", 0.81), ("adrian", "amarillo", 0.58),
+                                  ("danilo", "rojo", 0.31)):
                     publicar_evaluacion(cli, p, c, args.tarea, pts)
                 continue
             if op.startswith("p "):

@@ -34,7 +34,7 @@ Abrir una terminal en la carpeta del proyecto (`.venv\Scripts\activate` primero)
 | Broker | `"C:\Program Files\mosquitto\mosquitto.exe" -c mosquitto\mosquitto-dev.conf -v` | «mosquitto running» |
 | Ver mensajes | `python herramientas\escuchar.py` | «Escuchando apto/#» |
 | Voz sin micrófono | `python voz\voz_fatiga.py --listar` | La lista de micrófonos |
-| Voz con micrófono | `python voz\voz_fatiga.py --persona xone` | Rasgos de tu voz y el mensaje en escuchar.py |
+| Voz con micrófono | `python voz\voz_fatiga.py --persona bri` | Rasgos de tu voz y el mensaje en escuchar.py |
 | Copiloto escrito | `python copiloto\copiloto.py --texto` | Responde y habla |
 | Simulador | `python herramientas\simulador.py` y luego `2` | El copiloto lee el resultado amarillo en voz alta |
 | Copiloto por voz | `python copiloto\copiloto.py` y Enter vacío | Te escucha, transcribe y responde |
@@ -67,9 +67,9 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/control/orden_voz` | Panel (Sebas) | Voz | `{"accion": "grabar", "persona", "segundos", "linea_base"}` |
 | `apto/control/estado_voz` | Voz | Panel | `{"persona", "estado": "grabando" o "listo"}` |
 | `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta"}`: pregunta escrita desde la interfaz |
-| `apto/{persona}/esp32` | ESP32 (Diego) | Coordinador | Pulso, HRV, SpO₂, movimiento, sueño |
+| `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador | Pulso, HRV, SpO₂, movimiento, sueño |
 | `apto/{persona}/vision` | Visión (Eric) | Coordinador | Pulso por cámara, parpadeo, PERCLOS |
-| `apto/{persona}/voz` | Voz (Xone) | Coordinador | Tono, jitter, shimmer, HNR, pausas |
+| `apto/{persona}/voz` | Voz (Xone) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | Reacción media, lapsos, anticipadas |
 | `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | Escala de Karolinska, horas de sueño |
 | `apto/{persona}/evaluacion` | Coordinador (Danilo) | Paneles, copiloto | `color`, `puntaje`, `motivos`, `accion`, `pesos`. **Publicar con retain.** Los `motivos` se escriben como frases neutras, sin sujeto («Menos horas de sueño de lo habitual», no «Durmió menos»), porque el copiloto los lee después de «tu resultado… Motivos:». |

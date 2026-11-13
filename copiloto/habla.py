@@ -1,7 +1,7 @@
 """Entrada y salida de voz del copiloto: grabar, transcribir (Whisper) y hablar (Piper o voz de Windows)."""
+import io
 import queue
 import re
-import tempfile
 import threading
 import wave
 from pathlib import Path
@@ -11,6 +11,10 @@ import numpy as np
 from comun import config
 
 FS = 16000
+# Piper deja muy poco silencio al final y la salida de audio tarda en arrancar y en vaciarse:
+# sin este margen, a veces se cortaba la última palabra.
+SILENCIO_INICIO_S = 0.1
+SILENCIO_FINAL_S = 0.4
 
 
 # ---------------------------------------------------------------- micrófono
@@ -96,6 +100,53 @@ def aplicar_pronunciacion(texto: str, pares: dict[str, str]) -> str:
     return re.sub(patron, lambda m: pares[m.group(0).lower()], texto, flags=re.IGNORECASE)
 
 
+# ---------------------------------------------------------------- Piper
+def velocidad_piper() -> float:
+    """PIPER_VELOCIDAD de config.env (length_scale de Piper): 1.0 es normal y más alto es más lento."""
+    valor = config.get("PIPER_VELOCIDAD", "1.0")
+    try:
+        velocidad = float(valor.replace(",", "."))
+    except ValueError:
+        velocidad = 0
+    if velocidad <= 0:
+        print(f"[copiloto] PIPER_VELOCIDAD no válida ({valor!r}); se usa 1.0.")
+        return 1.0
+    return velocidad
+
+
+def cargar_piper(ruta: Path):
+    try:
+        from piper import PiperVoice           # piper-tts 1.3 o más nuevo
+    except ImportError:
+        from piper.voice import PiperVoice     # piper-tts 1.2
+    return PiperVoice.load(str(ruta))
+
+
+def sintetizar_piper(voz, texto: str, velocidad: float = 1.0) -> tuple[np.ndarray, int]:
+    """Texto -> (audio, frecuencia de muestreo), en memoria."""
+    import soundfile as sf
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        if hasattr(voz, "synthesize_wav"):     # piper-tts 1.3 o más nuevo
+            from piper import SynthesisConfig
+            voz.synthesize_wav(texto, wf, syn_config=SynthesisConfig(length_scale=velocidad))
+        else:                                  # piper-tts 1.2
+            voz.synthesize(texto, wf, length_scale=velocidad)
+    buf.seek(0)
+    datos, fs = sf.read(buf, dtype="float32")
+    return datos, fs
+
+
+def reproducir(datos: np.ndarray, fs: int):
+    """Reproduce el audio con un margen de silencio al inicio y al final (ver SILENCIO_FINAL_S)."""
+    import sounddevice as sd
+
+    margen = [(int(SILENCIO_INICIO_S * fs), int(SILENCIO_FINAL_S * fs))] + [(0, 0)] * (datos.ndim - 1)
+    sd.play(np.pad(datos, margen), fs)
+    sd.wait()
+
+
 # ---------------------------------------------------------------- voz de salida
 class Locutor:
     """Habla en un hilo aparte para no bloquear el programa.
@@ -153,31 +204,18 @@ class Locutor:
         if not ruta or not ruta.exists():
             return None
         try:
-            try:
-                from piper import PiperVoice           # piper-tts 1.3 o más nuevo
-            except ImportError:
-                from piper.voice import PiperVoice     # piper-tts 1.2
-            import sounddevice as sd
-            import soundfile as sf
-            voz = PiperVoice.load(str(ruta))
+            import sounddevice  # noqa: F401  (solo para comprobar que está instalado)
+            import soundfile    # noqa: F401
+            voz = cargar_piper(ruta)
         except Exception as e:
             print(f"[copiloto] Piper no disponible ({e}); se usará la voz de Windows.")
             return None
+        velocidad = velocidad_piper()
 
         def hablar(texto: str):
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                ruta_wav = tmp.name
-            with wave.open(ruta_wav, "wb") as wf:
-                if hasattr(voz, "synthesize_wav"):
-                    voz.synthesize_wav(texto, wf)
-                else:
-                    voz.synthesize(texto, wf)
-            datos, fs = sf.read(ruta_wav)
-            sd.play(datos, fs)
-            sd.wait()
-            Path(ruta_wav).unlink(missing_ok=True)
+            reproducir(*sintetizar_piper(voz, texto, velocidad))
 
-        print(f"[copiloto] Voz: Piper ({ruta.name})")
+        print(f"[copiloto] Voz: Piper ({ruta.name}, velocidad {velocidad})")
         return hablar
 
     def _preparar_pyttsx3(self):

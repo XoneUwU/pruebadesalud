@@ -10,6 +10,11 @@ Modos:
   python voz/voz_fatiga.py --archivo grabacion.wav         analiza un .wav existente
   python voz/voz_fatiga.py --servicio                      espera órdenes por MQTT (apto/control/orden_voz)
 
+Línea base: graben al menos 3 mediciones con --linea-base, con la persona descansada. Desde entonces
+cada medición se compara con ellas y el mensaje lleva z_rasgos, indice_cansancio, estado_voz
+("normal", "más cansada que su línea base", "con más energía que su línea base" o "sin línea base")
+y motivos_voz. Es una sugerencia, no un diagnóstico: no detecta miedo ni emociones.
+
 Orden por MQTT para el modo servicio (la envía el panel de Sebas):
   tema apto/control/orden_voz  ->  {"accion": "grabar", "persona": "eric", "segundos": 12, "linea_base": false}
 """
@@ -34,8 +39,34 @@ FRASE = (
     "Confirma la presión del traje, el nivel de oxígeno y la comunicación con la base."
 )
 CARPETA_DATOS = config.RAIZ / "datos" / "voz"
+HISTORIAL = CARPETA_DATOS / "historial.jsonl"
 F0_MIN, F0_MAX = 75, 500  # Hz, rango para voces de hombres y mujeres
 FS = 16000
+
+# --- Comparación con la línea base (sugerencia, no diagnóstico: no detecta miedo ni emociones) ---
+# Sentido de cada rasgo: +1 si un valor más alto indica más cansancio, -1 si lo indica un valor más bajo.
+SENTIDO_CANSANCIO = {
+    "num_pausas": +1, "tiempo_habla_s": +1, "intensidad_media_db": -1, "f0_desv_hz": -1,
+    "jitter_local": +1, "shimmer_local": +1, "hnr_db": -1,
+}
+MIN_LINEA_BASE = 3   # mediciones de línea base necesarias
+UMBRAL_INDICE = 1.0  # índice > umbral: más cansada; < -umbral: con más energía. Un rasgo es motivo si pasa el umbral.
+# Desviación mínima por rasgo: con pocas mediciones la desviación puede salir casi 0 y un cambio
+# pequeño daría un puntaje z enorme.
+DESV_MINIMA = {
+    "num_pausas": 0.5, "tiempo_habla_s": 0.2, "intensidad_media_db": 1.0, "f0_desv_hz": 2.0,
+    "jitter_local": 0.001, "shimmer_local": 0.005, "hnr_db": 0.5,
+}
+# Frases neutras, sin sujeto: (si el rasgo indica cansancio, si indica más energía)
+MOTIVOS_VOZ = {
+    "num_pausas": ("Más pausas de lo habitual", "Menos pausas de lo habitual"),
+    "tiempo_habla_s": ("Lectura más lenta de lo habitual", "Lectura más rápida de lo habitual"),
+    "intensidad_media_db": ("Voz más baja de lo habitual", "Voz más fuerte de lo habitual"),
+    "f0_desv_hz": ("Tono más plano de lo habitual", "Tono más variado de lo habitual"),
+    "jitter_local": ("Tono menos estable de lo habitual", "Tono más estable de lo habitual"),
+    "shimmer_local": ("Volumen menos estable de lo habitual", "Volumen más estable de lo habitual"),
+    "hnr_db": ("Voz más ronca de lo habitual", "Voz más clara de lo habitual"),
+}
 
 
 # ---------------------------------------------------------------- grabación
@@ -131,6 +162,65 @@ def analizar(ruta_wav: Path) -> dict:
     }
 
 
+# ---------------------------------------------------------------- línea base
+def leer_linea_base(persona: str, historial: Path = HISTORIAL) -> list[dict]:
+    """Mediciones de la persona marcadas con linea_base (y con voz detectada) en historial.jsonl."""
+    if not historial.exists():
+        return []
+    base = []
+    with open(historial, encoding="utf-8") as f:
+        for linea in f:
+            try:
+                m = json.loads(linea)
+            except json.JSONDecodeError:
+                continue
+            if m.get("persona") == persona and m.get("linea_base") and m.get("voz_detectada"):
+                base.append(m)
+    return base
+
+
+def comparar_con_linea_base(rasgos: dict, base: list[dict]) -> dict:
+    """Puntaje z de cada rasgo frente a la línea base, índice de cansancio, estado y motivos.
+
+    indice_cansancio = promedio de los z con el signo de SENTIDO_CANSANCIO: positivo = más cansancio.
+    """
+    resultado = {"linea_base_n": len(base), "z_rasgos": {}, "indice_cansancio": None,
+                 "estado_voz": "sin línea base", "motivos_voz": []}
+    if len(base) < MIN_LINEA_BASE:
+        return resultado
+    if not rasgos.get("voz_detectada"):
+        resultado["estado_voz"] = "sin voz detectada"
+        return resultado
+
+    cansancio = {}  # z con el signo puesto: positivo = más cansancio
+    for rasgo, sentido in SENTIDO_CANSANCIO.items():
+        valores = [m[rasgo] for m in base if m.get(rasgo) is not None]
+        actual = rasgos.get(rasgo)
+        if actual is None or len(valores) < MIN_LINEA_BASE:
+            continue
+        desv = max(float(np.std(valores, ddof=1)), DESV_MINIMA[rasgo])
+        z = (actual - float(np.mean(valores))) / desv
+        resultado["z_rasgos"][rasgo] = round(z, 2)
+        cansancio[rasgo] = sentido * z
+    if not cansancio:
+        resultado["estado_voz"] = "sin voz detectada"
+        return resultado
+
+    indice = float(np.mean(list(cansancio.values())))
+    resultado["indice_cansancio"] = round(indice, 2)
+    if indice > UMBRAL_INDICE:
+        resultado["estado_voz"], signo, cual = "más cansada que su línea base", 1, 0
+    elif indice < -UMBRAL_INDICE:
+        resultado["estado_voz"], signo, cual = "con más energía que su línea base", -1, 1
+    else:
+        resultado["estado_voz"] = "normal"
+        return resultado
+    # Motivos: hasta 2 rasgos que más pesaron en el sentido del estado y que pasan el umbral.
+    orden = sorted(cansancio, key=lambda r: signo * cansancio[r], reverse=True)
+    resultado["motivos_voz"] = [MOTIVOS_VOZ[r][cual] for r in orden[:2] if signo * cansancio[r] > UMBRAL_INDICE]
+    return resultado
+
+
 # ---------------------------------------------------------------- flujo completo
 def evaluar(persona: str, segundos: int, linea_base: bool, cli: ClienteMQTT | None,
             archivo: Path | None = None, sesion: str = "") -> dict:
@@ -144,6 +234,8 @@ def evaluar(persona: str, segundos: int, linea_base: bool, cli: ClienteMQTT | No
         "linea_base": linea_base,
         "archivo": archivo.name,
         **rasgos,
+        # se compara con la línea base guardada antes de esta medición
+        **comparar_con_linea_base(rasgos, leer_linea_base(persona)),
     }
     if not rasgos["voz_detectada"]:
         mensaje["aviso"] = "No se detectó voz: revisen el micrófono o la distancia."
@@ -151,7 +243,7 @@ def evaluar(persona: str, segundos: int, linea_base: bool, cli: ClienteMQTT | No
 
     # guardar copia local (sirve como respaldo y para calcular la línea base)
     CARPETA_DATOS.mkdir(parents=True, exist_ok=True)
-    with open(CARPETA_DATOS / "historial.jsonl", "a", encoding="utf-8") as f:
+    with open(HISTORIAL, "a", encoding="utf-8") as f:
         f.write(json.dumps(mensaje, ensure_ascii=False) + "\n")
 
     print(json.dumps(mensaje, indent=2, ensure_ascii=False))
