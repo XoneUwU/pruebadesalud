@@ -51,6 +51,16 @@ Claves: falta de aire, me falta el aire, no puedo respirar, me cuesta respirar, 
 Detén la tarea y quédate quieto en un lugar seguro. Avisa al comandante y al médico de vuelo, y no te quedes solo. Respira despacio mientras llega la ayuda y sigue el procedimiento de emergencia de la misión. La revisión del sensor se hace después de avisar, no antes.
 Fuente: guía interna del prototipo.
 
+## Mareo o sensación de desmayo
+Claves: mareo, mareada, mareado, mareos, vértigo, me da vueltas, desmayo, me voy a desmayar, débil
+Detén la tarea y siéntate o recuéstate en un lugar seguro. No te quedes solo hasta que llegue la ayuda, y no retomes la tarea sin la autorización del comandante.
+Fuente: guía interna del prototipo.
+
+## Dolor de pecho
+Claves: dolor de pecho, me duele el pecho, dolor en el pecho, opresión, presión en el pecho
+Detén la tarea y quédate en reposo, sin hacer esfuerzo, en un lugar seguro. No te quedes solo hasta que llegue la ayuda.
+Fuente: guía interna del prototipo.
+
 ## Oxígeno en sangre bajo
 Claves: oxígeno, SpO2, saturación, respirar, aire, falta de aire
 Si el oxígeno en sangre aparece más bajo que tu valor habitual, primero revisa que el sensor esté bien puesto y que el dedo esté quieto y tibio, y repite la medición. Si sigue bajo, o si hay falta de aire, mareo o confusión, avisa de inmediato al comandante y al médico de vuelo, y revisen el ambiente de la cabina.
@@ -82,6 +92,6 @@ Este sistema es un prototipo de apoyo a la decisión: compara tus señales con t
 Fuente: guía interna del prototipo.
 
 ## Cuándo avisar al médico de vuelo
-Claves: urgencia, emergencia, avisar, médico, Tierra, grave, dolor, mareada, mareado, mareos
+Claves: urgencia, emergencia, avisar, médico, Tierra, grave, dolor
 Avisa de inmediato al comandante y al médico de vuelo si hay dolor de pecho, falta de aire, mareo, confusión, desmayo o cualquier síntoma que te preocupe, sin importar el color del semáforo. Por el retraso de comunicación con la Tierra, el comandante decide las acciones inmediatas.
 Fuente: guía interna del prototipo.

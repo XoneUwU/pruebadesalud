@@ -92,6 +92,18 @@ def es_alarma(pregunta: str) -> bool:
     return bool(_ALARMA.search(_normalizar(pregunta)))
 
 
+def respuesta_alarma(fichas: list) -> str:
+    """Frase fija de aviso + la primera frase de la ficha que no repita el aviso.
+
+    No usa el modelo: en una emergencia solo se dice texto revisado por el equipo.
+    """
+    if fichas:
+        for frase in re.split(r"(?<=[.!?])\s+", fichas[0].texto.replace("\n", " ")):
+            if frase.strip() and "avisa" not in _normalizar(frase):  # "avisa", "avisar", "avísale"
+                return f"{FRASE_ALARMA} {frase.strip()}"
+    return FRASE_ALARMA
+
+
 def _puntaje(ev: dict) -> float:
     try:
         return float(ev.get("puntaje") or 0)
@@ -321,8 +333,8 @@ class Copiloto:
             usar_llm = bool(self.llm and self.llm.disponible)
             try:
                 if alarma:
-                    # Síntoma de alarma: va antes que todo y la frase fija nunca depende del modelo.
-                    texto, modo = self._respuesta_alarma(pregunta, ev, fichas, usar_llm)
+                    # Síntoma de alarma: va antes que todo y no usa el modelo.
+                    texto, modo = respuesta_alarma(fichas), "alarma"
                 elif pregunta_sobre_tripulacion(pregunta):
                     # ¿Quién está más apto? Respuesta fija con las evaluaciones de todos.
                     texto = resumen_tripulacion(self.evaluaciones, (ev or {}).get("tarea") or self.tarea, persona)
@@ -362,21 +374,6 @@ class Copiloto:
             print("   [aviso] La frase del modelo contradecía la evaluación; se descarta.")
             return ""
         return frase
-
-    def _respuesta_alarma(self, pregunta: str, ev: dict | None, fichas: list,
-                          usar_llm: bool) -> tuple[str, str]:
-        """Frase fija de alarma y, después, un consejo del modelo o la primera frase de la ficha."""
-        extra, modo = "", "alarma"
-        if usar_llm:
-            try:
-                extra = self._complemento(FRASE_ALARMA, pregunta, ev, fichas)
-                if extra:
-                    modo = "alarma+llm"
-            except Exception as e:
-                print(f"[copiloto] Falló el modelo de lenguaje ({e}); sigo con la ficha.")
-        if not extra and fichas:
-            extra = primeras_frases(fichas[0].texto, 1)
-        return f"{FRASE_ALARMA} {extra}".strip(), modo
 
     def _respuesta_resultado(self, pregunta: str, ev: dict, persona: str, fichas: list,
                              usar_llm: bool) -> tuple[str, str]:
