@@ -2,17 +2,17 @@
 
 NASA Space Apps Challenge 2026 · Reto «Create Health Monitoring Software for Astronauts on Space Missions».
 
-Esta carpeta es la base del repositorio común. Ya incluye los módulos de **Xone** (voz y copiloto), la
+Esta carpeta es la base del repositorio común. Ya incluye los módulos de **Bri** (voz y copiloto), la
 conexión MQTT que usan todos, la configuración de Mosquitto, un simulador y los scripts de Windows.
 
 ```
 apto-hoy/
 ├── config.env            IP del broker, usuario y opciones (todos los módulos lo leen)
 ├── instalar.bat          instala todo (una sola vez)
-├── iniciar.bat           arranca el sistema completo en la laptop de Xone
+├── iniciar.bat           arranca el sistema completo en la laptop de Bri
 ├── comun/                configuración y cliente MQTT común  ← úsenlo en sus módulos
-├── voz/                  análisis de fatiga en la voz (Xone)
-├── copiloto/             copiloto por voz: Whisper + Ollama + fichas + Piper (Xone)
+├── voz/                  análisis de fatiga en la voz (Bri)
+├── copiloto/             copiloto por voz: Whisper + Ollama + fichas + Piper (Bri)
 │   └── protocolos.md     fichas que el copiloto usa para responder
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
 ├── mosquitto/            configuración del broker (evento y desarrollo)
@@ -20,7 +20,7 @@ apto-hoy/
 └── datos/                grabaciones e historial (no se sube a Git)
 ```
 
-## 1. Instalar (laptop de Xone, una vez)
+## 1. Instalar (laptop de Bri, una vez)
 
 1. Instalar **Python 3.11 o 3.12** (marcar «Add to PATH»; no usar versiones más nuevas), **Ollama** (ollama.com) y **Mosquitto** (mosquitto.org).
 2. Doble clic en `instalar.bat`. Descarga librerías, la voz en español de Piper, `qwen2.5:7b` y Whisper.
@@ -48,7 +48,7 @@ Ollama (`ollama pull qwen2.5:3b` y `OLLAMA_MODEL=qwen2.5:3b`).
 ## 3. Modo evento (con usuarios)
 
 1. `mosquitto\crear_usuarios.bat` → crea `sistema` (publica y lee) y `equipo` (solo lee).
-2. En `config.env`: `MQTT_HOST` = IP de la laptop de Xone, `MQTT_USER=sistema` y su clave.
+2. En `config.env`: `MQTT_HOST` = IP de la laptop de Bri, `MQTT_USER=sistema` y su clave.
 3. Firewall, en PowerShell como administrador:
    ```
    Set-NetConnectionProfile -InterfaceAlias "Wi-Fi" -NetworkCategory Private
@@ -63,18 +63,18 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 
 | Tema | Publica | Lee | Contenido |
 |---|---|---|---|
-| `apto/control/sesion` | Panel (Sebas) | Todos | `{"persona", "tarea"}`: inicio de una evaluación y persona activa |
+| `apto/control/sesion` | Panel (Sebas), copiloto | Todos | `{"persona", "tarea"}`: inicio de una evaluación y persona activa. El copiloto lo publica cuando alguien dice «soy Erick», «habla Sebas» o «aquí Bri» (nombres de `TRIPULACION` en `config.env`). |
 | `apto/control/orden_voz` | Panel (Sebas) | Voz | `{"accion": "grabar", "persona", "segundos", "linea_base"}` |
 | `apto/control/estado_voz` | Voz | Panel | `{"persona", "estado": "grabando" o "listo"}` |
 | `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta"}`: pregunta escrita desde la interfaz |
 | `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador | Pulso, HRV, SpO₂, movimiento, sueño |
-| `apto/{persona}/vision` | Visión (Eric) | Coordinador | Pulso por cámara, parpadeo, PERCLOS |
-| `apto/{persona}/voz` | Voz (Xone) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
+| `apto/{persona}/vision` | Visión (Erick) | Coordinador | Pulso por cámara, parpadeo, PERCLOS |
+| `apto/{persona}/voz` | Voz (Bri) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | Reacción media, lapsos, anticipadas |
 | `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | Escala de Karolinska, horas de sueño |
 | `apto/{persona}/evaluacion` | Coordinador (Danilo) | Paneles, copiloto | `color`, `puntaje`, `motivos`, `accion`, `pesos`. **Publicar con retain.** Los `motivos` se escriben como frases neutras, sin sujeto («Menos horas de sueño de lo habitual», no «Durmió menos»), porque el copiloto los lee después de «tu resultado… Motivos:». |
 | `apto/{persona}/semaforo` | Coordinador | ESP32 | Solo `color`. **Con retain.** |
-| `apto/{persona}/copiloto` | Copiloto (Xone) | Paneles | `pregunta`, `respuesta`, `fichas`, `modo` |
+| `apto/{persona}/copiloto` | Copiloto (Bri) | Paneles | `pregunta`, `respuesta`, `fichas`, `modo` |
 
 ## 5. Reglas para sumar un módulo (todo el equipo)
 
@@ -82,7 +82,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 2. Usen `comun/mqtt_cliente.py`; nunca escriban la IP ni claves en el código (van en `config.env`).
 3. En casa: Mosquitto propio con `mosquitto\mosquitto-dev.conf` y `MQTT_HOST=localhost`.
 4. Prueben con `herramientas\simulador.py` y `herramientas\escuchar.py` sin esperar a los demás.
-5. El ESP32 se conecta con el usuario `sistema` y su clave, a la IP de Xone, puerto 1883.
+5. El ESP32 se conecta con el usuario `sistema` y su clave, a la IP de Bri, puerto 1883.
 
 ## Avisos
 

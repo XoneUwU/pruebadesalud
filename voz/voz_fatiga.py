@@ -261,7 +261,7 @@ def modo_servicio(cli: ClienteMQTT):
             if pendientes:
                 orden = pendientes.pop(0)
                 if orden.get("accion") == "grabar":
-                    persona = orden.get("persona") or config.get("PERSONA", "xone")
+                    persona = orden.get("persona") or config.get("PERSONA", "bri")
                     cli.publicar("apto/control/estado_voz", {"persona": persona, "estado": "grabando"})
                     evaluar(persona, int(orden.get("segundos", config.get_int("VOZ_SEGUNDOS", 12))),
                             bool(orden.get("linea_base", False)), cli, sesion=orden.get("sesion", ""))
@@ -273,7 +273,7 @@ def modo_servicio(cli: ClienteMQTT):
 
 def main():
     ap = argparse.ArgumentParser(description="Análisis de fatiga en la voz")
-    ap.add_argument("--persona", default=config.get("PERSONA", "xone"))
+    ap.add_argument("--persona", default=config.get("PERSONA", "bri"))
     ap.add_argument("--segundos", type=int, default=config.get_int("VOZ_SEGUNDOS", 12))
     ap.add_argument("--linea-base", action="store_true", help="marca esta medición como línea base")
     ap.add_argument("--archivo", type=Path, help="analiza un .wav en vez de grabar")

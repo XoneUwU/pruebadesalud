@@ -23,7 +23,7 @@ echo Iniciando broker MQTT...
 start "Broker MQTT" "%MOSQ%" -c %CONF% -v
 timeout /t 2 >nul
 
-rem ---- Modulos de Xone ----
+rem ---- Modulos de Bri ----
 start "Voz" cmd /k %PY% voz\voz_fatiga.py --servicio
 start "Copiloto" cmd /k %PY% copiloto\copiloto.py
 

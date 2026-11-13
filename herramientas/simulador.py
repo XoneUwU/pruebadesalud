@@ -60,7 +60,7 @@ def publicar_esp32(cli: ClienteMQTT, persona: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--persona", default=config.get("PERSONA", "xone"))
+    ap.add_argument("--persona", default=config.get("PERSONA", "bri"))
     ap.add_argument("--tarea", default="caminata espacial")
     ap.add_argument("--auto", type=int, default=0, help="segundos entre evaluaciones al azar")
     args = ap.parse_args()

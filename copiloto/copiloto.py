@@ -3,6 +3,7 @@
 - Escucha las evaluaciones del coordinador (apto/+/evaluacion) y explica el semáforo en voz alta.
 - Responde preguntas habladas o escritas usando SOLO las fichas de protocolo y la evaluación actual.
 - Publica cada respuesta en apto/{persona}/copiloto para que el resto del equipo la vea en la interfaz.
+- «Soy Erick», «habla Sebas» o «aquí Bri» cambia la persona activa (nombres de TRIPULACION en config.env).
 
 Uso:
   python copiloto/copiloto.py                     modo completo (micrófono + voz)
@@ -15,8 +16,10 @@ Temas MQTT:
   lee      apto/control/sesion     {"persona": "eric", "tarea": "caminata espacial"} cambia la persona activa
   lee      apto/control/pregunta   {"persona": "eric", "pregunta": "..."} pregunta enviada desde un panel
   publica  apto/{persona}/copiloto {"pregunta", "respuesta", "fichas", "modo", "origen"}
+  publica  apto/control/sesion     {"persona", "tarea"} cuando alguien se identifica («soy Erick»)
 """
 import argparse
+import difflib
 import re
 import sys
 import threading
@@ -90,6 +93,36 @@ def _normalizar(texto: str) -> str:
     """Minúsculas y sin tildes: "Mareada" -> "mareada", "Confusión" -> "confusion"."""
     texto = unicodedata.normalize("NFD", texto.lower())
     return "".join(c for c in texto if unicodedata.category(c) != "Mn")
+
+
+# «Soy Erick», «habla Sebas», «aquí Bri» (con o sin «hola» delante): cambia la persona activa.
+_IDENTIFICACION = re.compile(r"^[\s¡¿]*(?:hola[\s,.!]+)?(soy|habla|aqu[ií])\s+([^\W\d_]+)(.*)$",
+                             re.IGNORECASE | re.DOTALL)
+SIMILITUD_NOMBRE = 0.7  # difflib: "erik" se parece 0,89 a "erick"; "diego" no llega a 0,7 con nadie
+
+
+def leer_tripulacion(valor: str) -> list[str]:
+    """"bri, Danilo,sebas" -> ["bri", "danilo", "sebas"] (TRIPULACION en config.env)."""
+    return [p.strip().lower() for p in (valor or "").split(",") if p.strip()]
+
+
+def identificar(pregunta: str, tripulacion: list[str]) -> tuple[str | None, str] | None:
+    """Si la pregunta empieza con «soy X», «habla X» o «aquí X», devuelve (persona, resto).
+
+    persona: el nombre de la tripulación que más se parece a X (sin importar tildes ni mayúsculas,
+    porque Whisper puede escribir "Erik"), o None si no se parece a ninguno. resto: lo que sigue
+    al nombre ("Soy Erick, me falta el aire" -> "me falta el aire"); vacío si solo se identificó.
+    Devuelve None si la pregunta no es una identificación o no hay tripulación configurada.
+    """
+    m = _IDENTIFICACION.match(pregunta or "")
+    if not m or not tripulacion:
+        return None
+    resto = m.group(3).lstrip(" \t,.;:!?¡¿-")
+    if not re.search(r"\w", resto):
+        resto = ""
+    por_normal = {_normalizar(p): p for p in tripulacion}
+    parecidos = difflib.get_close_matches(_normalizar(m.group(2)), list(por_normal), n=1, cutoff=SIMILITUD_NOMBRE)
+    return (por_normal[parecidos[0]] if parecidos else None), resto
 
 
 def pregunta_sobre_resultado(pregunta: str) -> bool:
@@ -173,25 +206,31 @@ def resumen_tripulacion(evaluaciones: dict[str, dict], tarea: str = "", persona_
         partes = [f"Nadie está en verde{para}. La opción menos riesgosa {quien}, en {mejor['color']}: "
                   "conviene hacerla en pareja o posponerla."]
 
-    # Los demás en verde: "También está en verde Sebas." / "También están en verde Sebas y Ana."
-    otros_verdes = [nombre(e) for e in resto if e["color"] == "verde" and not es_activa(e)]
-    if otros_verdes:
-        verbo = "está" if len(otros_verdes) == 1 else "están"
-        partes.append(f"También {verbo} en verde {_lista(otros_verdes)}.")
-    if any(e["color"] == "verde" and es_activa(e) for e in resto):
-        partes.append("Tú también estás en verde.")
+    def grupo(color: str) -> tuple[list[str], str]:
+        """Quienes tienen ese color (tú primero) y el verbo que concuerda: (["tú", "Adrian"], "están")."""
+        es = [e for e in resto if e["color"] == color]
+        nombres = (["tú"] if any(es_activa(e) for e in es) else []) + [nombre(e) for e in es if not es_activa(e)]
+        verbo = "están" if len(nombres) > 1 else ("estás" if nombres == ["tú"] else "está")
+        return nombres, verbo
 
-    # Amarillo y rojo, cada grupo con su verbo: "Tú estás en amarillo y Danilo está en rojo."
+    # Los demás en verde, juntos: "También están en verde Sebas y Ana." / "Tú y Sebas también están en verde."
+    nombres, verbo = grupo("verde")
+    if "tú" in nombres:
+        texto = f"{_lista(nombres)} también {verbo} en verde."
+        partes.append(texto[0].upper() + texto[1:])
+    elif nombres:
+        partes.append(f"También {verbo} en verde {_lista(nombres)}.")
+
+    # Amarillo y rojo, un grupo por color: "Tú y Adrian están en amarillo, y Danilo está en rojo."
     grupos = []
     for color in ("amarillo", "rojo"):
-        grupo = [e for e in resto if e["color"] == color]
-        if any(es_activa(e) for e in grupo):
-            grupos.append(f"tú estás en {color}")
-        otros = [nombre(e) for e in grupo if not es_activa(e)]
-        if otros:
-            grupos.append(f"{_lista(otros)} {'está' if len(otros) == 1 else 'están'} en {color}")
+        nombres, verbo = grupo(color)
+        if nombres:
+            grupos.append((nombres, f"{_lista(nombres)} {verbo} en {color}"))
     if grupos:
-        texto = _lista(grupos)
+        # con coma antes de la "y" si algún grupo ya tiene la suya, para que se entienda al oírlo
+        separador = ", y " if any(len(n) > 1 for n, _ in grupos) else " y "
+        texto = separador.join(frase for _, frase in grupos)
         partes.append(texto[0].upper() + texto[1:] + ".")
 
     if len(evs) == 1:
@@ -283,6 +322,7 @@ class Copiloto:
     def __init__(self, args):
         self.persona = args.persona
         self.tarea = ""
+        self.tripulacion = leer_tripulacion(config.get("TRIPULACION"))
         self.evaluaciones: dict[str, dict] = {}
         self.auto = not args.sin_auto
         self._listo_para_auto = False      # evita leer en voz alta evaluaciones viejas al arrancar
@@ -328,11 +368,22 @@ class Copiloto:
             self._publicar(persona, "(resumen automático)", texto, [], "resumen", "auto")
 
     def _al_cambiar_sesion(self, _tema: str, datos: dict):
+        antes = (self.persona, self.tarea)
         if datos.get("persona"):
             self.persona = datos["persona"]
         if "tarea" in datos:
             self.tarea = datos.get("tarea") or ""
-        print(f"[copiloto] Persona activa: {self.persona}  Tarea: {self.tarea or '-'}")
+        if (self.persona, self.tarea) != antes:  # el mensaje propio de _cambiar_persona no se repite
+            print(f"[copiloto] Persona activa: {self.persona}  Tarea: {self.tarea or '-'}")
+
+    def _cambiar_persona(self, persona: str):
+        """Cambia la persona activa y lo avisa a todos en apto/control/sesion, con la tarea actual."""
+        anterior = self.evaluaciones.get(self.persona) or self.evaluaciones.get(persona) or {}
+        tarea = self.tarea or anterior.get("tarea") or ""
+        self.persona, self.tarea = persona, tarea
+        print(f"[copiloto] Persona activa: {persona}  Tarea: {tarea or '-'}")
+        if self.cli:
+            self.cli.publicar("apto/control/sesion", {"persona": persona, "tarea": tarea})
 
     def _al_recibir_pregunta(self, _tema: str, datos: dict):
         pregunta = (datos.get("pregunta") or "").strip()
@@ -351,6 +402,22 @@ class Copiloto:
     def responder(self, pregunta: str, origen: str = "local", persona: str | None = None) -> str:
         with self._lock:
             persona = persona or self.persona
+            original = pregunta
+            ident = identificar(pregunta, self.tripulacion)
+            if ident:
+                quien, resto = ident
+                if quien:
+                    self._cambiar_persona(quien)
+                    persona = quien
+                    if not resto:  # solo «soy Erick»: se saluda y no se sigue
+                        return self._decir_y_publicar(persona, original, self._saludo(quien), [], "identificacion", origen)
+                    pregunta = resto  # «Soy Erick, me falta el aire»: se responde el resto como Erick
+                elif not resto:  # «soy Diego»: nombre que no es de la tripulación
+                    nombres = _lista([p.capitalize() for p in self.tripulacion])
+                    return self._decir_y_publicar(persona, original,
+                                                  f"No reconozco ese nombre. La tripulación es: {nombres}.",
+                                                  [], "identificacion", origen)
+                # Nombre desconocido con más texto ("habla más despacio"): no era una identificación.
             ev = self.evaluaciones.get(persona)
             alarma = es_alarma(pregunta)
             # primero las fichas de la pregunta; si pregunta por su resultado, también las de sus motivos
@@ -405,10 +472,23 @@ class Copiloto:
                 # La alarma ya trae su ADVERTENCIA, y los resúmenes fijos no lo necesitan.
                 texto = con_recordatorio(texto, fichas)
             print(f"   [{modo}, {time.time() - t0:.1f} s, fichas: {', '.join(f.titulo for f in fichas) or 'ninguna'}]")
+            return self._decir_y_publicar(persona, original, texto, [f.titulo for f in fichas], modo, origen,
+                                          imprimir_modo=False)
 
-            self.locutor.decir(texto)
-            self._publicar(persona, pregunta, texto, [f.titulo for f in fichas], modo, origen)
-            return texto
+    def _decir_y_publicar(self, persona, pregunta, texto, fichas, modo, origen, imprimir_modo=True) -> str:
+        if imprimir_modo:
+            print(f"   [{modo}, 0.0 s, fichas: {', '.join(fichas) or 'ninguna'}]")
+        self.locutor.decir(texto)
+        self._publicar(persona, pregunta, texto, fichas, modo, origen)
+        return texto
+
+    def _saludo(self, persona: str) -> str:
+        """«Hola Erick.» y su último color, si tiene evaluación (los detalles, solo si los pide)."""
+        texto = f"Hola {persona.capitalize()}."
+        ev = self.evaluaciones.get(persona)
+        if ev and ev.get("color"):
+            return f"{texto} Tu último resultado es {ev['color']}. Pregúntame si quieres los detalles."
+        return f"{texto} Todavía no tienes una evaluación."
 
     def _complemento(self, ya_dicho: str, pregunta: str, ev: dict | None, fichas: list) -> str:
         """Una frase del modelo para agregar a un texto fijo; se descarta si contradice la evaluación."""
@@ -469,7 +549,7 @@ class Copiloto:
 
 def main():
     ap = argparse.ArgumentParser(description="Copiloto por voz de «¿Está apto hoy?»")
-    ap.add_argument("--persona", default=config.get("PERSONA", "xone"))
+    ap.add_argument("--persona", default=config.get("PERSONA", "bri"))
     ap.add_argument("--texto", action="store_true", help="preguntas escritas; no carga Whisper")
     ap.add_argument("--sin-voz", action="store_true", help="no habla; solo muestra el texto")
     ap.add_argument("--sin-llm", action="store_true", help="no usa Ollama; responde con las fichas")
