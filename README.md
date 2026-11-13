@@ -72,7 +72,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/{persona}/voz` | Voz (Xone) | Coordinador | Tono, jitter, shimmer, HNR, pausas |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | Reacción media, lapsos, anticipadas |
 | `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | Escala de Karolinska, horas de sueño |
-| `apto/{persona}/evaluacion` | Coordinador (Danilo) | Paneles, copiloto | `color`, `puntaje`, `motivos`, `accion`, `pesos`. **Publicar con retain.** |
+| `apto/{persona}/evaluacion` | Coordinador (Danilo) | Paneles, copiloto | `color`, `puntaje`, `motivos`, `accion`, `pesos`. **Publicar con retain.** Los `motivos` se escriben como frases neutras, sin sujeto («Menos horas de sueño de lo habitual», no «Durmió menos»), porque el copiloto los lee después de «tu resultado… Motivos:». |
 | `apto/{persona}/semaforo` | Coordinador | ESP32 | Solo `color`. **Con retain.** |
 | `apto/{persona}/copiloto` | Copiloto (Xone) | Paneles | `pregunta`, `respuesta`, `fichas`, `modo` |
 

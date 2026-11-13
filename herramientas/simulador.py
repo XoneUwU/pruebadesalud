@@ -25,14 +25,15 @@ CASOS = {
     },
     "amarillo": {
         "puntaje": 0.62,
-        "motivos": ["Durmió menos de lo habitual", "Reacción más lenta en la PVT"],
+        # Motivos como frases neutras, sin sujeto: el copiloto los lee tras "tu resultado... Motivos:"
+        "motivos": ["Menos horas de sueño de lo habitual", "Reacción más lenta en la prueba PVT"],
         "accion": "Reasignar la tarea o hacerla en pareja, y descansar antes",
         "pesos": {"sueno": 0.35, "pvt": 0.25, "hrv": 0.15, "perclos": 0.15, "voz": 0.10},
     },
     "rojo": {
         "puntaje": 0.31,
-        "motivos": ["Durmió mucho menos de lo habitual", "Ojos cerrados más tiempo de lo normal",
-                    "Varios lapsos de atención en la PVT"],
+        "motivos": ["Muchas menos horas de sueño de lo habitual", "Ojos cerrados más tiempo de lo normal",
+                    "Varios lapsos de atención en la prueba PVT"],
         "accion": "No realizar la tarea crítica; reasignarla e informar al comandante",
         "pesos": {"sueno": 0.30, "perclos": 0.30, "pvt": 0.25, "hrv": 0.10, "voz": 0.05},
     },

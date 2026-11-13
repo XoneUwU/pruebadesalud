@@ -17,7 +17,8 @@ Reglas:
 4. No inventes números ni datos que no estén en el mensaje.
 5. Ante dolor de pecho, falta de aire, mareo o confusión, indica avisar de inmediato al comandante y al médico de vuelo.
 6. Habla directo a la persona. No menciones las fichas, la guía ni «según la evaluación».
-7. Sin listas, sin markdown y sin emojis."""
+7. Sin listas, sin markdown y sin emojis.
+8. No agregues frases de relleno: responde solo lo que se pregunta."""
 
 
 def describir_evaluacion(ev: dict | None) -> str:

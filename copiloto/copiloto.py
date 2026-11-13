@@ -21,6 +21,7 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -58,6 +59,26 @@ PALABRAS_TRIPULACION = ("quién", "quien", "alguien", "alguno", "alguna", "tripu
                         "los demas", "nadie")
 ORDEN_COLOR = {"verde": 0, "amarillo": 1, "rojo": 2}
 
+# Síntomas de alarma: si la pregunta menciona alguno, la respuesta EMPIEZA con FRASE_ALARMA,
+# antes que cualquier otro camino. Se buscan en minúsculas y sin tildes.
+FRASE_ALARMA = "Avisa ahora mismo al comandante y al médico de vuelo."
+_ALARMA = re.compile(
+    r"\b(falta(n)? (de |el )?aire|no puedo respirar|me cuesta respirar"
+    r"|dolor (de|en el) pecho|me duele el pecho"
+    r"|mareos?|maread[oa]s?"
+    r"|confusion|confundid[oa]s?"
+    r"|desmay\w*)\b"  # desmayo, desmayar, me voy a desmayar, me desmayé
+)
+
+# Tareas que llevan "el" en vez de "la" (resumen: "para el mantenimiento del filtro").
+TAREAS_CON_EL = ("mantenimiento", "experimento", "acoplamiento", "control")
+
+
+def _normalizar(texto: str) -> str:
+    """Minúsculas y sin tildes: "Mareada" -> "mareada", "Confusión" -> "confusion"."""
+    texto = unicodedata.normalize("NFD", texto.lower())
+    return "".join(c for c in texto if unicodedata.category(c) != "Mn")
+
 
 def pregunta_sobre_resultado(pregunta: str) -> bool:
     return any(p in pregunta.lower() for p in PALABRAS_RESULTADO)
@@ -67,35 +88,86 @@ def pregunta_sobre_tripulacion(pregunta: str) -> bool:
     return any(p in pregunta.lower() for p in PALABRAS_TRIPULACION)
 
 
-def _nombres(evs: list[dict]) -> str:
-    nombres = [(e.get("persona") or "").capitalize() for e in evs]
-    return nombres[0] if len(nombres) == 1 else ", ".join(nombres[:-1]) + " y " + nombres[-1]
+def es_alarma(pregunta: str) -> bool:
+    return bool(_ALARMA.search(_normalizar(pregunta)))
 
 
-def resumen_tripulacion(evaluaciones: dict[str, dict], tarea: str = "") -> str:
-    """Quién está más apto para la tarea, según las evaluaciones recibidas (respuesta fija)."""
+def _puntaje(ev: dict) -> float:
+    try:
+        return float(ev.get("puntaje") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _lista(items: list[str]) -> str:
+    """["Sebas"] -> "Sebas"; ["Sebas", "Ana", "Eric"] -> "Sebas, Ana y Eric"."""
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " y " + items[-1]
+
+
+def con_articulo(tarea: str) -> str:
+    """"caminata espacial" -> "la caminata espacial"; "mantenimiento del filtro" -> "el mantenimiento del filtro"."""
+    tarea = (tarea or "").strip()
+    if not tarea:
+        return ""
+    inicio = _normalizar(tarea)
+    if inicio.split()[0] in ("el", "la", "los", "las", "un", "una"):
+        return tarea  # ya trae su artículo
+    return ("el " if inicio.startswith(TAREAS_CON_EL) else "la ") + tarea
+
+
+def mejor_en_verde(evaluaciones: dict[str, dict], excepto: str = "") -> dict | None:
+    """La evaluación en verde con mayor puntaje, sin contar a la persona indicada."""
+    verdes = [e for p, e in evaluaciones.items() if p != excepto and e.get("color") == "verde"]
+    return max(verdes, key=_puntaje) if verdes else None
+
+
+def resumen_tripulacion(evaluaciones: dict[str, dict], tarea: str = "", persona_activa: str = "") -> str:
+    """Quién está más apto para la tarea, según las evaluaciones recibidas (respuesta fija).
+
+    A la persona activa (la que pregunta) se le habla de tú.
+    """
     evs = [e for e in evaluaciones.values() if e.get("color") in ORDEN_COLOR]
     if not evs:
         return ("Todavía no hay evaluaciones de la tripulación. Cada persona debe hacer su evaluación "
                 "para que pueda recomendar quién hace la tarea.")
-    evs.sort(key=lambda e: (ORDEN_COLOR[e["color"]], -float(e.get("puntaje") or 0)))
-    para = f" para la {tarea}" if tarea else ""
-    verdes = [e for e in evs if e["color"] == "verde"]
-    amarillos = [e for e in evs if e["color"] == "amarillo"]
-    rojos = [e for e in evs if e["color"] == "rojo"]
-    partes = []
-    if verdes:
-        partes.append(f"La persona más apta{para} es {verdes[0]['persona'].capitalize()}, en verde.")
-        if len(verdes) > 1:
-            partes.append(f"También están en verde: {_nombres(verdes[1:])}.")
+    evs.sort(key=lambda e: (ORDEN_COLOR[e["color"]], -_puntaje(e)))
+    para = f" para {con_articulo(tarea)}" if tarea else ""
+
+    def es_activa(e: dict) -> bool:
+        return e.get("persona") == persona_activa
+
+    def nombre(e: dict) -> str:
+        return (e.get("persona") or "").capitalize()
+
+    mejor, resto = evs[0], evs[1:]
+    quien = "eres tú" if es_activa(mejor) else f"es {nombre(mejor)}"
+    if mejor["color"] == "verde":
+        partes = [f"La persona más apta{para} {quien}, en verde."]
     else:
-        partes.append(f"Nadie está en verde{para}. La opción menos riesgosa es "
-                      f"{evs[0]['persona'].capitalize()}, en {evs[0]['color']}: conviene hacerla en pareja o posponerla.")
-    resto = [f"{_nombres(amarillos)} en amarillo" if amarillos and verdes else "",
-             f"{_nombres(rojos)} en rojo" if rojos else ""]
-    resto = [r for r in resto if r]
-    if resto:
-        partes.append("Están " + " y ".join(resto) + ".")
+        partes = [f"Nadie está en verde{para}. La opción menos riesgosa {quien}, en {mejor['color']}: "
+                  "conviene hacerla en pareja o posponerla."]
+
+    # Los demás en verde: "También está en verde Sebas." / "También están en verde Sebas y Ana."
+    otros_verdes = [nombre(e) for e in resto if e["color"] == "verde" and not es_activa(e)]
+    if otros_verdes:
+        verbo = "está" if len(otros_verdes) == 1 else "están"
+        partes.append(f"También {verbo} en verde {_lista(otros_verdes)}.")
+    if any(e["color"] == "verde" and es_activa(e) for e in resto):
+        partes.append("Tú también estás en verde.")
+
+    # Amarillo y rojo, cada grupo con su verbo: "Tú estás en amarillo y Danilo está en rojo."
+    grupos = []
+    for color in ("amarillo", "rojo"):
+        grupo = [e for e in resto if e["color"] == color]
+        if any(es_activa(e) for e in grupo):
+            grupos.append(f"tú estás en {color}")
+        otros = [nombre(e) for e in grupo if not es_activa(e)]
+        if otros:
+            grupos.append(f"{_lista(otros)} {'está' if len(otros) == 1 else 'están'} en {color}")
+    if grupos:
+        texto = _lista(grupos)
+        partes.append(texto[0].upper() + texto[1:] + ".")
+
     if len(evs) == 1:
         partes.append("Solo tengo la evaluación de una persona; faltan las demás.")
     return " ".join(partes)
@@ -106,7 +178,7 @@ def resumen(ev: dict, tarea_activa: str = "") -> str:
     nombre = (ev.get("persona") or "").capitalize()
     color = ev.get("color", "sin color")
     tarea = ev.get("tarea") or tarea_activa
-    partes = [f"{nombre}, tu resultado{' para ' + tarea if tarea else ''} es {color}."]
+    partes = [f"{nombre}, tu resultado{' para ' + con_articulo(tarea) if tarea else ''} es {color}."]
     if ev.get("motivos"):
         partes.append(f"Motivos: {_unir(ev['motivos'])}.")
     elif color == "verde":
@@ -116,15 +188,43 @@ def resumen(ev: dict, tarea_activa: str = "") -> str:
     return " ".join(partes)
 
 
-_PERMISO = re.compile(r"\b(puedes|podrías|podrias|estás apto|estas apto)\s+(realizar|hacer|llevar a cabo|continuar|para)\b",
-                      re.IGNORECASE)
+# ---------------------------------------------------------------- filtro de contradicciones
+# Revisa el texto del modelo frase por frase, en minúsculas y sin tildes. Una frase contradice un
+# semáforo amarillo o rojo solo si da PERMISO y además menciona la TAREA. No cuentan las frases con
+# negación ("no puedes", "todavía no") ni los consejos ("puedes hacer una siesta").
+_PERMISO = re.compile(r"\b(puedes|podrias|estas (lista|listo|apta|apto)|en condiciones|sin problemas?)\b"
+                      r"|(?<!mas )\badelante\b")  # "adelante", pero no "más adelante"
+_NEGACION = re.compile(r"\b(no (puedes|podrias|estas|debes|deberias|conviene|se recomienda|hagas|salgas|vayas)"
+                       r"|aun no|todavia no|nunca|mejor no)\b")
+_CONSEJO = re.compile(r"\b(puedes|podrias)\s+((hacer|realizar|tomar|tomarte|repetir|intentar|probar)\s+)?"
+                      r"((una?|la|el|otra|tu)\s+)?(siesta|descans|pausa|respir|evalua|prueba|medicion|hidrat|dorm)\w*")
+_PREPARACION = re.compile(r"\bantes de (salir|ir) a\b")  # "antes de salir a la caminata, revisa..." no es permiso
+_TAREA_SIEMPRE = ("caminata", "tarea", "maniobra")
+
+
+def _patron_tarea(tarea: str) -> str:
+    """Palabras que cuentan como "la tarea": las de siempre y las de la tarea evaluada."""
+    palabras = set(_TAREA_SIEMPRE)
+    palabras.update(p for p in re.findall(r"[a-z]+", _normalizar(tarea or ""))
+                    if len(p) >= 4 and p not in ("para", "como", "sobre", "entre", "desde", "hacia"))
+    return r"(" + "|".join(sorted(palabras)) + r")s?\b"
+
+
+def _frase_contradice(frase: str, tarea: str) -> bool:
+    f = _normalizar(frase)
+    if not re.search(r"\b" + tarea, f) or _NEGACION.search(f):
+        return False
+    f = _PREPARACION.sub(" ", _CONSEJO.sub(" ", f))  # se quitan los consejos antes de buscar el permiso
+    # "salir a" o "ir a" solo cuentan pegados a la tarea: "puedes salir a la caminata", "ve a hacer la tarea"
+    return bool(_PERMISO.search(f) or re.search(r"\b(salir|ir) a (la |el |hacer (la |el )?)?" + tarea, f))
 
 
 def contradice(texto: str, ev: dict | None) -> bool:
-    """True si el modelo da permiso para la tarea cuando el semáforo es amarillo o rojo."""
+    """True si alguna frase da permiso para la tarea cuando el semáforo es amarillo o rojo."""
     if not ev or ev.get("color") not in ("amarillo", "rojo"):
         return False
-    return bool(_PERMISO.search(texto))
+    patron = _patron_tarea(ev.get("tarea", ""))
+    return any(_frase_contradice(f, patron) for f in re.split(r"(?<=[.!?;])\s+", texto or "") if f.strip())
 
 
 def primeras_frases(texto: str, n: int = 2) -> str:
@@ -206,9 +306,10 @@ class Copiloto:
         with self._lock:
             persona = persona or self.persona
             ev = self.evaluaciones.get(persona)
+            alarma = es_alarma(pregunta)
             # primero las fichas de la pregunta; si pregunta por su resultado, también las de sus motivos
             fichas = self.buscador.buscar(pregunta, k=2)
-            if ev and pregunta_sobre_resultado(pregunta):
+            if ev and pregunta_sobre_resultado(pregunta) and not alarma:
                 contexto = ev.get("color", "") + " " + " ".join(ev.get("motivos") or [])
                 for f in self.buscador.buscar(contexto, k=2):
                     if f not in fichas:
@@ -219,9 +320,12 @@ class Copiloto:
             modo = "fichas"
             usar_llm = bool(self.llm and self.llm.disponible)
             try:
-                if pregunta_sobre_tripulacion(pregunta):
+                if alarma:
+                    # Síntoma de alarma: va antes que todo y la frase fija nunca depende del modelo.
+                    texto, modo = self._respuesta_alarma(pregunta, ev, fichas, usar_llm)
+                elif pregunta_sobre_tripulacion(pregunta):
                     # ¿Quién está más apto? Respuesta fija con las evaluaciones de todos.
-                    texto = resumen_tripulacion(self.evaluaciones, (ev or {}).get("tarea") or self.tarea)
+                    texto = resumen_tripulacion(self.evaluaciones, (ev or {}).get("tarea") or self.tarea, persona)
                     modo = "tripulacion"
                 elif not ev and pregunta_sobre_resultado(pregunta):
                     texto = ("Todavía no tengo una evaluación tuya. Para saber si estás apta o apto, haz una "
@@ -229,14 +333,7 @@ class Copiloto:
                              "la frase en voz alta y la prueba de reacción de 3 minutos.")
                     modo = "sin evaluacion"
                 elif ev and pregunta_sobre_resultado(pregunta):
-                    # Sobre su resultado: el resumen fijo (nunca contradice la evaluación)
-                    # más una frase de consejo del modelo.
-                    texto = resumen(ev, self.tarea)
-                    if usar_llm:
-                        texto += " " + self.llm.complementar(texto, pregunta, fichas)
-                        modo = "resumen+llm"
-                    elif fichas:
-                        texto += " " + primeras_frases(fichas[0].texto, 1)
+                    texto, modo = self._respuesta_resultado(pregunta, ev, persona, fichas, usar_llm)
                 elif usar_llm:
                     texto = self.llm.responder(pregunta, ev, fichas)
                     modo = "llm"
@@ -250,11 +347,53 @@ class Copiloto:
                 print(f"[copiloto] Falló el modelo de lenguaje ({e}); respondo con las fichas.")
                 texto = self._respuesta_sin_llm(pregunta, ev, fichas)
                 modo = "fichas"
+                if alarma:  # pase lo que pase, la alarma va primero
+                    texto, modo = f"{FRASE_ALARMA} {texto}", "alarma"
             print(f"   [{modo}, {time.time() - t0:.1f} s, fichas: {', '.join(f.titulo for f in fichas) or 'ninguna'}]")
 
             self.locutor.decir(texto)
             self._publicar(persona, pregunta, texto, [f.titulo for f in fichas], modo, origen)
             return texto
+
+    def _complemento(self, ya_dicho: str, pregunta: str, ev: dict | None, fichas: list) -> str:
+        """Una frase del modelo para agregar a un texto fijo; se descarta si contradice la evaluación."""
+        frase = self.llm.complementar(ya_dicho, pregunta, fichas)
+        if contradice(frase, ev):
+            print("   [aviso] La frase del modelo contradecía la evaluación; se descarta.")
+            return ""
+        return frase
+
+    def _respuesta_alarma(self, pregunta: str, ev: dict | None, fichas: list,
+                          usar_llm: bool) -> tuple[str, str]:
+        """Frase fija de alarma y, después, un consejo del modelo o la primera frase de la ficha."""
+        extra, modo = "", "alarma"
+        if usar_llm:
+            try:
+                extra = self._complemento(FRASE_ALARMA, pregunta, ev, fichas)
+                if extra:
+                    modo = "alarma+llm"
+            except Exception as e:
+                print(f"[copiloto] Falló el modelo de lenguaje ({e}); sigo con la ficha.")
+        if not extra and fichas:
+            extra = primeras_frases(fichas[0].texto, 1)
+        return f"{FRASE_ALARMA} {extra}".strip(), modo
+
+    def _respuesta_resultado(self, pregunta: str, ev: dict, persona: str, fichas: list,
+                             usar_llm: bool) -> tuple[str, str]:
+        """Sobre su propio resultado: el resumen fijo (nunca contradice la evaluación) y una frase más."""
+        texto, modo = resumen(ev, self.tarea), "resumen"
+        verde = mejor_en_verde(self.evaluaciones, persona) if ev.get("color") in ("amarillo", "rojo") else None
+        if verde:
+            # Quién podría hacerla en su lugar. Sin frase del modelo, para no alargar.
+            texto += f" {(verde.get('persona') or '').capitalize()} está en verde y podría hacer la tarea en tu lugar."
+        elif usar_llm:
+            extra = self._complemento(texto, pregunta, ev, fichas)
+            if extra:
+                texto += " " + extra
+                modo = "resumen+llm"
+        elif fichas:
+            texto += " " + primeras_frases(fichas[0].texto, 1)
+        return texto, modo
 
     def _respuesta_sin_llm(self, pregunta: str, ev: dict | None, fichas: list,
                            forzar_resumen: bool = False) -> str:

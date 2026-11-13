@@ -1,5 +1,6 @@
 """Entrada y salida de voz del copiloto: grabar, transcribir (Whisper) y hablar (Piper o voz de Windows)."""
 import queue
+import re
 import tempfile
 import threading
 import wave
@@ -75,6 +76,26 @@ def leer_audio_16k(ruta_wav: Path) -> np.ndarray:
     return audio
 
 
+# ---------------------------------------------------------------- pronunciación
+def leer_pronunciacion(valor: str) -> dict[str, str]:
+    """"Xone:Yone, PVT:pe ve te" -> {"xone": "Yone", "pvt": "pe ve te"} (PRONUNCIAR en config.env)."""
+    pares = {}
+    for par in (valor or "").split(","):
+        palabra, _, lectura = par.partition(":")
+        if palabra.strip() and lectura.strip():
+            pares[palabra.strip().lower()] = lectura.strip()
+    return pares
+
+
+def aplicar_pronunciacion(texto: str, pares: dict[str, str]) -> str:
+    """Reemplaza palabras completas sin importar mayúsculas. Solo para el texto que va a la voz."""
+    if not pares:
+        return texto
+    palabras = sorted(pares, key=len, reverse=True)  # primero las más largas
+    patron = r"(?<!\w)(" + "|".join(re.escape(p) for p in palabras) + r")(?!\w)"
+    return re.sub(patron, lambda m: pares[m.group(0).lower()], texto, flags=re.IGNORECASE)
+
+
 # ---------------------------------------------------------------- voz de salida
 class Locutor:
     """Habla en un hilo aparte para no bloquear el programa.
@@ -86,13 +107,16 @@ class Locutor:
         self.activo = activo
         self._cola: queue.Queue[str | None] = queue.Queue()
         self.motor = "texto"
+        self._pronunciar = leer_pronunciacion(config.get("PRONUNCIAR"))
         if activo:
+            if self._pronunciar:
+                print(f"[copiloto] Pronunciación: {', '.join(f'{p} -> {lec}' for p, lec in self._pronunciar.items())}")
             threading.Thread(target=self._trabajar, daemon=True).start()
 
     def decir(self, texto: str):
-        print(f"\n   COPILOTO: {texto}\n")
+        print(f"\n   COPILOTO: {texto}\n")  # en pantalla, el texto original
         if self.activo:
-            self._cola.put(texto)
+            self._cola.put(aplicar_pronunciacion(texto, self._pronunciar))  # a la voz, con la pronunciación
 
     def esperar(self):
         """Espera a que termine de hablar todo lo pendiente."""
