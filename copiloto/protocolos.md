@@ -46,6 +46,11 @@ Claves: pulso, corazón, latidos, ritmo cardíaco, acelerado, alto
 Si tu pulso en reposo está más alto que tu línea base, quédate sentado y tranquilo 5 minutos y repite la medición. Revisa también que el sensor esté bien colocado. Si sigue alto, o si hay dolor de pecho, mareo o falta de aire, avisa de inmediato al comandante y al médico de vuelo.
 Fuente: guía interna del prototipo.
 
+## Falta de aire
+Claves: falta de aire, me falta el aire, no puedo respirar, me cuesta respirar, ahogo, asfixia, respiración
+Detén la tarea y quédate quieto en un lugar seguro. Avisa al comandante y al médico de vuelo, y no te quedes solo. Respira despacio mientras llega la ayuda y sigue el procedimiento de emergencia de la misión. La revisión del sensor se hace después de avisar, no antes.
+Fuente: guía interna del prototipo.
+
 ## Oxígeno en sangre bajo
 Claves: oxígeno, SpO2, saturación, respirar, aire, falta de aire
 Si el oxígeno en sangre aparece más bajo que tu valor habitual, primero revisa que el sensor esté bien puesto y que el dedo esté quieto y tibio, y repite la medición. Si sigue bajo, o si hay falta de aire, mareo o confusión, avisa de inmediato al comandante y al médico de vuelo, y revisen el ambiente de la cabina.
@@ -77,6 +82,6 @@ Este sistema es un prototipo de apoyo a la decisión: compara tus señales con t
 Fuente: guía interna del prototipo.
 
 ## Cuándo avisar al médico de vuelo
-Claves: urgencia, emergencia, avisar, médico, Tierra, grave, dolor
+Claves: urgencia, emergencia, avisar, médico, Tierra, grave, dolor, mareada, mareado, mareos
 Avisa de inmediato al comandante y al médico de vuelo si hay dolor de pecho, falta de aire, mareo, confusión, desmayo o cualquier síntoma que te preocupe, sin importar el color del semáforo. Por el retraso de comunicación con la Tierra, el comandante decide las acciones inmediatas.
 Fuente: guía interna del prototipo.

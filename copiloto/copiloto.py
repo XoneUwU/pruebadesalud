@@ -184,7 +184,7 @@ def resumen(ev: dict, tarea_activa: str = "") -> str:
     elif color == "verde":
         partes.append("Tus señales están en tu rango habitual.")
     if ev.get("accion"):
-        partes.append(f"Recomendación: {ev['accion'].rstrip('.')}.")
+        partes.append(f"Recomendación: {_minuscula_inicial(ev['accion'].strip().rstrip('.'))}.")
     return " ".join(partes)
 
 
