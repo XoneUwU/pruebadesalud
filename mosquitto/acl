@@ -1,0 +1,6 @@
+# Permisos por usuario
+user sistema
+topic readwrite apto/#
+
+user equipo
+topic read apto/#

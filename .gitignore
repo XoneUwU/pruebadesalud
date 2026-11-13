@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+datos/
+modelos/
+mosquitto/passwd
+*.wav

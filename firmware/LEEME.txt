@@ -1,0 +1,1 @@
+Carpeta del módulo: firmware. Agreguen aquí su código, requirements.txt y un README con el comando para correrlo.

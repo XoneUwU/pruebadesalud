@@ -1,0 +1,8 @@
+paho-mqtt>=2.0
+rank_bm25
+ollama
+faster-whisper
+numpy
+sounddevice
+soundfile
+pyttsx3

@@ -1,0 +1,5 @@
+paho-mqtt>=2.0
+praat-parselmouth>=0.4.3
+numpy
+sounddevice
+soundfile
