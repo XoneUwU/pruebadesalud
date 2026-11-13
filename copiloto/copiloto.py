@@ -35,6 +35,13 @@ from llm import CerebroLLM
 from comun import config
 from comun.mqtt_cliente import ClienteMQTT, persona_de_tema, tema
 
+# Camino de alarma (texto fijo, sin el modelo): hasta 2 medidas de la ficha + AVISO + ADVERTENCIA.
+# El médico de vuelo está en Tierra; a bordo hay un responsable médico de la tripulación.
+AVISO = ("Avisa al comandante y al responsable médico de la tripulación y, si hay comunicación, "
+         "al médico de vuelo en Tierra.")
+ADVERTENCIA = "Esto es solo una sugerencia temporal: busca atención de personal capacitado lo antes posible."
+MEDIDA_SIN_FICHA = "Detén la tarea y quédate en un lugar seguro."
+
 CARPETA_AUDIO = config.RAIZ / "datos" / "copiloto"
 PALABRAS_RESULTADO = ("por qué", "porque", "semáforo", "semaforo", "resultado", "color", "apto",
                       "estoy", "amarillo", "rojo", "verde", "mi evaluación", "mi evaluacion", "puedo")
@@ -59,9 +66,8 @@ PALABRAS_TRIPULACION = ("quién", "quien", "alguien", "alguno", "alguna", "tripu
                         "los demas", "nadie")
 ORDEN_COLOR = {"verde": 0, "amarillo": 1, "rojo": 2}
 
-# Síntomas de alarma: si la pregunta menciona alguno, la respuesta EMPIEZA con FRASE_ALARMA,
+# Síntomas de alarma: si la pregunta menciona alguno, se responde con respuesta_alarma(),
 # antes que cualquier otro camino. Se buscan en minúsculas y sin tildes.
-FRASE_ALARMA = "Avisa ahora mismo al comandante y al médico de vuelo."
 _ALARMA = re.compile(
     r"\b(falta(n)? (de |el )?aire|no puedo respirar|me cuesta respirar"
     r"|dolor (de|en el) pecho|me duele el pecho"
@@ -93,15 +99,17 @@ def es_alarma(pregunta: str) -> bool:
 
 
 def respuesta_alarma(fichas: list) -> str:
-    """Frase fija de aviso + la primera frase de la ficha que no repita el aviso.
+    """Hasta 2 medidas de la ficha encontrada, después AVISO y al final ADVERTENCIA.
 
-    No usa el modelo: en una emergencia solo se dice texto revisado por el equipo.
+    Medidas = frases de la ficha que no repiten el aviso (sin "avisa"/"avisar"). Sin ficha con
+    medidas, se usa MEDIDA_SIN_FICHA. No usa el modelo: en una emergencia solo se dice texto
+    revisado por el equipo.
     """
+    medidas = []
     if fichas:
-        for frase in re.split(r"(?<=[.!?])\s+", fichas[0].texto.replace("\n", " ")):
-            if frase.strip() and "avisa" not in _normalizar(frase):  # "avisa", "avisar", "avísale"
-                return f"{FRASE_ALARMA} {frase.strip()}"
-    return FRASE_ALARMA
+        frases = re.split(r"(?<=[.!?])\s+", fichas[0].texto.replace("\n", " "))
+        medidas = [f.strip() for f in frases if f.strip() and "avisa" not in _normalizar(f)][:2]
+    return " ".join((medidas or [MEDIDA_SIN_FICHA]) + [AVISO, ADVERTENCIA])
 
 
 def _puntaje(ev: dict) -> float:
@@ -359,8 +367,8 @@ class Copiloto:
                 print(f"[copiloto] Falló el modelo de lenguaje ({e}); respondo con las fichas.")
                 texto = self._respuesta_sin_llm(pregunta, ev, fichas)
                 modo = "fichas"
-                if alarma:  # pase lo que pase, la alarma va primero
-                    texto, modo = f"{FRASE_ALARMA} {texto}", "alarma"
+                if alarma:  # pase lo que pase, ante una alarma se dicen la medida, el aviso y la advertencia
+                    texto, modo = f"{MEDIDA_SIN_FICHA} {AVISO} {ADVERTENCIA}", "alarma"
             print(f"   [{modo}, {time.time() - t0:.1f} s, fichas: {', '.join(f.titulo for f in fichas) or 'ninguna'}]")
 
             self.locutor.decir(texto)
@@ -401,7 +409,8 @@ class Copiloto:
             # con el resumen delante basta una frase de la ficha, para no alargar la respuesta
             partes.append(primeras_frases(fichas[0].texto, 1 if partes else 2))
         if not partes:
-            partes.append("No tengo información para responder eso. Consulta al médico de vuelo.")
+            partes.append("No tengo información para responder eso. Consulta al responsable médico de la "
+                          "tripulación y, si hay comunicación, al médico de vuelo en Tierra.")
         return " ".join(partes)
 
     # ------------------------------------------------------------ voz
