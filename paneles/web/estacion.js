@@ -1,23 +1,38 @@
-/* Estación de evaluación (laptop de Bri): inicio, dispositivo, cámara, voz, PVT-B, cuestionario y resultado.
- * Atajo para probar una pantalla sin hacer todo el recorrido: estacion.html?paso=4&persona=bri */
+/* Estación de evaluación (laptop de Bri): inicio, dispositivo, cámara, voz, reacción (PVT-B), símbolos (DSST,
+ * opcional), cuestionario y resultado. Cada módulo de Python avisa si está abierto (apto/control/modulos/+):
+ * si falta uno, la estación lo dice en vez de esperar.
+ * Atajo para probar una pantalla: estacion.html?paso=reaccion&persona=bri (&demo=1, &dsst=1). */
 (function () {
   "use strict";
 
-  const { CFG, el, etiquetaSimulado, palabraColor } = Comun;
+  const { CFG, el, etiquetaSimulado, etiquetaProvisional, palabraColor } = Comun;
   const L = Logica;
   const $ = (id) => document.getElementById(id);
 
   const TAREAS = ["caminata espacial", "maniobra de acoplamiento", "mantenimiento externo"];
+  const PASOS = ["inicio", "dispositivo", "camara", "voz", "reaccion", "simbolos", "cuestionario", "resultado"];
   const SEGUNDOS_CAMARA = 60;
   const SEGUNDOS_VOZ = 12;
-  const PREPARACION_VOZ_S = 3;      // voz_fatiga.py cuenta 3, 2, 1 antes de grabar
-  const ESPERA_MODULO_VOZ_MS = 6000; // si no llega "grabando" en este tiempo, el módulo de voz no está abierto
+  const PREPARACION_VOZ_S = 3;        // voz_fatiga.py cuenta 3, 2, 1 antes de grabar
+  const ESPERA_MODULO_VOZ_MS = 6000;  // abierto pero sin responder a la orden
+  const AVISO_ESP32_MS = 10000;
   const PISTA_ANALIZANDO_MS = 25000;
+  const ESPERA_COPILOTO_MS = 90000;   // la primera respuesta del modelo puede tardar un minuto
+  // [nombre en apto/control/modulos/, nombre en pantalla, cómo se abre]
+  const MODULOS = [
+    ["voz", "Voz", "python voz\\voz_fatiga.py --servicio"],
+    ["copiloto", "Copiloto", "python copiloto\\copiloto.py"],
+    ["vision", "Visión", "módulo de visión (Erick)"],
+    ["coordinador", "Coordinador", "python coordinador\\coordinador_provisional.py"],
+  ];
+  const COMANDO = Object.fromEntries(MODULOS.map(([m, , c]) => [m, c]));
+  const modulos = {};  // nombre -> true si avisó que está activo
+  const activo = (m) => modulos[m] === true;
 
   const estado = {
-    paso: 0, persona: "", tarea: "", lineaBase: false, sesion: "", inicio: 0,
-    esp32: null, esp32Llegada: 0, vision: null, voz: null, evaluacion: null,
-    conversacion: [], pendientes: [], kss: null, horas: 7,
+    paso: "inicio", persona: "", tarea: "", lineaBase: false, demo: false, conDsst: false, sesion: "", inicio: 0,
+    esp32: null, esp32Llegada: 0, vision: null, estadoVision: "", voz: null, evaluacion: null,
+    conversacion: [], pendientes: [], kss: null, horas: 7, pistaVencida: false,
   };
   const temporizadores = new Set();  // se limpian al cambiar de paso
 
@@ -31,6 +46,10 @@
     temporizadores.add(id);
     return id;
   }
+  function parar(id) {
+    clearInterval(id);
+    temporizadores.delete(id);
+  }
   function limpiarTemporizadores() {
     for (const id of temporizadores) { clearTimeout(id); clearInterval(id); }
     temporizadores.clear();
@@ -38,7 +57,8 @@
 
   // ------------------------------------------------------------ MQTT
   const mqttc = Comun.conectar("estacion", [
-    "apto/+/esp32", "apto/+/vision", "apto/+/voz", "apto/+/evaluacion", "apto/+/copiloto", "apto/control/estado_voz",
+    "apto/+/esp32", "apto/+/vision", "apto/+/voz", "apto/+/evaluacion", "apto/+/copiloto",
+    "apto/control/estado_voz", "apto/control/estado_vision", "apto/control/modulos/+",
   ], alMensaje);
 
   function publicar(tema, datos) {
@@ -53,51 +73,95 @@
   }
 
   function alMensaje(tema, datos, retenido) {
-    if (tema === "apto/control/estado_voz") {
-      if (estado.sesion && datos.persona === estado.persona) alEstadoVoz(datos);
+    if (tema.startsWith("apto/control/modulos/")) {
+      modulos[tema.split("/")[3]] = datos.activo === true;
+      alCambiarModulos();
+      return;
+    }
+    const deLaPersona = estado.sesion && datos.persona === estado.persona;
+    if (tema === "apto/control/estado_voz") { if (deLaPersona) alEstadoVoz(datos); return; }
+    if (tema === "apto/control/estado_vision") {
+      if (deLaPersona) { estado.estadoVision = String(datos.estado || ""); pintarCamara(); }
       return;
     }
     const [persona, tipo] = Comun.partesTema(tema);
     if (!estado.sesion || persona !== estado.persona || !esDeEstaSesion(datos, retenido)) return;
     if (tipo === "esp32") { estado.esp32 = datos; estado.esp32Llegada = Date.now(); pintarEsp32(); }
-    else if (tipo === "vision") { estado.vision = datos; pintarVision(); }
+    else if (tipo === "vision") { estado.vision = datos; pintarCamara(); }
     else if (tipo === "voz") { estado.voz = datos; alResultadoVoz(); }
-    else if (tipo === "evaluacion") { estado.evaluacion = datos; if (estado.paso === 6) pintarResultado(); }
+    else if (tipo === "evaluacion") { estado.evaluacion = datos; pintarResultado(); }
     else if (tipo === "copiloto") { agregarConversacion(datos); }
   }
 
+  function alCambiarModulos() {
+    pintarModulos();
+    if (estado.paso === "camara") pintarCamara();
+    if (estado.paso === "voz") pintarVozModulo();
+    if (estado.paso === "resultado") { pintarResultado(); pintarCopiloto(); }
+  }
+
   // ------------------------------------------------------------ pasos
-  const entrar = { 0: entrarInicio, 1: entrarDispositivo, 2: entrarCamara, 3: entrarVoz, 4: entrarPvt, 5: entrarCuestionario, 6: entrarResultado };
+  const entrar = {
+    inicio: entrarInicio, dispositivo: entrarDispositivo, camara: entrarCamara, voz: entrarVoz, reaccion: entrarPvt,
+    simbolos: entrarDsst, cuestionario: entrarCuestionario, resultado: entrarResultado,
+  };
+
+  function pasosActivos() {
+    return PASOS.filter((p) => p !== "simbolos" || estado.conDsst);
+  }
+  function siguiente() {
+    const activos = pasosActivos();
+    irA(activos[Math.min(activos.indexOf(estado.paso) + 1, activos.length - 1)]);
+  }
 
   function irA(paso) {
     limpiarTemporizadores();
     pvtDetener();
+    dsstDetener();
     estado.paso = paso;
-    document.querySelectorAll(".paso").forEach((s) => { s.hidden = Number(s.dataset.paso) !== paso; });
-    document.querySelectorAll("#pasos li").forEach((li, i) => {
-      li.classList.toggle("actual", i === paso);
-      li.classList.toggle("hecho", i < paso);
-    });
+    document.querySelectorAll(".paso").forEach((s) => { s.hidden = s.dataset.paso !== paso; });
+    pintarPasos();
     pintarInfoSesion();
     entrar[paso]();
     window.scrollTo(0, 0);
   }
 
-  function pintarInfoSesion() {
-    $("info-sesion").textContent = estado.sesion
-      ? `${L.nombre(estado.persona)} · ${estado.tarea}${estado.lineaBase ? " · línea base" : ""}`
-      : "";
+  function pintarPasos() {
+    const activos = pasosActivos();
+    const actual = activos.indexOf(estado.paso);
+    document.querySelectorAll("#pasos li").forEach((li) => {
+      const i = activos.indexOf(li.dataset.paso);
+      li.hidden = i < 0;
+      li.querySelector(".numero-paso").textContent = i < 0 ? "" : i;
+      li.classList.toggle("actual", i === actual);
+      li.classList.toggle("hecho", i >= 0 && i < actual);
+    });
   }
 
-  // 0. Inicio --------------------------------------------------
+  function pintarInfoSesion() {
+    const partes = [L.nombre(estado.persona), estado.tarea, estado.lineaBase && "línea base", estado.demo && "modo demo"];
+    $("info-sesion").textContent = estado.sesion ? partes.filter(Boolean).join(" · ") : "";
+  }
+
+  // Inicio -----------------------------------------------------
   function entrarInicio() {
     Object.assign(estado, {
-      persona: "", tarea: "", lineaBase: false, sesion: "", inicio: 0, esp32: null, esp32Llegada: 0,
-      vision: null, voz: null, evaluacion: null, conversacion: [], pendientes: [], kss: null, horas: 7,
+      persona: "", tarea: "", lineaBase: false, sesion: "", inicio: 0, esp32: null, esp32Llegada: 0, vision: null,
+      estadoVision: "", voz: null, evaluacion: null, conversacion: [], pendientes: [], kss: null, horas: 7,
+      pistaVencida: false,
     });
-    $("linea-base").checked = false;
+    $("linea-base").checked = false;  // modo demo y símbolos se quedan como estaban
+    estado.conDsst = $("con-dsst").checked;
+    pintarPasos();
     pintarInfoSesion();
     pintarOpciones();
+    pintarModulos();
+  }
+
+  function pintarModulos() {
+    $("lista-modulos").replaceChildren(...MODULOS.map(([m, nombre, comando]) => el("li", { class: activo(m) ? "activo" : "inactivo" },
+      el("span", { class: "punto" }),
+      el("span", {}, el("b", {}, nombre), activo(m) ? " activo" : " no está abierto", activo(m) ? null : el("small", {}, comando)))));
   }
 
   function pintarOpciones() {
@@ -117,59 +181,76 @@
     return L.ahoraIso().replace(/[-:]/g, "").replace("T", "-");  // 20261113-193005
   }
 
+  $("con-dsst").addEventListener("change", () => { estado.conDsst = $("con-dsst").checked; pintarPasos(); });
+
   $("comenzar").addEventListener("click", () => {
     estado.lineaBase = $("linea-base").checked;
+    estado.demo = $("modo-demo").checked;
+    estado.conDsst = $("con-dsst").checked;
     estado.sesion = `${marcaSesion()}-${estado.persona}`;
     estado.inicio = Date.now();
     publicar("apto/control/sesion", { tarea: estado.tarea });
     Comun.pantallaCompleta(true);
-    irA(1);
+    irA("dispositivo");
   });
 
-  // 1. Dispositivo ---------------------------------------------
+  // Dispositivo (ESP32: no es un módulo de Python; se sabe que está solo si llegan datos) --------
   function entrarDispositivo() {
+    const llegada = Date.now();
     pintarEsp32();
-    cadaTanto(1000, pintarEsp32);
+    cadaTanto(1000, () => pintarEsp32(Date.now() - llegada >= AVISO_ESP32_MS));
   }
 
-  function pintarEsp32() {
-    if (estado.paso !== 1) return;
+  function pintarEsp32(tarde) {
+    if (estado.paso !== "dispositivo") return;
     const d = estado.esp32;
     $("v-pulso").textContent = d && d.pulso_lpm != null ? Math.round(d.pulso_lpm) : "–";
     $("v-hrv").textContent = d && d.hrv_rmssd_ms != null ? Math.round(d.hrv_rmssd_ms) : "–";
     $("v-spo2").textContent = d && d.spo2 != null ? L.decimal(d.spo2, 1) : "–";
     $("sim-esp32").replaceChildren(...[etiquetaSimulado(d)].filter(Boolean));
     if (!d) {
-      $("estado-esp32").textContent = "Esperando el dispositivo...";
+      $("estado-esp32").textContent = tarde
+        ? "No llegan datos del dispositivo. Revisen que el ESP32 esté encendido y conectado a la misma red, o toquen Omitir."
+        : "Esperando el dispositivo...";
     } else {
       const s = Math.round((Date.now() - estado.esp32Llegada) / 1000);
       $("estado-esp32").textContent = s <= 3 ? "Datos en vivo." : `Sin datos nuevos desde hace ${s} s.`;
     }
-    $("continuar-1").disabled = !d;
+    $("continuar-dispositivo").disabled = !d;
   }
-  $("continuar-1").addEventListener("click", () => irA(2));
-  $("omitir-1").addEventListener("click", () => irA(2));
+  $("continuar-dispositivo").addEventListener("click", siguiente);
+  $("omitir-dispositivo").addEventListener("click", siguiente);
 
-  // 2. Cámara --------------------------------------------------
+  // Cámara (la mide el módulo de visión; la estación no abre la cámara) -------------------------
+  let camaraIniciada = false;
+
   function entrarCamara() {
     estado.vision = null;
-    pintarVision();
-    $("continuar-2").hidden = true;
+    estado.estadoVision = "";
+    camaraIniciada = false;
+    $("continuar-camara").hidden = true;
+    pintarCamara();
+  }
+
+  function iniciarCamara() {
+    camaraIniciada = true;
     publicar("apto/control/orden_vision", { accion: "medir", segundos: SEGUNDOS_CAMARA });
     const inicio = Date.now();
+    $("cuenta-camara").hidden = false;
+    $("progreso-camara-caja").hidden = false;
     const tic = () => {
       const pasado = (Date.now() - inicio) / 1000;
       const quedan = Math.max(0, Math.ceil(SEGUNDOS_CAMARA - pasado));
       $("cuenta-camara").textContent = quedan;
       $("progreso-camara").style.width = `${Math.min(100, (pasado / SEGUNDOS_CAMARA) * 100)}%`;
       if (quedan === 0) {
-        limpiarTemporizadores();
-        $("continuar-2").hidden = false;
-        if (!estado.vision) $("estado-vision").textContent = "Terminó el minuto. No llegaron datos de la cámara.";
+        parar(reloj);
+        $("continuar-camara").hidden = false;
+        pintarCamara();
       }
     };
+    const reloj = cadaTanto(250, tic);
     tic();
-    cadaTanto(250, tic);
   }
 
   const NOMBRES_VISION = {
@@ -177,16 +258,29 @@
   };
   const NO_MOSTRAR = new Set(["persona", "sesion", "ts", "fuente", "simulado"]);
 
-  function pintarVision() {
-    if (estado.paso !== 2) return;
+  function pintarCamara() {
+    if (estado.paso !== "camara") return;
+    if (!camaraIniciada && activo("vision")) iniciarCamara();
     const d = estado.vision;
     $("sim-vision").replaceChildren(...[etiquetaSimulado(d)].filter(Boolean));
-    if (!d) {
-      $("datos-vision").replaceChildren();
-      $("estado-vision").textContent = "Esperando datos de la cámara…";
-      return;
+    let texto;
+    if (!camaraIniciada) {
+      texto = "El módulo de visión no está abierto. Pueden seguir sin la cámara (Omitir).";
+      $("cuenta-camara").hidden = true;
+      $("progreso-camara-caja").hidden = true;
+    } else if (d) {
+      texto = "Datos de la cámara recibidos.";
+    } else if (!activo("vision")) {
+      texto = "El módulo de visión se cerró: no llegaron datos de la cámara.";
+    } else if (estado.estadoVision === "listo") {
+      texto = "La medición terminó, pero no llegaron datos.";
+    } else if (estado.estadoVision === "midiendo") {
+      texto = "Midiendo…";
+    } else {
+      texto = estado.estadoVision || "Esperando al módulo de visión…";
     }
-    $("estado-vision").textContent = "Datos de la cámara recibidos.";
+    $("estado-camara").textContent = texto;
+    if (!d) { $("datos-vision").replaceChildren(); return; }
     const filas = Object.entries(d).filter(([k, v]) => !NO_MOSTRAR.has(k) && (typeof v === "number" || typeof v === "string"));
     $("datos-vision").replaceChildren(...filas.map(([k, v]) => {
       const [nombre, unidad, cifras] = NOMBRES_VISION[k] || [k.replace(/_/g, " "), "", 2];
@@ -195,44 +289,65 @@
         el("span", { class: "valor" }, valor), el("span", { class: "unidad" }, unidad));
     }));
   }
-  $("continuar-2").addEventListener("click", () => irA(3));
-  $("omitir-2").addEventListener("click", () => irA(3));
+  $("continuar-camara").addEventListener("click", siguiente);
+  $("omitir-camara").addEventListener("click", siguiente);
 
-  // 3. Voz -----------------------------------------------------
+  // Voz --------------------------------------------------------
   let vozFase = "inicio";  // inicio, esperando, grabando, analizando, listo
 
   function entrarVoz() {
     $("frase-voz").textContent = CFG.frase_voz || "(Falta la frase: revisen voz/voz_fatiga.py)";
     vozFase = "inicio";
     estado.voz = null;
-    $("estado-voz").textContent = "Presiona Grabar cuando quieras empezar.";
     $("resultado-voz").hidden = true;
     $("progreso-voz-caja").hidden = true;
     $("grabar").hidden = false;
-    $("grabar").disabled = false;
     $("grabar").textContent = `Grabar (${SEGUNDOS_VOZ} s)`;
-    $("continuar-3").hidden = true;
+    $("continuar-voz").hidden = true;
+    pintarVozModulo();
+  }
+
+  function pintarVozModulo() {
+    if (estado.paso !== "voz") return;
+    if (!activo("voz")) {
+      if (["esperando", "grabando", "analizando"].includes(vozFase)) {
+        limpiarTemporizadores();
+        vozFase = "inicio";
+        $("progreso-voz-caja").hidden = true;
+      }
+      if (vozFase === "inicio") {
+        $("estado-voz").replaceChildren("El módulo de voz no está abierto. Ábranlo con ",
+          el("kbd", {}, COMANDO.voz), " o toquen Omitir.");
+      }
+      $("grabar").disabled = true;
+      return;
+    }
+    if (vozFase === "inicio") {
+      $("estado-voz").textContent = "Presiona Grabar cuando quieras empezar.";
+      $("grabar").disabled = false;
+    }
   }
 
   $("grabar").addEventListener("click", () => {
+    if (!activo("voz")) return;
     vozFase = "esperando";
     estado.voz = null;
     $("resultado-voz").hidden = true;
-    $("continuar-3").hidden = true;
+    $("continuar-voz").hidden = true;
     $("grabar").disabled = true;
     $("estado-voz").textContent = "Preparando la grabación…";
     publicar("apto/control/orden_voz", { accion: "grabar", segundos: SEGUNDOS_VOZ, linea_base: estado.lineaBase });
     despues(ESPERA_MODULO_VOZ_MS, () => {
       if (vozFase !== "esperando") return;
       vozFase = "inicio";
-      $("estado-voz").textContent = "El módulo de voz no responde. Revisen que esté abierto voz\\voz_fatiga.py --servicio.";
+      $("estado-voz").textContent = "El módulo de voz está abierto pero no respondió. Revisen su ventana y vuelvan a intentar.";
       $("grabar").disabled = false;
       $("grabar").textContent = "Reintentar";
     });
   });
 
   function alEstadoVoz(datos) {
-    if (estado.paso !== 3) return;
+    if (estado.paso !== "voz") return;
     if (datos.estado === "grabando" && vozFase === "esperando") {
       vozFase = "grabando";
       const inicio = Date.now();
@@ -260,7 +375,7 @@
   }
 
   function alResultadoVoz() {
-    if (estado.paso === 3 && vozFase !== "inicio") terminarVoz();
+    if (estado.paso === "voz" && vozFase !== "inicio") terminarVoz();
   }
 
   function terminarVoz() {
@@ -290,27 +405,29 @@
       ].filter(Boolean));
       caja.hidden = false;
     }
-    $("grabar").disabled = false;
+    $("grabar").disabled = !activo("voz");
     $("grabar").textContent = "Grabar otra vez";
-    $("continuar-3").hidden = false;
+    $("continuar-voz").hidden = false;
   }
-  $("continuar-3").addEventListener("click", () => irA(4));
-  $("omitir-3").addEventListener("click", () => irA(4));
+  $("continuar-voz").addEventListener("click", siguiente);
+  $("omitir-voz").addEventListener("click", siguiente);
 
-  // 4. PVT-B ---------------------------------------------------
+  // Reacción (PVT-B) -------------------------------------------
   const pvt = {
     activo: false, inicio: 0, duracionMs: 0, estimuloEn: null, rts: [], anticipadas: 0, sinRespuesta: 0, n: 0,
     espera: null, sinResp: null, raf: null, reloj: null, borrar: null,
   };
 
   function segundosPvt() {
+    if (estado.demo) return L.PVT.DEMO_S;
     const s = Number(CFG.pvt_segundos);
     return Number.isFinite(s) && s > 0 ? s : 180;
   }
 
   function entrarPvt() {
     const s = segundosPvt();
-    $("pvt-duracion").textContent = s % 60 === 0 ? `${s / 60} ${s === 60 ? "minuto" : "minutos"}` : `${s} segundos`;
+    const texto = s % 60 === 0 ? `${s / 60} ${s === 60 ? "minuto" : "minutos"}` : `${s} segundos`;
+    $("pvt-duracion").textContent = estado.demo ? `${texto} (modo demo)` : texto;
     $("pvt-intro").hidden = false;
     $("pvt-area").hidden = true;
     $("pvt-fin").hidden = true;
@@ -421,29 +538,118 @@
     e.preventDefault();
     pvtResponder(tiempoDelEvento(e));
   });
-  document.addEventListener("keydown", (e) => {
-    if (estado.paso !== 4 || !pvt.activo || (e.code !== "Space" && e.key !== " ")) return;
-    e.preventDefault();
-    if (!e.repeat) pvtResponder(tiempoDelEvento(e));
-  });
 
   function pvtTerminar() {
     const duracionMs = performance.now() - pvt.inicio;
     pvtDetener();
     const r = L.resumenPvt(pvt.rts, pvt.anticipadas, pvt.sinRespuesta, pvt.n, duracionMs);
-    publicar(`apto/${estado.persona}/pvt`, { ...r, linea_base: estado.lineaBase });
+    publicar(`apto/${estado.persona}/pvt`, { ...r, linea_base: estado.lineaBase, modo_demo: estado.demo });
     $("pvt-area").hidden = true;
     $("pvt-fin").hidden = false;
     $("pvt-media").textContent = r.rt_media_ms ?? "–";
     $("pvt-mediana").textContent = r.rt_mediana_ms ?? "–";
     $("pvt-lapsos").textContent = r.lapsos;
+    $("pvt-lapsos-min").textContent = `${L.decimal(r.lapsos_por_min)} por minuto (355 ms o más)`;
     $("pvt-anticipadas").textContent = r.anticipadas;
     $("pvt-estimulos").textContent = `de ${r.n_estimulos} estímulos`;
   }
-  $("continuar-4").addEventListener("click", () => irA(5));
-  $("omitir-4").addEventListener("click", () => irA(5));
+  $("continuar-reaccion").addEventListener("click", siguiente);
+  $("omitir-reaccion").addEventListener("click", siguiente);
 
-  // 5. Cuestionario --------------------------------------------
+  // Símbolos (DSST) --------------------------------------------
+  const dsst = { activo: false, inicio: 0, clave: [], actual: 0, correctas: 0, incorrectas: 0, fin: null, reloj: null };
+
+  function svgSimbolo(i) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 40 40");
+    svg.setAttribute("aria-hidden", "true");
+    const trazo = document.createElementNS(ns, "path");
+    trazo.setAttribute("d", L.SIMBOLOS_DSST[i]);
+    svg.append(trazo);
+    return svg;
+  }
+
+  function entrarDsst() {
+    $("dsst-intro").hidden = false;
+    $("dsst-area").hidden = true;
+    $("dsst-fin").hidden = true;
+  }
+
+  function dsstDetener() {
+    dsst.activo = false;
+    clearTimeout(dsst.fin);
+    clearInterval(dsst.reloj);
+  }
+
+  $("dsst-empezar").addEventListener("click", () => {
+    const orden = [...Array(9).keys()];
+    for (let i = orden.length - 1; i > 0; i--) {  // clave al azar en cada sesión
+      const j = Math.floor(Math.random() * (i + 1));
+      [orden[i], orden[j]] = [orden[j], orden[i]];
+    }
+    Object.assign(dsst, { clave: orden, actual: 0, correctas: 0, incorrectas: 0, inicio: performance.now() });
+    dsst.activo = true;
+    $("dsst-clave").replaceChildren(...orden.map((s, i) => el("div", { class: "dsst-celda" }, svgSimbolo(s), el("span", {}, i + 1))));
+    $("dsst-teclado").replaceChildren(...orden.map((_, i) => el("button", {
+      class: "dsst-tecla", type: "button", "data-numero": i + 1, onclick: (e) => dsstResponder(i + 1, e.currentTarget),
+    }, i + 1)));
+    $("dsst-intro").hidden = true;
+    $("dsst-fin").hidden = true;
+    $("dsst-area").hidden = false;
+    if (document.activeElement) document.activeElement.blur();
+    dsstSiguiente();
+    dsstReloj();
+    dsst.reloj = setInterval(dsstReloj, 250);
+    dsst.fin = setTimeout(dsstTerminar, L.DSST_SEGUNDOS * 1000);
+  });
+
+  function dsstReloj() {
+    const quedan = Math.max(0, Math.ceil(L.DSST_SEGUNDOS - (performance.now() - dsst.inicio) / 1000));
+    $("dsst-restante").textContent = `Quedan ${quedan} s`;
+  }
+
+  function dsstSiguiente() {
+    let n;
+    do { n = 1 + Math.floor(Math.random() * 9); } while (n === dsst.actual);  // nunca el mismo dos veces
+    dsst.actual = n;
+    $("dsst-simbolo").replaceChildren(svgSimbolo(dsst.clave[n - 1]));
+  }
+
+  function dsstResponder(n, boton) {
+    if (!dsst.activo) return;
+    if (n === dsst.actual) dsst.correctas += 1;
+    else dsst.incorrectas += 1;
+    const b = boton || document.querySelector(`.dsst-tecla[data-numero="${n}"]`);
+    if (b) { b.classList.add("pulsada"); setTimeout(() => b.classList.remove("pulsada"), 120); }
+    dsstSiguiente();
+  }
+
+  function dsstTerminar() {
+    const duracionMs = performance.now() - dsst.inicio;
+    dsstDetener();
+    const r = L.resumenDsst(dsst.correctas, dsst.incorrectas, duracionMs);
+    publicar(`apto/${estado.persona}/dsst`, { ...r, linea_base: estado.lineaBase });
+    $("dsst-area").hidden = true;
+    $("dsst-fin").hidden = false;
+    $("dsst-correctas").textContent = r.correctas;
+    $("dsst-incorrectas").textContent = r.incorrectas;
+    $("dsst-por-minuto").textContent = L.decimal(r.por_minuto, 1);
+  }
+  $("continuar-simbolos").addEventListener("click", siguiente);
+  $("omitir-simbolos").addEventListener("click", siguiente);
+
+  document.addEventListener("keydown", (e) => {
+    if (estado.paso === "reaccion" && pvt.activo && (e.code === "Space" || e.key === " ")) {
+      e.preventDefault();
+      if (!e.repeat) pvtResponder(tiempoDelEvento(e));
+    } else if (estado.paso === "simbolos" && dsst.activo && /^[1-9]$/.test(e.key)) {
+      e.preventDefault();
+      if (!e.repeat) dsstResponder(Number(e.key));
+    }
+  });
+
+  // Cuestionario -----------------------------------------------
   function entrarCuestionario() {
     pintarCuestionario();
   }
@@ -463,76 +669,113 @@
     publicar(`apto/${estado.persona}/cuestionario`, {
       kss: estado.kss, kss_texto: texto, horas_sueno: estado.horas, linea_base: estado.lineaBase,
     });
-    irA(6);
+    siguiente();
   });
 
-  // 6. Resultado -----------------------------------------------
+  // Resultado --------------------------------------------------
   function entrarResultado() {
+    estado.pistaVencida = false;
     pintarResultado();
-    pintarConversacion();
-    despues(PISTA_ANALIZANDO_MS, () => { if (!estado.evaluacion) $("pista-analizando").hidden = false; });
+    pintarCopiloto();
+    despues(PISTA_ANALIZANDO_MS, () => { estado.pistaVencida = true; pintarResultado(); });
+    cadaTanto(5000, pintarConversacion);  // para avisar si el copiloto no responde
   }
 
   function pintarResultado() {
+    if (estado.paso !== "resultado") return;
     const ev = estado.evaluacion;
     $("analizando").hidden = Boolean(ev);
     $("resultado").hidden = !ev;
-    if (!ev) { $("pista-analizando").hidden = true; return; }
+    if (!ev) {
+      const simulador = el("kbd", {}, `python herramientas\\simulador.py --persona ${estado.persona}`);
+      if (!activo("coordinador")) {
+        $("giro").hidden = true;
+        $("titulo-analizando").textContent = "Falta el coordinador";
+        $("estado-analizando").replaceChildren("El módulo coordinador no está abierto. Ábranlo con ",
+          el("kbd", {}, COMANDO.coordinador), ". Para probar sin él: ", simulador, " y luego 1, 2 o 3.");
+      } else {
+        $("giro").hidden = false;
+        $("titulo-analizando").textContent = "Analizando...";
+        $("estado-analizando").replaceChildren(...(estado.pistaVencida
+          ? ["El coordinador todavía no envió el resultado. Para probar sin él: ", simulador, " y luego 1, 2 o 3."]
+          : ["El coordinador está calculando tu resultado."]));
+      }
+      return;
+    }
     const color = ["verde", "amarillo", "rojo"].includes(ev.color) ? ev.color : "";
     $("semaforo").dataset.color = color;
-    $("palabra-color").replaceChildren(palabraColor(color), etiquetaSimulado(ev) || "");
+    $("palabra-color").textContent = palabraColor(color);
+    $("etiquetas-resultado").replaceChildren(...[etiquetaProvisional(ev), etiquetaSimulado(ev)].filter(Boolean));
     $("puntaje").textContent = ev.puntaje != null ? `Puntaje ${L.decimal(ev.puntaje)} · ${L.hora(L.tsAMs(ev.ts))}` : "";
     const motivos = ev.motivos && ev.motivos.length ? ev.motivos : ["Tus señales están en tu rango habitual."];
     $("motivos").replaceChildren(...motivos.map((m) => el("li", {}, m)));
     $("accion").textContent = ev.accion || "–";
   }
 
-  function agregarConversacion(datos) {
-    estado.conversacion.push(datos);
-    const i = estado.pendientes.indexOf(datos.pregunta);
-    if (i >= 0) estado.pendientes.splice(i, 1);
-    if (estado.paso === 6) pintarConversacion();
+  function pintarCopiloto() {
+    if (estado.paso !== "resultado") return;
+    const abierto = activo("copiloto");
+    $("estado-copiloto").hidden = abierto;
+    if (!abierto) $("estado-copiloto").replaceChildren("El copiloto no está abierto. Ábranlo con ", el("kbd", {}, COMANDO.copiloto), ".");
+    $("pregunta").disabled = !abierto;
+    $("enviar-pregunta").disabled = !abierto;
+    pintarConversacion();
   }
 
+  function agregarConversacion(datos) {
+    estado.conversacion.push(datos);
+    const i = estado.pendientes.findIndex((p) => p.pregunta === datos.pregunta);
+    if (i >= 0) estado.pendientes.splice(i, 1);
+    pintarConversacion();
+  }
+
+  let cantidadPintada = 0;
   function pintarConversacion() {
+    if (estado.paso !== "resultado") return;
     const items = estado.conversacion.map((d) => el("li", {},
       el("div", { class: "pregunta" }, d.pregunta === "(resumen automático)" ? "Resumen automático" : d.pregunta),
       el("div", { class: "respuesta" }, d.respuesta, el("div", { class: "meta" }, `${L.hora(L.tsAMs(d.ts))} · ${d.modo || ""}`)),
     ));
     for (const p of estado.pendientes) {
-      items.push(el("li", {}, el("div", { class: "pregunta" }, p), el("div", { class: "pendiente" }, "El copiloto está pensando…")));
+      const texto = !activo("copiloto") ? "El copiloto no está abierto."
+        : Date.now() - p.desde > ESPERA_COPILOTO_MS ? "El copiloto no respondió. Revisen su ventana." : "El copiloto está pensando…";
+      items.push(el("li", {}, el("div", { class: "pregunta" }, p.pregunta), el("div", { class: "pendiente" }, texto)));
     }
     if (!items.length) items.push(el("li", { class: "vacio" }, "Escribe una pregunta, por ejemplo: «¿Por qué salí en amarillo?»"));
     const lista = $("conversacion");
     lista.replaceChildren(...items);
-    lista.scrollTop = lista.scrollHeight;
+    if (items.length !== cantidadPintada) lista.scrollTop = lista.scrollHeight;  // solo si hay algo nuevo
+    cantidadPintada = items.length;
   }
 
   $("form-pregunta").addEventListener("submit", (e) => {
     e.preventDefault();
     const pregunta = $("pregunta").value.trim();
-    if (!pregunta || !estado.sesion) return;
+    if (!pregunta || !estado.sesion || !activo("copiloto")) return;
     publicar("apto/control/pregunta", { pregunta });
-    estado.pendientes.push(pregunta);
+    estado.pendientes.push({ pregunta, desde: Date.now() });
     $("pregunta").value = "";
     pintarConversacion();
   });
-  $("nueva").addEventListener("click", () => irA(0));
+  $("nueva").addEventListener("click", () => irA("inicio"));
 
   // ------------------------------------------------------------ arranque
   $("pantalla-completa").addEventListener("click", () => Comun.pantallaCompleta(!document.fullscreenElement));
   $("aviso-lectura").hidden = CFG.puede_publicar !== false;
 
   const params = new URLSearchParams(location.search);
-  const pasoInicial = Number(params.get("paso"));
-  if (pasoInicial >= 1 && pasoInicial <= 6) {  // atajo de prueba: sin publicar la sesión
+  let pasoInicial = params.get("paso") || "";
+  if (/^\d+$/.test(pasoInicial)) pasoInicial = PASOS[Number(pasoInicial)] || "";
+  if (PASOS.includes(pasoInicial) && pasoInicial !== "inicio") {  // atajo de prueba: sin publicar la sesión
     entrarInicio();
     estado.persona = (params.get("persona") || (CFG.tripulacion || [])[0] || "bri").toLowerCase();
     estado.tarea = params.get("tarea") || TAREAS[0];
+    estado.demo = params.get("demo") === "1";
+    estado.conDsst = params.get("dsst") === "1" || pasoInicial === "simbolos";
     estado.sesion = `prueba-${marcaSesion()}-${estado.persona}`;
     estado.inicio = Date.now();
     irA(pasoInicial);
   } else {
-    irA(0);
+    irA("inicio");
   }
 })();

@@ -288,7 +288,9 @@ def main():
 
     cli = None
     if not args.sin_mqtt:
-        cli = ClienteMQTT("voz")
+        # Solo el servicio es «el módulo de voz» que la estación espera; una medición suelta usa otro
+        # nombre, para que al terminar no avise «voz inactiva» mientras el servicio sigue abierto.
+        cli = ClienteMQTT("voz" if args.servicio else "voz-medicion")
         if not cli.conectar() and args.servicio:
             print("El modo servicio necesita MQTT. Revisen que Mosquitto esté corriendo.")
             return

@@ -26,6 +26,12 @@
     return datos && datos.simulado ? el("span", { class: "simulado", title: "Dato del simulador" }, "SIMULADO") : null;
   }
 
+  /** Etiqueta para las evaluaciones del coordinador provisional ("provisional": true). */
+  function etiquetaProvisional(datos) {
+    return datos && datos.provisional
+      ? el("span", { class: "simulado provisional", title: "Calculado por el coordinador provisional" }, "PROVISIONAL") : null;
+  }
+
   /** Palabra del color, para no depender solo del color: "verde" -> "VERDE". */
   function palabraColor(color) {
     return { verde: "VERDE", amarillo: "AMARILLO", rojo: "ROJO" }[color] || "SIN EVALUAR";
@@ -121,5 +127,5 @@
     }
   }
 
-  window.Comun = { CFG, el, etiquetaSimulado, palabraColor, partesTema, conectar, pantallaCompleta };
+  window.Comun = { CFG, el, etiquetaSimulado, etiquetaProvisional, palabraColor, partesTema, conectar, pantallaCompleta };
 })();

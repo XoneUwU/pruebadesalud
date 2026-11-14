@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  const { CFG, el, etiquetaSimulado, palabraColor } = Comun;
+  const { CFG, el, etiquetaSimulado, etiquetaProvisional, palabraColor } = Comun;
   const L = Logica;
   const $ = (id) => document.getElementById(id);
 
@@ -82,7 +82,7 @@
           vigente ? `${Math.round(pulso.lpm)} lpm` : "sin datos recientes", vigente ? etiquetaSimulado(pulso) : null));
       }
       return el("article", { class: "tarjeta panel", "data-color": ev ? ev.color : "" },
-        el("h3", {}, L.nombre(p), ev ? etiquetaSimulado(ev) : null),
+        el("h3", {}, L.nombre(p), ev ? etiquetaProvisional(ev) : null, ev ? etiquetaSimulado(ev) : null),
         ev ? el("span", { class: "chip-color", "data-color": ev.color }, palabraColor(ev.color))
           : el("span", { class: "sin-evaluar" }, "Sin evaluar"),
         filas.length ? el("dl", {}, filas) : null,

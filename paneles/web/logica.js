@@ -8,7 +8,21 @@
   const TAREAS_CON_EL = ["mantenimiento", "experimento", "acoplamiento", "control"];
 
   // PVT-B (3 minutos): lapso = 355 ms o más; anticipada = antes del estímulo o en menos de 100 ms.
-  const PVT = { LAPSO_MS: 355, ANTICIPADA_MS: 100, ISI_MIN_MS: 1000, ISI_MAX_MS: 4000, SIN_RESPUESTA_MS: 30000 };
+  const PVT = { LAPSO_MS: 355, ANTICIPADA_MS: 100, ISI_MIN_MS: 1000, ISI_MAX_MS: 4000, SIN_RESPUESTA_MS: 30000, DEMO_S: 60 };
+
+  // Prueba de símbolos (DSST): 90 s. Nueve símbolos propios en un cuadro de 40 x 40 (trazos SVG, sin fuentes).
+  const DSST_SEGUNDOS = 90;
+  const SIMBOLOS_DSST = [
+    "M20 6 L34 32 H6 Z",                                          // triángulo
+    "M8 8 H32 V32 H8 Z M8 32 L32 8",                              // cuadrado con diagonal
+    "M8 20 a12 12 0 1 0 24 0 a12 12 0 1 0 -24 0 M15 20 a5 5 0 1 0 10 0 a5 5 0 1 0 -10 0",  // dos círculos
+    "M10 33 V10 H30 V33",                                         // arco cuadrado
+    "M5 27 L13 13 L21 27 L29 13 L35 22",                          // zigzag
+    "M20 6 V34 M6 20 H34",                                        // cruz
+    "M20 5 L35 20 L20 35 L5 20 Z M20 5 V35",                      // rombo con línea
+    "M6 20 H33 M24 11 L33 20 L24 29",                             // flecha
+    "M5 20 Q20 5 35 20 Q20 35 5 20 Z M20 20 h0.1",                // ojo con punto
+  ];
 
   // Escala de somnolencia de Karolinska, con redacción sin género.
   const KSS = [
@@ -112,12 +126,28 @@
     const n = v.length;
     const media = n ? v.reduce((s, x) => s + x, 0) / n : null;
     const mediana = n ? (n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2) : null;
+    const lapsos = v.filter((x) => x >= PVT.LAPSO_MS).length + sinRespuesta;
+    const minutos = duracionMs / 60000;
     return {
       rt_media_ms: media === null ? null : Math.round(media),
       rt_mediana_ms: mediana === null ? null : Math.round(mediana),
-      lapsos: v.filter((x) => x >= PVT.LAPSO_MS).length + sinRespuesta,
+      lapsos,
       anticipadas,
+      // por minuto: así se comparan la prueba de 3 min y la de 1 min (modo demo)
+      lapsos_por_min: minutos > 0 ? Math.round((lapsos / minutos) * 100) / 100 : null,
+      anticipadas_por_min: minutos > 0 ? Math.round((anticipadas / minutos) * 100) / 100 : null,
       n_estimulos: nEstimulos,
+      duracion_s: Math.round(duracionMs / 100) / 10,
+    };
+  }
+
+  /** Resultado de la prueba de símbolos: aciertos por minuto con un decimal. */
+  function resumenDsst(correctas, incorrectas, duracionMs) {
+    const minutos = duracionMs / 60000;
+    return {
+      correctas,
+      incorrectas,
+      por_minuto: minutos > 0 ? Math.round((correctas / minutos) * 10) / 10 : null,
       duracion_s: Math.round(duracionMs / 100) / 10,
     };
   }
@@ -151,8 +181,8 @@
   }
 
   const Logica = {
-    ORDEN_COLOR, PVT, KSS, normalizar, nombre, lista, conArticulo, puntaje, ordenar, recomendacion,
-    clasificarRespuesta, resumenPvt, tsAMs, hora, ahoraIso, decimal,
+    ORDEN_COLOR, PVT, KSS, DSST_SEGUNDOS, SIMBOLOS_DSST, normalizar, nombre, lista, conArticulo, puntaje, ordenar,
+    recomendacion, clasificarRespuesta, resumenPvt, resumenDsst, tsAMs, hora, ahoraIso, decimal,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = Logica;
   else raiz.Logica = Logica;

@@ -22,35 +22,52 @@
   </div>
 
   <ol class="pasos" id="pasos" aria-label="Pasos de la evaluación">
-    <li><span class="numero-paso">0</span> <span class="nombre-paso">Inicio</span></li>
-    <li><span class="numero-paso">1</span> <span class="nombre-paso">Dispositivo</span></li>
-    <li><span class="numero-paso">2</span> <span class="nombre-paso">Cámara</span></li>
-    <li><span class="numero-paso">3</span> <span class="nombre-paso">Voz</span></li>
-    <li><span class="numero-paso">4</span> <span class="nombre-paso">Reacción</span></li>
-    <li><span class="numero-paso">5</span> <span class="nombre-paso">Cuestionario</span></li>
-    <li><span class="numero-paso">6</span> <span class="nombre-paso">Resultado</span></li>
+    <li data-paso="inicio"><span class="numero-paso"></span> <span class="nombre-paso">Inicio</span></li>
+    <li data-paso="dispositivo"><span class="numero-paso"></span> <span class="nombre-paso">Dispositivo</span></li>
+    <li data-paso="camara"><span class="numero-paso"></span> <span class="nombre-paso">Cámara</span></li>
+    <li data-paso="voz"><span class="numero-paso"></span> <span class="nombre-paso">Voz</span></li>
+    <li data-paso="reaccion"><span class="numero-paso"></span> <span class="nombre-paso">Reacción</span></li>
+    <li data-paso="simbolos"><span class="numero-paso"></span> <span class="nombre-paso">Símbolos</span></li>
+    <li data-paso="cuestionario"><span class="numero-paso"></span> <span class="nombre-paso">Cuestionario</span></li>
+    <li data-paso="resultado"><span class="numero-paso"></span> <span class="nombre-paso">Resultado</span></li>
   </ol>
 
   <main>
-    <!-- 0. Inicio -->
-    <section class="paso" data-paso="0">
+    <!-- Inicio -->
+    <section class="paso" data-paso="inicio">
       <h1>Nueva evaluación</h1>
+      <div class="modulos panel" aria-live="polite">
+        <span class="etiqueta">Módulos</span>
+        <ul id="lista-modulos"></ul>
+      </div>
       <h2 class="etiqueta">¿Quién se evalúa?</h2>
       <div class="opciones grande" id="personas"></div>
       <h2 class="etiqueta">Tarea</h2>
       <div class="opciones" id="tareas"></div>
-      <label class="casilla">
-        <input type="checkbox" id="linea-base">
-        <span>Medición de línea base
-          <small>Márcala si hoy descansaste bien: esta medición servirá para comparar las siguientes.</small></span>
-      </label>
+      <div class="casillas">
+        <label class="casilla">
+          <input type="checkbox" id="linea-base">
+          <span>Medición de línea base
+            <small>Márcala si hoy descansaste bien: esta medición servirá para comparar las siguientes.</small></span>
+        </label>
+        <label class="casilla">
+          <input type="checkbox" id="modo-demo">
+          <span>Modo demo (1 min)
+            <small>La prueba de reacción dura 1 minuto en vez de 3. Queda anotado en el resultado.</small></span>
+        </label>
+        <label class="casilla">
+          <input type="checkbox" id="con-dsst">
+          <span>Prueba de símbolos (90 s)
+            <small>Además de la de reacción: emparejar símbolos con números lo más rápido posible.</small></span>
+        </label>
+      </div>
       <div class="acciones">
         <button class="boton primario" id="comenzar" type="button" disabled>Comenzar</button>
       </div>
     </section>
 
-    <!-- 1. Dispositivo -->
-    <section class="paso" data-paso="1" hidden>
+    <!-- Dispositivo -->
+    <section class="paso" data-paso="dispositivo" hidden>
       <h1>Dispositivo <span id="sim-esp32"></span></h1>
       <p class="indicacion">Colócate el sensor en el dedo y quédate sin moverte.</p>
       <div class="medidas">
@@ -58,51 +75,51 @@
         <div class="medida panel"><span class="etiqueta">HRV</span><span class="valor" id="v-hrv">–</span><span class="unidad">ms (RMSSD)</span></div>
         <div class="medida panel"><span class="etiqueta">SpO₂</span><span class="valor" id="v-spo2">–</span><span class="unidad">% de oxígeno en sangre</span></div>
       </div>
-      <p class="estado" id="estado-esp32">Esperando el dispositivo...</p>
+      <p class="estado" id="estado-esp32" aria-live="polite">Esperando el dispositivo...</p>
       <div class="acciones">
-        <button class="boton" id="omitir-1" type="button">Omitir</button>
-        <button class="boton primario" id="continuar-1" type="button" disabled>Continuar</button>
+        <button class="boton" id="omitir-dispositivo" type="button">Omitir</button>
+        <button class="boton primario" id="continuar-dispositivo" type="button" disabled>Continuar</button>
       </div>
     </section>
 
-    <!-- 2. Cámara -->
-    <section class="paso" data-paso="2" hidden>
+    <!-- Cámara: la mide el módulo de visión; la estación no abre la cámara -->
+    <section class="paso" data-paso="camara" hidden>
       <h1>Cámara <span id="sim-vision"></span></h1>
-      <p class="indicacion">Mira a la cámara con la cara bien iluminada y sin moverte.</p>
-      <div class="cuenta" id="cuenta-camara">60</div>
-      <div class="progreso"><div id="progreso-camara"></div></div>
+      <p class="indicacion">Mira a la cámara: la ventana de visión muestra tu rostro.</p>
+      <p class="estado fuerte" id="estado-camara" aria-live="polite"></p>
+      <div class="cuenta" id="cuenta-camara" hidden>60</div>
+      <div class="progreso" id="progreso-camara-caja" hidden><div id="progreso-camara"></div></div>
       <div class="datos" id="datos-vision"></div>
-      <p class="estado" id="estado-vision">Esperando datos de la cámara…</p>
       <div class="acciones">
-        <button class="boton" id="omitir-2" type="button">Omitir</button>
-        <button class="boton primario" id="continuar-2" type="button" hidden>Continuar</button>
+        <button class="boton" id="omitir-camara" type="button">Omitir</button>
+        <button class="boton primario" id="continuar-camara" type="button" hidden>Continuar</button>
       </div>
     </section>
 
-    <!-- 3. Voz -->
-    <section class="paso" data-paso="3" hidden>
+    <!-- Voz -->
+    <section class="paso" data-paso="voz" hidden>
       <h1>Voz</h1>
       <p class="indicacion">Cuando empiece la grabación, lee esta frase en voz alta, con tono normal:</p>
       <blockquote class="frase" id="frase-voz"></blockquote>
-      <p class="estado fuerte" id="estado-voz" aria-live="polite">Presiona Grabar cuando quieras empezar.</p>
+      <p class="estado fuerte" id="estado-voz" aria-live="polite"></p>
       <div class="progreso" id="progreso-voz-caja" hidden><div id="progreso-voz"></div></div>
       <div class="resultado-voz panel" id="resultado-voz" hidden></div>
       <div class="acciones">
-        <button class="boton izquierda" id="omitir-3" type="button">Omitir</button>
+        <button class="boton izquierda" id="omitir-voz" type="button">Omitir</button>
         <button class="boton primario" id="grabar" type="button">Grabar (12 s)</button>
-        <button class="boton primario" id="continuar-3" type="button" hidden>Continuar</button>
+        <button class="boton primario" id="continuar-voz" type="button" hidden>Continuar</button>
       </div>
     </section>
 
-    <!-- 4. Prueba de reacción (PVT-B) -->
-    <section class="paso" data-paso="4" hidden>
+    <!-- Reacción (PVT-B) -->
+    <section class="paso" data-paso="reaccion" hidden>
       <h1>Prueba de reacción</h1>
       <div id="pvt-intro">
         <p class="indicacion">Cuando aparezca el contador, presiona la <kbd>barra espaciadora</kbd> o toca la
           pantalla lo más rápido que puedas. No te adelantes: si respondes antes, cuenta como anticipada.</p>
         <p class="estado" style="margin-top: 1rem">Dura <span id="pvt-duracion">3 minutos</span>.</p>
         <div class="acciones">
-          <button class="boton" id="omitir-4" type="button">Omitir</button>
+          <button class="boton" id="omitir-reaccion" type="button">Omitir</button>
           <button class="boton primario" id="pvt-empezar" type="button">Empezar la prueba</button>
         </div>
       </div>
@@ -116,17 +133,49 @@
         <div class="medidas">
           <div class="medida panel"><span class="etiqueta">Reacción media</span><span class="valor" id="pvt-media">–</span><span class="unidad">ms</span></div>
           <div class="medida panel"><span class="etiqueta">Mediana</span><span class="valor" id="pvt-mediana">–</span><span class="unidad">ms</span></div>
-          <div class="medida panel"><span class="etiqueta">Lapsos</span><span class="valor" id="pvt-lapsos">–</span><span class="unidad">355 ms o más</span></div>
+          <div class="medida panel"><span class="etiqueta">Lapsos</span><span class="valor" id="pvt-lapsos">–</span><span class="unidad" id="pvt-lapsos-min"></span></div>
           <div class="medida panel"><span class="etiqueta">Anticipadas</span><span class="valor" id="pvt-anticipadas">–</span><span class="unidad" id="pvt-estimulos"></span></div>
         </div>
         <div class="acciones">
-          <button class="boton primario" id="continuar-4" type="button">Continuar</button>
+          <button class="boton primario" id="continuar-reaccion" type="button">Continuar</button>
         </div>
       </div>
     </section>
 
-    <!-- 5. Cuestionario -->
-    <section class="paso" data-paso="5" hidden>
+    <!-- Símbolos (DSST) -->
+    <section class="paso" data-paso="simbolos" hidden>
+      <h1>Prueba de símbolos</h1>
+      <div id="dsst-intro">
+        <p class="indicacion">Arriba está la clave: cada símbolo tiene su número. Cuando aparezca un símbolo en el
+          centro, toca su número lo más rápido que puedas, sin equivocarte. También puedes usar las teclas del 1 al 9.
+          Dura 90 segundos.</p>
+        <div class="acciones">
+          <button class="boton" id="omitir-simbolos" type="button">Omitir</button>
+          <button class="boton primario" id="dsst-empezar" type="button">Empezar la prueba</button>
+        </div>
+      </div>
+      <div id="dsst-area" class="dsst-area" hidden>
+        <div class="dsst-clave" id="dsst-clave" aria-label="Clave de símbolos y números"></div>
+        <div class="dsst-centro">
+          <div class="dsst-restante" id="dsst-restante"></div>
+          <div class="dsst-simbolo" id="dsst-simbolo" aria-live="off"></div>
+        </div>
+        <div class="dsst-teclado" id="dsst-teclado"></div>
+      </div>
+      <div id="dsst-fin" hidden>
+        <div class="medidas">
+          <div class="medida panel"><span class="etiqueta">Correctas</span><span class="valor" id="dsst-correctas">–</span><span class="unidad">en 90 s</span></div>
+          <div class="medida panel"><span class="etiqueta">Incorrectas</span><span class="valor" id="dsst-incorrectas">–</span><span class="unidad">errores</span></div>
+          <div class="medida panel"><span class="etiqueta">Por minuto</span><span class="valor" id="dsst-por-minuto">–</span><span class="unidad">correctas</span></div>
+        </div>
+        <div class="acciones">
+          <button class="boton primario" id="continuar-simbolos" type="button">Continuar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cuestionario -->
+    <section class="paso" data-paso="cuestionario" hidden>
       <h1>Cuestionario</h1>
       <h2 class="etiqueta">¿Cuánto sueño tienes ahora? (escala de somnolencia de Karolinska)</h2>
       <div class="kss" id="kss"></div>
@@ -142,20 +191,18 @@
       </div>
     </section>
 
-    <!-- 6. Resultado -->
-    <section class="paso" data-paso="6" hidden>
+    <!-- Resultado -->
+    <section class="paso" data-paso="resultado" hidden>
       <div class="analizando" id="analizando">
-        <div class="giro"></div>
-        <h1>Analizando...</h1>
-        <p class="estado" id="pista-analizando" hidden>
-          Todavía no llega la evaluación del coordinador. Para probar sin el coordinador:
-          <kbd>python herramientas\simulador.py</kbd> y una de las opciones 1, 2 o 3.
-        </p>
+        <div class="giro" id="giro"></div>
+        <h1 id="titulo-analizando">Analizando...</h1>
+        <p class="estado" id="estado-analizando" aria-live="polite"></p>
       </div>
       <div class="resultado" id="resultado" hidden>
         <div class="semaforo panel" id="semaforo">
           <div class="luz"></div>
           <div class="palabra" id="palabra-color"></div>
+          <div id="etiquetas-resultado"></div>
         </div>
         <div class="detalle">
           <p class="puntaje" id="puntaje"></p>
@@ -167,10 +214,11 @@
       </div>
       <section class="copiloto panel">
         <h2 class="etiqueta">Copiloto</h2>
+        <p class="estado" id="estado-copiloto" hidden></p>
         <ol class="conversacion" id="conversacion"></ol>
         <form class="form-pregunta" id="form-pregunta" autocomplete="off">
           <input id="pregunta" type="text" placeholder="Escribe una pregunta para el copiloto" aria-label="Pregunta para el copiloto">
-          <button class="boton primario" type="submit">Enviar</button>
+          <button class="boton primario" id="enviar-pregunta" type="submit">Enviar</button>
         </form>
       </section>
       <div class="acciones">

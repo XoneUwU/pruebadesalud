@@ -27,8 +27,12 @@ rem ---- Modulos de Bri ----
 start "Voz" cmd /k %PY% voz\voz_fatiga.py --servicio
 start "Copiloto" cmd /k %PY% copiloto\copiloto.py
 
-rem ---- Modulos del equipo: quitar "rem" cuando esten en esta laptop ----
+rem ---- Coordinador: el provisional hasta que este el de Danilo ----
+rem Cuando exista coordinador\coordinador.py: poner "rem" al provisional y quitarlo al de Danilo.
+start "Coordinador provisional" cmd /k %PY% coordinador\coordinador_provisional.py
 rem start "Coordinador" cmd /k %PY% coordinador\coordinador.py
+
+rem ---- Modulos del equipo: quitar "rem" cuando esten en esta laptop ----
 rem start "Vision" cmd /k %PY% vision\vision.py
 start "Paneles" cmd /k %PY% paneles\servidor.py
 

@@ -114,7 +114,8 @@ def probar_sin_internet():
     print("\n--- nada desde internet ---")
     externo_html = re.compile(r"""(src|href)\s*=\s*["']\s*(https?:)?//""", re.I)
     externo_css = re.compile(r"""(url\(\s*["']?\s*(https?:)?//|@import)""", re.I)
-    externo_js = re.compile(r"""(https?:)?//[a-z0-9.-]+\.[a-z]{2,}/|import\s*\(|importScripts""", re.I)
+    # http://www.w3.org/2000/svg es el nombre del espacio de SVG (createElementNS), no una descarga
+    externo_js = re.compile(r"""(https?:)?//(?!www\.w3\.org/)[a-z0-9.-]+\.[a-z]{2,}/|import\s*\(|importScripts""", re.I)
     for ruta in sorted(WEB.rglob("*")):
         if not ruta.is_file() or "vendor" in ruta.parts:
             continue
@@ -167,6 +168,8 @@ process.stdin.on("end", () => {
     articulos: c.tareas.map(L.conArticulo),
     pvt: L.resumenPvt([250, 300, 400, 120], 2, 1, 7, 61234),
     clasificacion: [99, 100, 354, 355].map(L.clasificarRespuesta),
+    dsst: L.resumenDsst(45, 3, 90000),
+    simbolos: [L.SIMBOLOS_DSST.length, new Set(L.SIMBOLOS_DSST).size, L.DSST_SEGUNDOS],
   }));
 });
 """
@@ -182,9 +185,13 @@ process.stdin.on("end", () => {
                 f"\n         JS: {texto_js}\n         PY: {texto_py}")
     revisar(js["articulos"] == [con_articulo(t) for t in tareas], f"conArticulo igual al copiloto: {js['articulos']}")
     revisar(js["pvt"] == {"rt_media_ms": 268, "rt_mediana_ms": 275, "lapsos": 2, "anticipadas": 2,
-                          "n_estimulos": 7, "duracion_s": 61.2}, f"resumenPvt: {js['pvt']}")
+                          "lapsos_por_min": 1.96, "anticipadas_por_min": 1.96, "n_estimulos": 7, "duracion_s": 61.2},
+            f"resumenPvt (con lapsos y anticipadas por minuto): {js['pvt']}")
     revisar(js["clasificacion"] == ["anticipada", "valida", "valida", "lapso"],
             f"PVT 99/100/354/355 ms: {js['clasificacion']}")
+    revisar(js["dsst"] == {"correctas": 45, "incorrectas": 3, "por_minuto": 30, "duracion_s": 90},
+            f"resumenDsst: {js['dsst']}")
+    revisar(js["simbolos"] == [9, 9, 90], f"DSST: 9 símbolos distintos y 90 s: {js['simbolos']}")
 
 
 def main() -> int:

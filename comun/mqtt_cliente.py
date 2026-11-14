@@ -8,6 +8,11 @@ Uso:
     cli.suscribir("apto/+/evaluacion", mi_funcion)   # mi_funcion(tema, datos_dict)
 
 Todos los mensajes son JSON y llevan persona, sesion y ts (ver el documento del proyecto).
+
+Cada módulo avisa que está activo: al conectarse publica con retain en apto/control/modulos/{modulo}
+{"activo": true}, y deja un Last Will {"activo": false} que el broker publica si el programa se cae.
+Al cerrar con cerrar() publica {"activo": false}. La estación de los paneles lo usa para decir
+«el módulo X no está abierto». (No se usa apto/estado/{modulo}: coincidiría con apto/+/voz.)
 """
 import json
 import time
@@ -24,6 +29,11 @@ PREFIJO = "apto"
 
 def ahora_iso() -> str:
     return datetime.now().replace(microsecond=0).isoformat()
+
+
+def tema_modulo(nombre_modulo: str) -> str:
+    """tema_modulo("voz") -> "apto/control/modulos/voz" (cuatro niveles: no coincide con apto/+/voz)."""
+    return f"{PREFIJO}/control/modulos/{nombre_modulo}"
 
 
 def tema(persona: str, tipo: str) -> str:
@@ -45,6 +55,8 @@ class ClienteMQTT:
         usuario = config.get("MQTT_USER")
         if usuario:
             self._c.username_pw_set(usuario, config.get("MQTT_PASS"))
+        # Si el programa se cae, el broker publica esto por él (con retain).
+        self._c.will_set(tema_modulo(nombre_modulo), self._presencia(False), qos=1, retain=True)
         self._c.on_connect = self._on_connect
         self._c.on_disconnect = self._on_disconnect
         self._c.on_message = self._on_message
@@ -67,8 +79,20 @@ class ClienteMQTT:
         return self.conectado
 
     def cerrar(self):
-        self._c.loop_stop()
+        if self.conectado:  # al cerrar bien no hay Last Will: se avisa a mano
+            info = self._c.publish(tema_modulo(self.nombre), self._presencia(False), qos=1, retain=True)
+            try:
+                info.wait_for_publish(timeout=1.0)
+            except (RuntimeError, ValueError):
+                pass
         self._c.disconnect()
+        self._c.loop_stop()
+
+    def _presencia(self, activo: bool) -> str:
+        datos = {"modulo": self.nombre, "activo": activo}
+        if activo:
+            datos["ts"] = ahora_iso()
+        return json.dumps(datos, ensure_ascii=False)
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code.is_failure:
@@ -76,6 +100,7 @@ class ClienteMQTT:
             return
         self.conectado = True
         print(f"[{self.nombre}] Conectado a MQTT {self.host}:{self.port}")
+        client.publish(tema_modulo(self.nombre), self._presencia(True), qos=1, retain=True)
         for patron, _ in self._handlers:  # re-suscribir tras reconexión
             client.subscribe(patron, qos=1)
 

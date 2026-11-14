@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  const { CFG, el, etiquetaSimulado, palabraColor } = Comun;
+  const { CFG, el, etiquetaSimulado, etiquetaProvisional, palabraColor } = Comun;
   const L = Logica;
   const $ = (id) => document.getElementById(id);
 
@@ -61,7 +61,8 @@
       }
       return el("li", { class: "transmision panel", "data-color": ev.color },
         el("div", { class: "cabeza" }, L.nombre(t.persona),
-          el("span", { class: "chip-color", "data-color": ev.color }, palabraColor(ev.color)), etiquetaSimulado(ev)),
+          el("span", { class: "chip-color", "data-color": ev.color }, palabraColor(ev.color)), etiquetaProvisional(ev),
+          etiquetaSimulado(ev)),
         el("span", { class: "horas-tx" },
           `Enviada desde la nave ${L.hora(t.envio)} · llegó a Tierra ${L.hora(t.llegada)} (+${segundos(t.llegada - t.envio)})`),
         ev.motivos && ev.motivos.length ? el("ul", {}, ev.motivos.map((m) => el("li", {}, m))) : null,
@@ -77,7 +78,7 @@
       const t = enTierra[p];
       const ev = t && t.ev;
       return el("article", { class: "tarjeta panel", "data-color": ev ? ev.color : "" },
-        el("h3", {}, L.nombre(p), ev ? etiquetaSimulado(ev) : null),
+        el("h3", {}, L.nombre(p), ev ? etiquetaProvisional(ev) : null, ev ? etiquetaSimulado(ev) : null),
         ev ? el("span", { class: "chip-color", "data-color": ev.color }, palabraColor(ev.color))
           : el("span", { class: "sin-evaluar" }, "Sin datos en Tierra"),
         t ? el("dl", {},

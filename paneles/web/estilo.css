@@ -206,6 +206,42 @@ kbd {
 .pvt-mensaje { min-height: 1.6em; margin-top: 1rem; font-size: 1.4rem; color: var(--suave); text-align: center; }
 .pvt-ayuda { position: absolute; bottom: 0.9rem; left: 1rem; right: 1rem; text-align: center; color: var(--tenue); font-size: 0.85rem; }
 
+/* Módulos de Python abiertos (inicio de la estación) */
+.modulos { padding: 0.9rem 1.1rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem; }
+.modulos ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.6rem 1.75rem; }
+.modulos li { display: flex; align-items: flex-start; gap: 0.45rem; }
+.modulos .punto { width: 0.7rem; height: 0.7rem; margin-top: 0.4rem; border-radius: 50%; background: var(--rojo); flex: none; }
+.modulos li.activo .punto { background: var(--verde); box-shadow: 0 0 6px var(--verde); }
+.modulos li.inactivo { color: var(--suave); }
+.modulos small { display: block; font-family: var(--mono); font-size: 0.72rem; color: var(--tenue); }
+.casillas { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.75rem; }
+.simulado.provisional { border-color: var(--amarillo); color: var(--amarillo); }
+#etiquetas-resultado { display: flex; gap: 0.4rem; }
+.analizando kbd { white-space: normal; }
+
+/* Prueba de símbolos (DSST) */
+.dsst-area { display: flex; flex-direction: column; gap: 1rem; user-select: none; -webkit-user-select: none; }
+.dsst-area svg path { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.dsst-clave, .dsst-teclado { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 0.5rem; }
+.dsst-celda {
+  display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0.45rem 0.2rem;
+  border: 1px solid var(--borde-fuerte); border-radius: 8px; background: var(--panel);
+}
+.dsst-celda svg { width: 100%; max-width: 3.2rem; aspect-ratio: 1; }
+.dsst-celda span { font-family: var(--mono); font-size: 1.25rem; font-weight: 700; color: var(--acento); }
+.dsst-centro {
+  position: relative; display: flex; align-items: center; justify-content: center; min-height: 10rem;
+  border: 1px solid var(--borde); border-radius: var(--radio); background: #03060a;
+}
+.dsst-simbolo svg { width: clamp(5rem, 14vw, 9rem); aspect-ratio: 1; color: var(--amarillo); }
+.dsst-restante { position: absolute; top: 0.6rem; right: 0.9rem; font-family: var(--mono); color: var(--tenue); }
+.dsst-tecla {
+  min-height: 4.2rem; border: 2px solid var(--borde-fuerte); border-radius: var(--radio); background: var(--panel-2);
+  font-family: var(--mono); font-size: 1.8rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
+}
+.dsst-tecla:hover { border-color: var(--acento); }
+.dsst-tecla.pulsada { background: rgba(92, 200, 255, 0.28); border-color: var(--acento); }
+
 /* Cuestionario */
 .kss { display: grid; gap: 0.5rem; }
 .kss .opcion { display: flex; align-items: center; gap: 1rem; min-height: 3.2rem; text-align: left; font-size: 1.05rem; font-weight: 500; }
@@ -341,4 +377,8 @@ kbd {
   .semaforo .palabra { font-size: 2.2rem; }
   .recomendacion .titular { font-size: 1.6rem; }
   .acciones .boton { flex: 1 1 auto; }
+  .dsst-clave { gap: 0.25rem; }
+  .dsst-celda span { font-size: 1rem; }
+  .dsst-teclado { grid-template-columns: repeat(3, 1fr); }
+  .dsst-tecla { min-height: 3.6rem; }
 }
