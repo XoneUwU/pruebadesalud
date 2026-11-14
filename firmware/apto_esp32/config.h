@@ -11,20 +11,21 @@
 // ---------------------------------------------------------------- pines (ESP32 Dev Module, a confirmar con la placa)
 #define PIN_SDA 21             // I2C: MAX30102 (0x57), MPU6050 (0x68) y OLED SSD1306 (0x3C)
 #define PIN_SCL 22
-#define PIN_LED_R 25           // LED RGB
-#define PIN_LED_G 26
-#define PIN_LED_B 27
-#define LED_ANODO_COMUN 0      // 0 = cátodo común (HIGH enciende); 1 = ánodo común (LOW enciende)
-#define PIN_ZUMBADOR 4         // zumbador activo a través de un transistor: HIGH = suena
+#define PIN_LED_AMARILLO 25    // tres LED sueltos (cada uno con su resistencia de 220 Ω, cátodo a GND)
+#define PIN_LED_VERDE 26
+#define PIN_LED_ROJO 27        // los tres encendidos = lo que antes era el azul (midiendo / sin broker)
+#define PIN_ZUMBADOR 4         // zumbador a través de un transistor NPN (base con 1 kΩ)
+#define TONO_ZUMBADOR_HZ 2000  // tono de 2 kHz: suena con zumbador pasivo o activo; 0 = HIGH fijo (solo activo)
 
 // ---------------------------------------------------------------- direcciones I2C
 #define DIR_MPU6050 0x68
 #define DIR_OLED 0x3C          // el MAX30102 (0x57) lo maneja la librería de SparkFun
 
 // ---------------------------------------------------------------- persona y tiempos
-#define PERSONA_INICIAL "bri"  // hasta que llegue apto/control/sesion (la estación la publica con retain)
+#define PERSONA_INICIAL "danilo"  // hasta que llegue apto/control/sesion (la estación la publica con retain)
 #define CADA_PUBLICAR_MS 1000  // apto/{persona}/esp32 cada 1 s
-#define CADA_PANTALLA_MS 500
+#define CADA_PANTALLA_MS 200
+#define MEDICION_S 30          // medición guiada: 30 s = la ventana de la HRV (RMSSD); mínimo para una estimación ultracorta
 #define CADA_WIFI_MS 10000     // reintento de Wi-Fi (sin bloquear)
 #define CADA_MQTT_MS 5000      // reintento de MQTT (bloquea como máximo MQTT_ESPERA_S)
 #define MQTT_ESPERA_S 2
