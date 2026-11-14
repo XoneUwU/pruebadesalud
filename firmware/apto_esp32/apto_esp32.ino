@@ -1,4 +1,4 @@
-// «¿Está apto hoy?» — ESP32: pulso, HRV (RMSSD), SpO2 y movimiento; semáforo en LED RGB, OLED y zumbador.
+// «¿Está apto hoy?» — ESP32: pulso, HRV (RMSSD), SpO2 y movimiento; semáforo en 3 LED (amarillo, verde, rojo), OLED y zumbador.
 //
 //   publica  apto/{persona}/esp32           cada 1 s: persona, sesion, pulso_lpm, hrv_rmssd_ms, spo2, dedo,
 //                                           movimiento, calidad (y "simulado": true con MODO_SIMULADO)
@@ -83,20 +83,20 @@ String resMotivo = "";
 bool resAvisoSpo2 = false;
 
 // ================================================================ utilidades
-void escribirLed(bool r, bool g, bool b) {
-  bool encendido = LED_ANODO_COMUN ? LOW : HIGH;
-  digitalWrite(PIN_LED_R, r ? encendido : !encendido);
-  digitalWrite(PIN_LED_G, g ? encendido : !encendido);
-  digitalWrite(PIN_LED_B, b ? encendido : !encendido);
+void escribirLed(bool amarillo, bool verde, bool rojo) {
+  digitalWrite(PIN_LED_AMARILLO, amarillo ? HIGH : LOW);
+  digitalWrite(PIN_LED_VERDE, verde ? HIGH : LOW);
+  digitalWrite(PIN_LED_ROJO, rojo ? HIGH : LOW);
 }
 
 void mostrarColorEnLed() {
+  bool parpadeo = (millis() / 400) % 2;
   if (colorSemaforo == "verde") escribirLed(false, true, false);
-  else if (colorSemaforo == "amarillo") escribirLed(true, true, false);
-  else if (colorSemaforo == "rojo") escribirLed(true, false, false);
-  else if (colorSemaforo == "medir") escribirLed(false, false, true);                 // azul: midiendo
-  else if (colorSemaforo == "repetir") escribirLed((millis() / 400) % 2, false, (millis() / 400) % 2);  // magenta
-  else if (!SIN_RED && !mqtt.connected()) escribirLed(false, false, true);  // azul: sin conexión al broker
+  else if (colorSemaforo == "amarillo") escribirLed(true, false, false);
+  else if (colorSemaforo == "rojo") escribirLed(false, false, true);
+  else if (colorSemaforo == "medir") escribirLed(true, true, true);                // los tres: midiendo
+  else if (colorSemaforo == "repetir") escribirLed(parpadeo, parpadeo, parpadeo);  // los tres parpadean: repite
+  else if (!SIN_RED && !mqtt.connected()) escribirLed(true, true, true);  // los tres: sin conexión al broker
   else escribirLed(false, false, false);
 }
 
@@ -138,18 +138,27 @@ bool zumbando = false;
 uint32_t proximoCambioZumbador = 0;
 uint16_t duracionPitido = 150;
 
+// Con tono (TONO_ZUMBADOR_HZ > 0) suena un zumbador pasivo y también uno activo; con 0, HIGH fijo (solo activo).
+void zumbador(bool encendido) {
+  if (TONO_ZUMBADOR_HZ > 0) {
+    if (encendido) tone(PIN_ZUMBADOR, TONO_ZUMBADOR_HZ);
+    else noTone(PIN_ZUMBADOR);
+  }
+  if (!encendido || TONO_ZUMBADOR_HZ == 0) digitalWrite(PIN_ZUMBADOR, encendido ? HIGH : LOW);
+}
+
 void pitar(int veces, uint16_t ms = 150) {
   pitidosPendientes = veces;
   duracionPitido = ms;
   zumbando = false;
-  digitalWrite(PIN_ZUMBADOR, LOW);
+  zumbador(false);
   proximoCambioZumbador = millis();
 }
 
 void cuidarZumbador() {
   if (pitidosPendientes == 0 || millis() < proximoCambioZumbador) return;
   zumbando = !zumbando;
-  digitalWrite(PIN_ZUMBADOR, zumbando ? HIGH : LOW);
+  zumbador(zumbando);
   if (!zumbando) pitidosPendientes--;
   proximoCambioZumbador = millis() + (zumbando ? duracionPitido : 150);
 }
@@ -760,22 +769,24 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.printf("\n[esp32] Esta apto hoy - %s\n", MODO_SIMULADO ? "MODO SIMULADO (sin sensores)" : "sensores");
-  pinMode(PIN_LED_R, OUTPUT);
-  pinMode(PIN_LED_G, OUTPUT);
-  pinMode(PIN_LED_B, OUTPUT);
+  pinMode(PIN_LED_AMARILLO, OUTPUT);
+  pinMode(PIN_LED_VERDE, OUTPUT);
+  pinMode(PIN_LED_ROJO, OUTPUT);
   pinMode(PIN_ZUMBADOR, OUTPUT);
   digitalWrite(PIN_ZUMBADOR, LOW);
-  // Prueba del cableado al arrancar: rojo, verde, azul y un pitido corto
+  // Prueba del cableado al arrancar: amarillo, verde, rojo, los tres y un pitido corto
   escribirLed(true, false, false);
-  delay(300);
+  delay(400);
   escribirLed(false, true, false);
-  delay(300);
+  delay(400);
   escribirLed(false, false, true);
-  digitalWrite(PIN_ZUMBADOR, HIGH);
-  delay(100);
-  digitalWrite(PIN_ZUMBADOR, LOW);
+  delay(400);
+  escribirLed(true, true, true);
+  zumbador(true);
+  delay(150);
+  zumbador(false);
   delay(200);
-  escribirLed(false, false, !SIN_RED);  // azul (sin broker) solo si hay red configurada
+  escribirLed(!SIN_RED, !SIN_RED, !SIN_RED);  // los tres (sin broker) solo si hay red configurada
   if (SIN_RED) Serial.println("[esp32] Modo local: WIFI_SSID vacio, sin Wi-Fi ni MQTT");
 
   Wire.begin(PIN_SDA, PIN_SCL);
@@ -835,7 +846,7 @@ void loop() {
   if (millis() - ultimaPantalla >= CADA_PANTALLA_MS) {
     ultimaPantalla = millis();
     dibujarPantalla();
-    // azul mientras no hay conexión; en modo local, el magenta de «repite» parpadea
+    // los tres mientras no hay conexión; en modo local, en «repite» parpadean
     if (!colorSemaforo.length() || colorSemaforo == "repetir") mostrarColorEnLed();
   }
   if (millis() - ultimoResumen >= 5000) {
