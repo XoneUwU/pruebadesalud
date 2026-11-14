@@ -54,7 +54,8 @@ def publicar_esp32(cli: ClienteMQTT, persona: str):
     cli.publicar(tema(persona, "esp32"), {
         "persona": persona, "simulado": True,
         "pulso_lpm": round(random.gauss(72, 4)), "hrv_rmssd_ms": round(random.gauss(42, 6), 1),
-        "spo2": round(random.gauss(97.5, 0.6), 1), "movimiento": round(abs(random.gauss(0.05, 0.03)), 3),
+        "spo2": round(random.gauss(97.5, 0.6), 1), "movimiento": round(abs(random.gauss(0.02, 0.01)), 3),
+        "dedo": True, "calidad": 0.9,
     })
 
 

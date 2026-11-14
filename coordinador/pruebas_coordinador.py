@@ -57,6 +57,9 @@ CASOS = [
     ("sensor 75 lpm manda sobre la cámara (130 con buena calidad)",
      sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 130, "calidad_rppg": 0.9}, esp32={"pulso_lpm": 75}), None, "verde", []),
     ("sensor 110 lpm", sesion(esp32={"pulso_lpm": 110}), None, "amarillo", ["Pulso en reposo alto"]),
+    ("sensor: HRV 30 % más baja que la base", sesion(esp32={"pulso_lpm": 72, "hrv_rmssd_ms": 31.5}),
+     {"esp32": [{"pulso_lpm": 70, "hrv_rmssd_ms": 45}]}, "amarillo", ["Variabilidad del pulso más baja de lo habitual"]),
+    ("sensor: HRV sin base no se juzga", sesion(esp32={"pulso_lpm": 72, "hrv_rmssd_ms": 15}), None, "verde", []),
     ("visión: cara vista el 30 % del tiempo no cuenta", sesion(vision={"perclos": 0.4, "cara_detectada_pct": 30}),
      None, "verde", []),
     ("visión: pulso 130 con mala calidad no cuenta", sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 130, "calidad_rppg": 0.3}),
@@ -118,15 +121,19 @@ def main() -> int:
     coord = Coordinador(cli)
     coord._al_sesion("apto/control/sesion", {"persona": "sebas", "tarea": "caminata espacial", "sesion": "s9"})
     for pulso in (72, 74, 140, 73):  # una lectura suelta mala (140) no debe pesar
-        coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": pulso})
+        coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": pulso, "dedo": True, "calidad": 0.9})
+    for _ in range(3):  # sin dedo o con mala calidad: no cuentan
+        coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": 130, "dedo": False, "calidad": 0})
+        coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": 130, "dedo": True, "calidad": 0.2})
     coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s9", "kss": 3, "horas_sueno": 8})
     s = coord.sesiones[("sebas", "s9")]
     s["timer"].cancel()
     coord._publicar("sebas", "s9")
     ev = next(d for t, d in cli.mensajes if t == "apto/sebas/evaluacion")
-    ok = len(s["esp32"]) == 4 and ev["color"] == "verde" and "esp32" in ev["senales"]
+    ok = len(s["esp32"]) == 10 and ev["color"] == "verde" and "esp32" in ev["senales"]
     fallas += not ok
-    print(f"{'OK   ' if ok else 'FALLA'}  ESP32: 4 lecturas juntadas (mediana), sin recalcular por cada una -> {ev['color']} {ev['senales']}")
+    print(f"{'OK   ' if ok else 'FALLA'}  ESP32: 10 lecturas juntadas, solo 4 válidas (con dedo y calidad) en la mediana "
+          f"-> {ev['color']} {ev['senales']}")
 
     total = len(CASOS) + 3
     print(f"\n{total - fallas} de {total} pasaron.")

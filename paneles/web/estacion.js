@@ -24,6 +24,7 @@
     ["copiloto", "Copiloto", "python copiloto\\copiloto.py"],
     ["vision", "Visión", "módulo de visión (Erick)"],
     ["coordinador", "Coordinador", "python coordinador\\coordinador_provisional.py"],
+    ["esp32", "ESP32", "enciendan la placa (firmware\\apto_esp32) en la misma red"],
   ];
   const COMANDO = Object.fromEntries(MODULOS.map(([m, , c]) => [m, c]));
   const modulos = {};  // nombre -> true si avisó que está activo
@@ -61,8 +62,8 @@
     "apto/control/estado_voz", "apto/control/estado_vision", "apto/control/estado_escucha", "apto/control/modulos/+",
   ], alMensaje);
 
-  function publicar(tema, datos) {
-    return mqttc.publicar(tema, { persona: estado.persona, sesion: estado.sesion, ...datos });
+  function publicar(tema, datos, retener) {
+    return mqttc.publicar(tema, { persona: estado.persona, sesion: estado.sesion, ...datos }, retener);
   }
 
   /** Un mensaje retenido (guardado en el broker) solo cuenta si es de esta sesión o posterior a su inicio. */
@@ -195,7 +196,7 @@
     estado.conDsst = $("con-dsst").checked;
     estado.sesion = `${marcaSesion()}-${estado.persona}`;
     estado.inicio = Date.now();
-    publicar("apto/control/sesion", { tarea: estado.tarea });
+    publicar("apto/control/sesion", { tarea: estado.tarea }, true);  // con retain: el ESP32 la sabe aunque se reinicie
     Comun.pantallaCompleta(true);
     irA("dispositivo");
   });
@@ -215,14 +216,23 @@
     $("v-spo2").textContent = d && d.spo2 != null ? L.decimal(d.spo2, 1) : "–";
     $("sim-esp32").replaceChildren(...[etiquetaSimulado(d)].filter(Boolean));
     if (!d) {
-      $("estado-esp32").textContent = tarde
-        ? "No llegan datos del dispositivo. Revisen que el ESP32 esté encendido y conectado a la misma red, o toquen Omitir."
-        : "Esperando el dispositivo...";
+      $("estado-esp32").textContent = !activo("esp32") && tarde
+        ? "El ESP32 no está conectado al broker. Revisen que esté encendido y en la misma red, o toquen Omitir."
+        : tarde
+          ? "No llegan datos del dispositivo. Revisen que el ESP32 esté encendido y conectado a la misma red, o toquen Omitir."
+          : "Esperando el dispositivo...";
     } else {
       const s = Math.round((Date.now() - estado.esp32Llegada) / 1000);
-      $("estado-esp32").textContent = s <= 3 ? "Datos en vivo." : `Sin datos nuevos desde hace ${s} s.`;
+      if (s > 3) $("estado-esp32").textContent = `Sin datos nuevos desde hace ${s} s.`;
+      else if (d.dedo === false) $("estado-esp32").textContent = "Coloca el dedo en el sensor y quédate sin moverte.";
+      else if (d.pulso_lpm == null) $("estado-esp32").textContent = "Dedo detectado: midiendo el pulso (unos segundos)…";
+      else {
+        const calidad = d.calidad != null ? ` · calidad ${L.decimal(d.calidad)}` : "";
+        const mov = d.movimiento != null && d.movimiento > 0.05 ? " · hay movimiento: quédate quieto" : "";
+        $("estado-esp32").textContent = `Datos en vivo${calidad}${mov}.`;
+      }
     }
-    $("continuar-dispositivo").disabled = !d;
+    $("continuar-dispositivo").disabled = !d || d.dedo === false;
   }
   $("continuar-dispositivo").addEventListener("click", siguiente);
   $("omitir-dispositivo").addEventListener("click", siguiente);

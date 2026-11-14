@@ -385,7 +385,8 @@ class Copiloto:
         self.persona, self.tarea = persona, tarea
         print(f"[copiloto] Persona activa: {persona}  Tarea: {tarea or '-'}")
         if self.cli:
-            self.cli.publicar("apto/control/sesion", {"persona": persona, "tarea": tarea})
+            # con retain, como la estación: el ESP32 sabe la persona activa aunque se reinicie
+            self.cli.publicar("apto/control/sesion", {"persona": persona, "tarea": tarea}, retener=True)
 
     def _al_recibir_pregunta(self, _tema: str, datos: dict):
         pregunta = (datos.get("pregunta") or "").strip()

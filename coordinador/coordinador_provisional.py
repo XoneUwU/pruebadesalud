@@ -29,8 +29,10 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
                 +15 % = 1, +30 % = 2                       | sin base: 100 lpm = 1, 120 lpm = 2
                 bostezos (desde 2 en la medición): 2 por minuto = 1 | con base: 2 por minuto más = 1 (nunca 2)
                 si cara_detectada_pct < CARA_MIN_PCT (50), la visión no cuenta
-  ESP32         pulso del sensor (mediana de las lecturas de la sesión): +15 % = 1, +30 % = 2 | sin base: 100 = 1,
-                120 = 2. SI HAY PULSO DEL SENSOR, MANDA: el de la cámara no se usa.
+  ESP32         solo lecturas con dedo y calidad >= 0,5; se usa la mediana de las de la sesión.
+                pulso: +15 % = 1, +30 % = 2 | sin base: 100 = 1, 120 = 2.
+                HRV (RMSSD): 25 % más baja que la base = 1, 50 % = 2 (solo con base).
+                SI HAY PULSO DEL SENSOR, MANDA: el de la cámara no se usa.
 Los puntos de cada fuente (pvt, dsst, cuestionario, voz, vision) son los de su peor indicador.
   rojo      si alguna fuente tiene 2 puntos, o si 3 fuentes o más tienen puntos
   amarillo  si alguna fuente tiene puntos
@@ -54,6 +56,7 @@ ARCHIVO_BASE = config.RAIZ / "datos" / "coordinador" / "linea_base.jsonl"
 ESPERA_S = 1.5  # tras el cuestionario, para juntar los mensajes que todavía vienen en camino
 CALIDAD_RPPG_MIN = 0.5  # calidad_rppg (0 a 1) desde la que se cree el pulso medido por la cámara
 CARA_MIN_PCT = 50       # con la cara visible menos tiempo, la visión no cuenta
+CALIDAD_ESP32_MIN = 0.5  # lecturas del ESP32 con menos calidad (o sin dedo) no cuentan
 ACCIONES = {
     "verde": "Puede realizar la tarea",
     "amarillo": "Reasignar la tarea o hacerla en pareja, y descansar antes",
@@ -100,6 +103,11 @@ def _indicadores(tipo: str, m: dict, base: list[dict], hay_pulso_sensor: bool = 
             r.append((_escala(hr / hr_b - 1, 0.15, 0.30), "Pulso en reposo más alto de lo habitual"))
         elif hr is not None:
             r.append((_escala(hr, 100, 120), "Pulso en reposo alto"))
+        hrv, hrv_b = _num(m.get("hrv_rmssd_ms")), _promedio(_num(b.get("hrv_rmssd_ms")) for b in base)
+        if hrv is not None and hrv_b:  # solo contra la línea base: la HRV de 30 s varía mucho entre personas
+            r.append((_escala(1 - hrv / hrv_b, 0.25, 0.50), "Variabilidad del pulso más baja de lo habitual"))
+        elif hrv is not None:
+            r.append((0, ""))
         return r
     if tipo == "pvt":
         rt, rt_b = _num(m.get("rt_media_ms")), _promedio(_num(b.get("rt_media_ms")) for b in base)
@@ -215,13 +223,23 @@ def evaluar(datos: dict[str, dict], base: dict[str, list[dict]] | None = None) -
     }
 
 
+def lectura_esp32_valida(m: dict) -> bool:
+    """Con el dedo puesto y calidad suficiente (los mensajes viejos, sin esos campos, cuentan)."""
+    if m.get("dedo") is False:
+        return False
+    calidad = _num(m.get("calidad"))
+    return calidad is None or calidad >= CALIDAD_ESP32_MIN
+
+
 def resumen_esp32(lecturas: list[dict]) -> dict:
-    """Mediana de las lecturas del ESP32 de una sesión (resiste lecturas sueltas malas)."""
+    """Mediana de las lecturas válidas del ESP32 de una sesión (resiste lecturas sueltas malas)."""
+    validas = [m for m in lecturas if lectura_esp32_valida(m)]
+
     def mediana(campo):
-        vs = [x for x in (_num(m.get(campo)) for m in lecturas) if x is not None]
+        vs = [x for x in (_num(m.get(campo)) for m in validas) if x is not None]
         return round(float(sorted(vs)[len(vs) // 2]), 1) if vs else None
     return {"pulso_lpm": mediana("pulso_lpm"), "spo2": mediana("spo2"), "hrv_rmssd_ms": mediana("hrv_rmssd_ms"),
-            "lecturas": len(lecturas)}
+            "lecturas": len(lecturas), "lecturas_validas": len(validas)}
 
 
 # ---------------------------------------------------------------- línea base

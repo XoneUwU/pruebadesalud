@@ -4,3 +4,4 @@ datos/
 modelos/
 mosquitto/passwd
 *.wav
+firmware/apto_esp32/secrets.h

@@ -20,7 +20,7 @@ apto-hoy/
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
 ├── mosquitto/            configuración del broker (evento y desarrollo)
 ├── vision/               pulso sin contacto, parpadeos y PERCLOS por cámara (MediaPipe)
-├── firmware/             ← carpeta del resto del equipo
+├── firmware/             ESP32 (apto_esp32): pulso, HRV, SpO2, movimiento y semáforo (ver firmware/README.md)
 └── datos/                grabaciones e historial (no se sube a Git)
 ```
 
@@ -78,8 +78,8 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 
 | Tema | Publica | Lee | Contenido |
 |---|---|---|---|
-| `apto/control/sesion` | Panel (Sebas), copiloto | Todos | `{"persona", "tarea", "sesion"}`: inicio de una evaluación y persona activa. La estación lo publica al tocar «Comenzar» (`sesion` = `20261113-193005-bri`). El copiloto lo publica cuando alguien dice «soy Erick», «habla Sebas» o «aquí Bri» (nombres de `TRIPULACION` en `config.env`). |
-| `apto/control/modulos/{modulo}` | Todos los módulos de Python (`comun/mqtt_cliente.py`) | Estación | `{"modulo", "activo": true}` al conectarse, **con retain**; el Last Will publica `{"activo": false}` si el programa se cae, y `cerrar()` lo publica al salir bien. La estación espera los nombres `voz`, `copiloto`, `vision` y `coordinador`. Son cuatro niveles a propósito: `apto/estado/{modulo}` coincidiría con `apto/+/voz`. |
+| `apto/control/sesion` | Panel (Sebas), copiloto | Todos | `{"persona", "tarea", "sesion"}`: inicio de una evaluación y persona activa. **Con retain**: el ESP32 (y cualquier módulo que se reinicie) sabe la persona activa al conectarse. La estación lo publica al tocar «Comenzar» (`sesion` = `20261113-193005-bri`). El copiloto lo publica cuando alguien dice «soy Erick», «habla Sebas» o «aquí Bri» (nombres de `TRIPULACION` en `config.env`). |
+| `apto/control/modulos/{modulo}` | Todos los módulos de Python (`comun/mqtt_cliente.py`) y el ESP32 | Estación | `{"modulo", "activo": true}` al conectarse, **con retain**; el Last Will publica `{"activo": false}` si el programa se cae, y `cerrar()` lo publica al salir bien. La estación espera los nombres `voz`, `copiloto`, `vision`, `coordinador` y `esp32`. Son cuatro niveles a propósito: `apto/estado/{modulo}` coincidiría con `apto/+/voz`. |
 | `apto/control/orden_vision` | Panel (Sebas) | Visión | `{"accion": "medir", "persona", "segundos": 60, "sesion"}`: la estación pide un minuto de medición con la cámara (la estación no abre la cámara: lo hace el módulo de visión, que muestra el rostro en su ventana) |
 | `apto/control/estado_vision` | Visión | Panel | `{"persona", "sesion", "estado": "midiendo", "segundos_restantes"}` cada 5 s mientras mide; al terminar `"listo"`, o `"error"` con `"motivo"` (por ejemplo «No se encontró la cámara»). La estación lo muestra en el paso de la cámara. |
 | `apto/control/orden_voz` | Panel (Sebas) | Voz | `{"accion": "grabar", "persona", "segundos", "linea_base", "sesion", "frase"}`. `frase`: `estandar` (por defecto), `variacion_1`, `variacion_2` o `trabalenguas`; cada frase tiene su propia línea base |
@@ -87,7 +87,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/control/estado_escucha` | Copiloto | Panel | `{"persona", "estado"}`: `escuchando`, `transcribiendo`, `listo` (con `texto`: la pregunta entendida) o `error` (con `motivo`) |
 | `apto/control/estado_voz` | Voz | Panel | `{"persona", "estado": "grabando" o "listo"}` |
 | `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta", "sesion"}`: pregunta escrita desde la estación |
-| `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador | Pulso, HRV, SpO₂, movimiento, sueño |
+| `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador, estación | Cada 1 s: `persona`, `sesion`, `pulso_lpm`, `hrv_rmssd_ms` (RMSSD de 30 s), `spo2`, `dedo`, `movimiento` (g), `calidad` (0 a 1); sin dedo, pulso, HRV y SpO2 en `null`; `"simulado": true` con `MODO_SIMULADO`. El coordinador usa la mediana de las lecturas con dedo y calidad ≥ 0,5: su pulso manda sobre el de la cámara, y la HRV se compara con la línea base. Ver `firmware/README.md` |
 | `apto/{persona}/vision` | Visión (Erick) | Coordinador | `perclos` (fracción de 0 a 1 con los ojos cerrados; acepta también porcentaje), `parpadeos_min`, `bostezos` y `bostezos_min`, `pulso_rppg_lpm` (null si la calidad es baja) y `calidad_rppg` (0 a 1), `ear_abierto`, `cabeza_inclinada_pct`, `cara_detectada_pct`, `fps`, `duracion_s`, `avisos`, `linea_base` y la `sesion` de la orden. El coordinador provisional usa el pulso solo si `calidad_rppg` ≥ 0,5, y los parpadeos solo contra la línea base. El módulo usa `ClienteMQTT("vision")` para que la estación lo vea activo. |
 | `apto/{persona}/voz` | Voz (Bri) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | PVT-B en el navegador: `rt_media_ms`, `rt_mediana_ms`, `lapsos` (355 ms o más, o sin respuesta en 30 s), `anticipadas` (antes del estímulo o en menos de 100 ms), `lapsos_por_min` y `anticipadas_por_min` (para comparar 3 min con 1 min), `n_estimulos`, `duracion_s`, `linea_base`, `modo_demo` (true = 1 minuto) |
