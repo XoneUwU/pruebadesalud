@@ -1,6 +1,5 @@
-# Prueba de salud — ¿Está apto hoy?
+# Prueba de salud 
 
-NASA Space Apps Challenge 2026 · Reto «Create Health Monitoring Software for Astronauts on Space Missions».
 
 Repositorio común del equipo: todos los módulos (ver «Equipo»), la conexión MQTT que usan todos, la configuración
 de Mosquitto, un simulador y los scripts de Windows.
