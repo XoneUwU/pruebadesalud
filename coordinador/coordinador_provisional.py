@@ -27,8 +27,10 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
                 parpadeos por minuto: +50 % = 1 (solo con base: lo normal varía mucho entre personas; nunca 2)
                 pulso por cámara (pulso_rppg_lpm), SOLO si calidad_rppg >= CALIDAD_RPPG_MIN (0 a 1):
                 +15 % = 1, +30 % = 2                       | sin base: 100 lpm = 1, 120 lpm = 2
-                bostezos (desde 2 en la medición): 2 por minuto = 1 | con base: 2 por minuto más = 1 (nunca 2)
+                bostezos (desde 2 en la medición, también los tapados con la mano): 2 por minuto = 1 |
+                con base: 2 por minuto más = 1 (nunca 2)
                 si cara_detectada_pct < CARA_MIN_PCT (50), la visión no cuenta
+                con "lentes": true (se midió con lentes puestos) los ojos (PERCLOS y parpadeos) no cuentan
   ESP32         solo lecturas con dedo y calidad >= 0,5; se usa la mediana de las de la sesión.
                 pulso: +15 % = 1, +30 % = 2 | sin base: 100 = 1, 120 = 2.
                 HRV (RMSSD): 25 % más baja que la base = 1, 50 % = 2 (solo con base).
@@ -164,15 +166,17 @@ def _indicadores(tipo: str, m: dict, base: list[dict], hay_pulso_sensor: bool = 
         cara = _num(m.get("cara_detectada_pct"))
         if cara is not None and cara < CARA_MIN_PCT:
             return r  # se vio poco la cara: la visión no cuenta como fuente evaluada
-        p = _num(m.get("perclos"))
+        ojos = not m.get("lentes")  # con lentes puestos el EAR puede salir mal: los ojos no cuentan
+        p = _num(m.get("perclos")) if ojos else None
         p = p / 100 if p is not None and p > 1 else p  # por si llega en porcentaje
-        p_b = _promedio((_num(b.get("perclos")) for b in base))
+        p_b = _promedio((_num(b.get("perclos")) for b in base if not b.get("lentes")))
         p_b = p_b / 100 if p_b is not None and p_b > 1 else p_b
         if p is not None and p_b is not None:
             r.append((_escala(p - p_b, 0.05, 0.10), "Ojos cerrados más tiempo de lo habitual"))
         elif p is not None:
             r.append((_escala(p, 0.15, 0.25), "Ojos cerrados más tiempo de lo normal"))
-        pm, pm_b = _num(m.get("parpadeos_min")), _promedio(_num(b.get("parpadeos_min")) for b in base)
+        pm = _num(m.get("parpadeos_min")) if ojos else None
+        pm_b = _promedio(_num(b.get("parpadeos_min")) for b in base if not b.get("lentes"))
         if pm is not None and pm_b:
             r.append((min(1, _escala(pm / pm_b - 1, 0.5, 99)), "Más parpadeos de lo habitual"))
         elif pm is not None:

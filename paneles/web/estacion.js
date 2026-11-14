@@ -82,11 +82,13 @@
     const deLaPersona = estado.sesion && datos.persona === estado.persona;
     if (tema === "apto/control/estado_voz") { if (deLaPersona) alEstadoVoz(datos); return; }
     if (tema === "apto/control/estado_escucha") { if (deLaPersona) alEstadoEscucha(datos); return; }
-    if (tema === "apto/control/estado_vision") {  // {"estado": "midiendo", "segundos_restantes"} / "listo" / "error" + "motivo"
+    // {"estado": "midiendo", "segundos_restantes"} / "lentes" + "mensaje" / "listo" / "error" + "motivo"
+    if (tema === "apto/control/estado_vision") {
       if (deLaPersona) {
         estado.estadoVision = String(datos.estado || "");
         estado.visionRestantes = datos.segundos_restantes;
         estado.visionMotivo = datos.motivo || "";
+        estado.visionMensaje = datos.mensaje || "";
         pintarCamara();
       }
       return;
@@ -275,6 +277,7 @@
     pulso_rppg_lpm: ["Pulso (cámara)", "lpm", 0], calidad_rppg: ["Calidad del pulso", "de 0 a 1", 2],
     perclos: ["PERCLOS", "fracción de tiempo con los ojos cerrados", 2], parpadeos_min: ["Parpadeos", "por minuto", 1],
     ear_abierto: ["EAR ojo abierto", "", 2], bostezos: ["Bostezos", "en la medición", 0],
+    bostezos_tapados: ["Bostezos tapados", "con la mano (ya incluidos)", 0],
     cara_detectada_pct: ["Cara detectada", "% del tiempo", 0],
     fps: ["Cuadros por segundo", "", 0], pulso_lpm: ["Pulso (cámara)", "lpm", 0],
   };
@@ -300,6 +303,8 @@
       texto = "El módulo de visión se cerró: no llegaron datos de la cámara.";
     } else if (estado.estadoVision === "listo") {
       texto = "La medición terminó, pero no llegaron datos.";
+    } else if (estado.estadoVision === "lentes") {  // la medición espera a que se quiten los lentes
+      texto = estado.visionMensaje || "Se ven lentes: quítatelos para continuar con la medición.";
     } else if (estado.estadoVision === "midiendo") {
       const quedan = Number(estado.visionRestantes);
       texto = estado.visionRestantes != null && Number.isFinite(quedan) ? `Midiendo… quedan ${Math.round(quedan)} s.` : "Midiendo…";
@@ -307,6 +312,7 @@
       texto = estado.estadoVision || "Esperando al módulo de visión…";
     }
     $("estado-camara").textContent = texto;
+    $("estado-camara").classList.toggle("aviso-camara", !d && estado.estadoVision === "lentes");
     if (!d) { $("datos-vision").replaceChildren(); return; }
     if (Array.isArray(d.avisos) && d.avisos.length) {  // avisos de calidad del módulo (luz, cara, fps, pulso dudoso)
       $("estado-camara").replaceChildren(texto, el("ul", { class: "avisos-vision" }, d.avisos.map((a) => el("li", {}, a))));

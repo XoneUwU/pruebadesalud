@@ -16,7 +16,8 @@ Orden por MQTT (la envía la estación):
   apto/control/orden_vision -> {"accion": "medir", "persona": "bri", "segundos": 60, "linea_base": false, "sesion": "..."}
 Mientras mide, abre la ventana de vista previa (la estación le dice a la persona que ahí ve su rostro), publica
 apto/control/estado_vision {"estado": "midiendo", "segundos_restantes"} cada 5 s y al final "listo", o "error"
-con "motivo". Al terminar cierra la ventana y suelta la cámara.
+con "motivo". Si antes de empezar ve lentes: {"estado": "lentes", "mensaje", "espera_s"} (pide quitarlos). Al
+terminar cierra la ventana y suelta la cámara.
 
 Cámara: CAMARA en config.env (índice 0, 1… o la URL de DroidCam, como http://IP:4747/video). Por cable USB:
 CAMARA=http://127.0.0.1:4747/video; antes de cada medición se rehace «adb forward» hacia el celular.
@@ -28,7 +29,9 @@ MÉTODOS
   señal/ruido del pico (de Haan y Jeanne, 2013: potencia a ±0,1 Hz del pico y de su armónico contra el resto de
   la banda), llevada a 0..1 con calidad = (SNR dB + 3) / 12. Con calidad menor que CALIDAD_MIN no se publica el
   número: se avisa.
-  Ojos: EAR = (|p2-p6| + |p3-p5|) / (2 |p1-p4|), con 6 puntos por ojo y el promedio de los dos ojos.
+  Ojos: EAR = (|p2-p6| + |p3-p5|) / (2 |p1-p4|), con 6 puntos por ojo. Para parpadeos y PERCLOS cuenta el ojo
+  MÁS abierto de los dos: un parpadeo o un cierre son con los dos ojos, y cerrar uno solo (un guiño) no cuenta.
+  Para los bostezos se usa el promedio de los dos (al bostezar se achican ambos).
   EAR de ojo abierto = mediana de los primeros 5 s. Parpadeo = EAR por debajo del 60 % del abierto durante al
   menos 2 cuadros seguidos. PERCLOS = fracción del tiempo con la cara visible en que el EAR está por debajo del
   30 % del abierto. Es una aproximación del criterio «ojo cerrado al 80 %» (P80): el EAR no llega a 0 con el ojo
@@ -40,6 +43,35 @@ MÉTODOS
   comisuras internas. Bostezo = MAR >= 0,6 que se mantiene (hasta bajar de 0,45) al menos 1,5 s: hablar abre la
   boca menos y por menos tiempo. Durante un bostezo los ojos se achican: esos cuadros no cuentan para los
   parpadeos ni para el PERCLOS.
+  Bostezos tapados con la mano (en Bolivia, como en otros lugares, se bosteza tapándose la boca): MediaPipe
+  Hands (HandLandmarker) busca manos 1 de cada 2 cuadros; «mano en la boca» = 4 o más de sus 21 puntos dentro
+  del rectángulo de la boca y la nariz. No se decide con un cuadro sino con la secuencia: por cada vez que la
+  mano queda ahí al menos 1 s se mira
+    (1) si la boca se abrió en los 1,5 s anteriores a la mano o entre los dedos (MAR >= 0,5 al menos 0,3 s, o
+        >= 0,3 al menos 0,6 s: se abre de a poco);
+    (2) si la mano tapó antes de poder medir la boca: si la mandíbula bajó mientras la mano estaba (el largo de
+        la cara en 3D, de la raíz de la nariz al mentón, suavizado en ~0,5 s, crece un 8 % o más sobre el de
+        reposo al menos 0,8 s; en 3D, girar o inclinar la cabeza no lo cambia);
+    (2b) o si los ojos quedaron muy cerrados (< 60 % del abierto) al menos 1,5 s con la mano ahí: con la mano
+        encima la malla inventa la boca y la mandíbula; lo que se ve es que los pómulos suben y cierran los ojos.
+        En pruebas reales con 5 personas, una mano en la boca sin bostezar dejó los ojos al 87 % o más;
+    (3) siempre: si los ojos se entrecerraron (EAR suavizado < 85 % del abierto al menos 0,3 s seguidos) desde
+        1,5 s antes hasta 0,5 s después de que se va la mano. Es suave a propósito: hay quien casi no achica los
+        ojos al bostezar.
+  Es bostezo con (3) y además (1), (2) o (2b). Un bostezo visto con la boca abierta y luego tapado cuenta una sola
+  vez. El ojo abierto y la mandíbula de reposo de cada mano salen de los 20 s anteriores (sigue a la persona que
+  está delante) y las condiciones solo pueden pasar de «no» a «sí»: una decisión tomada no cambia y el contador
+  en vivo nunca baja. Cuando la mano se va, la consola explica qué se midió y qué faltó (y en --ver también la ventana), para
+  ajustar BOSTEZO_OJOS_FRAC, BOSTEZO_OJOS_S, BOSTEZO_MANDIBULA y BOSTEZO_OJOS_MUY_FRAC en config.env.
+  Con la mano en la cara esos cuadros no cuentan para el pulso (la mano tapa las mejillas).
+  Lentes: MediaPipe no trae un clasificador de lentes. Con la malla se ubica el puente de la nariz entre los ojos
+  (puntos 168 y 6), por donde cruza la montura; se endereza la imagen con la línea de los ojos y se mide el borde
+  horizontal más marcado ahí (Sobel vertical), dividido por la textura típica de la piel (mejillas y frente):
+  sin lentes el puente es piel lisa. Se decide con 2 s de cuadros (60 % o más sobre LENTES_UMBRAL = lentes).
+  Antes de medir, si hay lentes, se pide quitarlos (en la ventana y con apto/control/estado_vision "lentes") y
+  la medición empieza sola cuando ya no se ven. Si a los LENTES_ESPERA_S siguen puestos, se mide igual con
+  "lentes": true y los ojos no cuentan para el semáforo. Lentes sin montura o de montura muy fina pueden no
+  detectarse; el umbral se ajusta mirando el puntaje en --ver.
   Avisos: poca luz, demasiada luz, cara no detectada más del 20 % del tiempo, menos de 15 cuadros por segundo y
   pulso poco confiable.
 Es una sugerencia para apoyar la decisión, no un diagnóstico.
@@ -51,6 +83,8 @@ import os
 import sys
 import threading
 import time
+import warnings
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -71,6 +105,13 @@ MODELO = config.RAIZ / "modelos" / "face_landmarker.task"
 URL_MODELO = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/"
               "face_landmarker.task")
 VENTANA = "Vision - Esta apto hoy"
+
+def _real(clave: str, defecto: float) -> float:
+    try:
+        return float(config.get(clave, "") or defecto)
+    except ValueError:
+        return defecto
+
 
 # --- pulso
 FS = 30.0                 # Hz, frecuencia a la que se vuelve a muestrear
@@ -93,6 +134,52 @@ BOCA_COMISURAS = (78, 308)                          # comisuras internas
 BOSTEZO_MAR = 0.6         # boca muy abierta
 BOSTEZO_FIN_MAR = 0.45    # se considera cerrada otra vez por debajo de esto (histéresis)
 BOSTEZO_MIN_S = 1.5       # hablar abre la boca menos tiempo
+# --- bostezos tapados con la mano (MediaPipe Hands)
+MODELO_MANOS = config.RAIZ / "modelos" / "hand_landmarker.task"
+URL_MODELO_MANOS = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/"
+                    "hand_landmarker.task")
+MANOS_CADA = 2            # las manos se buscan 1 de cada 2 cuadros (en el otro se usa el último resultado)
+MANO_PUNTOS_MIN = 4       # puntos de la mano (de 21) dentro de la zona de la boca y la nariz
+MANO_HUECO_S = 0.4        # huecos más cortos con la mano en la boca se rellenan (la detección parpadea)
+MANO_MIN_S = 1.0          # menos tiempo con la mano en la boca no es un bostezo tapado
+PREVIO_S = 1.5            # ventana de antes de que llegue la mano
+MAR_PREVIO = 0.5          # boca «significativamente abierta» justo antes de taparla (o entre los dedos)...
+MAR_PREVIO_S = 0.3        # ...al menos este tiempo (al toser se abre menos tiempo)
+MAR_ABRIENDO = 0.3        # o abriéndose de a poco: MAR >= 0,3...
+MAR_ABRIENDO_S = 0.6      # ...al menos este tiempo seguido (al hablar abre y cierra varias veces por segundo)
+# Ojos entrecerrados = EAR (suavizado con la mediana de 5 cuadros: quita el temblor de la malla) por debajo del
+# 85 % del ojo abierto, al menos 0,3 s seguidos. Hay quien casi no achica los ojos al bostezar: por eso es suave.
+OJOS_BOSTEZO_FRAC = _real("BOSTEZO_OJOS_FRAC", 0.85)
+OJOS_BOSTEZO_S = _real("BOSTEZO_OJOS_S", 0.3)
+OJOS_DESPUES_S = 0.5      # los ojos se miran hasta 0,5 s después de que se va la mano
+SUAVIZADO = 5             # cuadros de la mediana móvil del EAR y de la mandíbula
+MANO_DIAGNOSTICO_S = 0.3  # desde aquí una mano en la boca sale en el diagnóstico (aunque no llegue a MANO_MIN_S)
+# La mandíbula baja: la cara (suavizada) se alarga un 8 % o más sobre la de reposo... Con la mano encima, MediaPipe
+# tiende a dibujar la boca cerrada y la mandíbula sube poco (en pruebas reales, +6 a +12 % durante el bostezo).
+MANDIBULA_SUBE = _real("BOSTEZO_MANDIBULA", 0.08)
+MANDIBULA_MIN_S = 0.8     # ...al menos este tiempo seguido (al hablar sube y baja más rápido)
+# O bien: ojos muy cerrados (< 60 % del abierto) al menos 1,5 s seguidos con la mano en la boca. Con la mano encima,
+# la malla inventa la parte de abajo de la cara (dibuja la boca cerrada y la mandíbula casi quieta); lo que se ve
+# es la de arriba: al bostezar suben los pómulos y cierran los ojos desde abajo. En las pruebas reales (5 personas),
+# una mano en la boca sin bostezar dejó los ojos al 87-180 %, y los bostezos tapados, por debajo del 60 % varios s.
+OJOS_MUY_FRAC = _real("BOSTEZO_OJOS_MUY_FRAC", 0.60)
+OJOS_MUY_S = 1.5
+SUAVIZADO_MANDIBULA = 15  # cuadros (~0,5 s): el bostezo baja la mandíbula despacio; al hablar sube y baja rápido
+# El ojo abierto y la mandíbula de reposo de cada mano en la boca salen de los 20 s ANTERIORES a la mano (sin mano y,
+# para la mandíbula, con la boca cerrada): la decisión no cambia con lo que pase después (el contador no baja) y
+# sigue a la persona que está delante (en --ver pueden pasar varias). Si antes hay menos de 40 cuadros de reposo,
+# se usan los primeros 40 de la medición; si todavía no hay, la mano queda pendiente.
+BASE_VENTANA_S = 20.0
+BASE_MIN_CUADROS = 40
+UNIR_S = 1.0              # dos detecciones a menos de 1 s son el mismo bostezo
+# --- lentes (ajustables en config.env)
+LENTES_REVISAR = config.get("LENTES_REVISAR", "1").strip() != "0"
+LENTES_UMBRAL = _real("LENTES_UMBRAL", 4.0)      # puntaje desde el que un cuadro «tiene lentes»
+LENTES_ESPERA_S = _real("LENTES_ESPERA_S", 30.0)  # cuánto se espera a que se los quiten
+LENTES_REVISION_S = 2.0   # se decide con los cuadros de los últimos 2 s, no con uno
+LENTES_FRAC = 0.6         # hay lentes si el 60 % o más de esos cuadros pasa el umbral...
+LENTES_LIBRE_FRAC = 0.2   # ...y ya no hay cuando baja al 20 % o menos
+MENSAJE_LENTES = ("Se ven lentes: quítatelos para continuar con la medición. Empieza sola cuando ya no se vean.")
 # --- avisos
 LUZ_MIN, LUZ_MAX = 60, 210                # brillo medio de la piel (0 a 255)
 SATURADO_MAX = 0.05                       # fracción de píxeles de piel saturados
@@ -112,6 +199,19 @@ def ear(ojo: np.ndarray) -> float:
     return float((np.linalg.norm(p2 - p6) + np.linalg.norm(p3 - p5)) / (2 * ancho)) if ancho > 0 else float("nan")
 
 
+def ear_ojos(pts: np.ndarray) -> tuple[float, float]:
+    """EAR de cada ojo por separado: (derecho, izquierdo)."""
+    return ear(pts[OJO_DER]), ear(pts[OJO_IZQ])
+
+
+def ear_parpadeo(ear_der, ear_izq) -> np.ndarray:
+    """EAR para parpadeos y PERCLOS: el del ojo MÁS abierto de los dos. Así un parpadeo o un cierre son con los dos
+    ojos, y cerrar uno solo (un guiño) no cuenta. Si falta uno, vale el otro."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.fmax(np.asarray(ear_der, float), np.asarray(ear_izq, float))
+
+
 def ear_cara(pts: np.ndarray) -> float:
     return (ear(pts[OJO_DER]) + ear(pts[OJO_IZQ])) / 2
 
@@ -124,28 +224,284 @@ def mar(pts: np.ndarray) -> float:
     return float(np.mean([np.linalg.norm(pts[a] - pts[b]) for a, b in BOCA_VERTICAL]) / ancho)
 
 
-def analizar_boca(t: np.ndarray, mares: np.ndarray) -> dict:
-    """Bostezos: MAR >= BOSTEZO_MAR que se mantiene (hasta bajar de BOSTEZO_FIN_MAR) al menos BOSTEZO_MIN_S.
+def mandibula(pts: np.ndarray, z: np.ndarray | None = None) -> float:
+    """Largo de la cara (raíz de la nariz, punto 168, al mentón, 152) / distancia entre los rabillos externos de los
+    ojos. Sube cuando baja la mandíbula, aunque la mano tape los labios. Con la profundidad z de la malla (en la misma
+    escala que x) se mide en 3D: girar o inclinar la cabeza no la cambia (en la imagen plana, girar la cabeza acorta
+    la distancia entre los ojos y la cara parece más larga)."""
+    p = np.column_stack([pts[:, :2], z]) if z is not None and len(z) == len(pts) else pts[:, :2]
+    escala = float(np.linalg.norm(p[33] - p[263]))
+    return float(np.linalg.norm(p[168] - p[152]) / escala) if escala > 0 else float("nan")
 
-    Devuelve bostezos, bostezos_min y `durante` (máscara de los cuadros de cada bostezo)."""
-    t, mares = np.asarray(t, float), np.asarray(mares, float)
-    durante = np.zeros(len(t), bool)
-    bostezos, inicio = 0, None
+
+def zona_boca(pts: np.ndarray) -> tuple[float, float, float, float]:
+    """Rectángulo (x0, y0, x1, y1) de la boca y la nariz, donde va la mano al taparse un bostezo."""
+    e = float(np.linalg.norm(pts[33] - pts[263]))
+    cx = (pts[61][0] + pts[291][0]) / 2
+    return cx - 0.6 * e, pts[1][1] - 0.15 * e, cx + 0.6 * e, pts[152][1] + 0.1 * e
+
+
+def mano_en_boca(zona, manos) -> bool:
+    """¿Alguna mano tiene al menos MANO_PUNTOS_MIN de sus 21 puntos dentro de la zona de la boca?"""
+    x0, y0, x1, y1 = zona
+    for m in manos:
+        m = np.asarray(m, float)
+        if (((m[:, 0] >= x0) & (m[:, 0] <= x1) & (m[:, 1] >= y0) & (m[:, 1] <= y1)).sum()) >= MANO_PUNTOS_MIN:
+            return True
+    return False
+
+
+def _tramos(mascara) -> list[tuple[int, int]]:
+    """Tramos seguidos de True: [(inicio, fin_exclusivo)]."""
+    m = np.concatenate(([False], np.asarray(mascara, bool), [False]))
+    cambios = np.flatnonzero(m[1:] != m[:-1])
+    return [(int(a), int(b)) for a, b in zip(cambios[::2], cambios[1::2])]
+
+
+def _racha_s(t: np.ndarray, mascara) -> float:
+    """Duración (s) del tramo seguido de True más largo."""
+    return max((float(t[b - 1] - t[a]) for a, b in _tramos(mascara)), default=0.0)
+
+
+def _rellenar(t: np.ndarray, mascara, hueco_s: float) -> np.ndarray:
+    """Une los tramos de True separados por huecos de hueco_s o menos."""
+    m = np.asarray(mascara, bool).copy()
+    tramos = _tramos(m)
+    for (_, b1), (a2, _) in zip(tramos, tramos[1:]):
+        if t[a2] - t[b1 - 1] <= hueco_s:
+            m[b1:a2] = True
+    return m
+
+
+def _bostezos_abiertos(t: np.ndarray, mares: np.ndarray) -> list[tuple[int, int]]:
+    """Tramos (índices) con MAR >= BOSTEZO_MAR que se mantiene (hasta bajar de BOSTEZO_FIN_MAR) BOSTEZO_MIN_S."""
+    tramos, inicio = [], None
     for i, m in enumerate(mares):
         abierta = np.isfinite(m) and (m >= BOSTEZO_MAR or (inicio is not None and m >= BOSTEZO_FIN_MAR))
         if abierta and inicio is None:
             inicio = i
         elif not abierta and inicio is not None:
             if t[i - 1] - t[inicio] >= BOSTEZO_MIN_S:
-                bostezos += 1
-                durante[inicio:i] = True
+                tramos.append((inicio, i))
             inicio = None
     if inicio is not None and t[-1] - t[inicio] >= BOSTEZO_MIN_S:
-        bostezos += 1
-        durante[inicio:] = True
-    tiempo_cara = float(np.isfinite(mares).sum() / max(len(t), 1) * (t[-1] - t[0])) if len(t) > 1 else 0.0
-    return {"bostezos": bostezos, "bostezos_min": round(bostezos / (tiempo_cara / 60), 1) if tiempo_cara > 0 else None,
+        tramos.append((inicio, len(t)))
+    return tramos
+
+
+def _suavizar(x, n: int = SUAVIZADO) -> np.ndarray:
+    """Mediana móvil de n cuadros (sin contar los NaN): quita el temblor de la malla sin correr los cambios."""
+    x = np.asarray(x, float)
+    if len(x) < n:
+        return x.copy()
+    ventanas = np.lib.stride_tricks.sliding_window_view(np.pad(x, n // 2, mode="edge"), n)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # ventanas sin ningún dato -> NaN
+        return np.nanmedian(ventanas, axis=1)
+
+
+def episodios_mano(t, mares, ears, manos, mandibulas) -> list[dict]:
+    """Cada vez que la mano quedó en la zona de la boca (los huecos cortos de la detección se rellenan), lo que se
+    midió y si es un bostezo tapado. Condiciones:
+      (0) la mano queda al menos MANO_MIN_S;
+      (1) boca abierta antes de la mano (en los PREVIO_S anteriores) o entre los dedos: MAR >= MAR_PREVIO al menos
+          MAR_PREVIO_S, o MAR >= MAR_ABRIENDO al menos MAR_ABRIENDO_S seguidos (se abre de a poco);
+      (2) o, si la mano tapó antes de poder medir la boca, la mandíbula bajó: con la mano ahí, el largo de la cara
+          (suavizado) supera en MANDIBULA_SUBE el de reposo (sin mano y con la boca cerrada) MANDIBULA_MIN_S;
+      (3) ojos entrecerrados: EAR suavizado < OJOS_BOSTEZO_FRAC del abierto al menos OJOS_BOSTEZO_S seguidos, entre
+          PREVIO_S antes de la mano y OJOS_DESPUES_S después de que se va;
+      (4) o ojos muy cerrados: con la mano ahí (hasta OJOS_DESPUES_S después), EAR suavizado < OJOS_MUY_FRAC del
+          abierto al menos OJOS_MUY_S seguidos (los pómulos suben y cierran los ojos; la mandíbula no se ve).
+    Es bostezo con (0), (3) y además (1), (2) o (4). El ojo abierto y la mandíbula de reposo salen de antes de la
+    mano (BASE_VENTANA_S), y cada condición es una racha que solo puede crecer: lo que pase después no cambia la
+    decisión, así que el contador en vivo nunca baja. Salen también las manos de MANO_DIAGNOSTICO_S o más, para ver
+    qué faltó; "pendiente" si aún no hay reposo para comparar."""
+    t = np.asarray(t, float)
+    mares, ears = np.asarray(mares, float), np.asarray(ears, float)
+    manos, mand = np.asarray(manos, float), np.asarray(mandibulas, float)
+    en_boca = _rellenar(t, manos == 1, MANO_HUECO_S)
+    reposo_ojos = np.isfinite(ears) & ~en_boca
+    reposo_mand = np.isfinite(mand) & ~en_boca & (np.nan_to_num(mares, nan=1.0) < 0.3)
+
+    def base(valores, reposo, ta):  # mediana del reposo de los BASE_VENTANA_S anteriores (o del principio)
+        antes = reposo & (t >= ta - BASE_VENTANA_S) & (t < ta)
+        if antes.sum() >= BASE_MIN_CUADROS:
+            return float(np.median(valores[antes]))
+        primeros = np.flatnonzero(reposo)[:BASE_MIN_CUADROS]
+        return float(np.median(valores[primeros])) if len(primeros) >= BASE_MIN_CUADROS else None
+
+    ears_s, mand_s = _suavizar(ears), _suavizar(mand, SUAVIZADO_MANDIBULA)
+    mar0 = np.nan_to_num(mares, nan=0.0)
+    muy_abierta, abriendo = mar0 >= MAR_PREVIO, mar0 >= MAR_ABRIENDO
+    salida = []
+    for a, b in _tramos(en_boca):
+        ta, tb = float(t[a]), float(t[b - 1])
+        if tb - ta < MANO_DIAGNOSTICO_S:
+            continue
+        abierto, base_mand = base(ears, reposo_ojos, ta), base(mand, reposo_mand, ta)
+        ep = {"mano_desde": ta, "fin": tb, "mano_s": tb - ta, "pendiente": abierto is None or abierto <= 0,
+              "bostezo": False, "inicio": ta}
+        if ep["pendiente"]:
+            salida.append(ep)
+            continue
+        ventana_boca = (t >= ta - PREVIO_S) & (t <= tb)  # antes de la mano y entre los dedos
+        boca_s = _racha_s(t, muy_abierta & ventana_boca)
+        abriendo_s = _racha_s(t, abriendo & ventana_boca)
+        con_mano = np.zeros(len(t), bool)
+        con_mano[a:b] = True
+        mand_pct, mand_dur = None, 0.0
+        if base_mand:
+            rel = mand_s[con_mano & np.isfinite(mand_s)] / base_mand - 1
+            mand_pct = float(rel.max() * 100) if len(rel) else None
+            mand_dur = _racha_s(t, con_mano & np.isfinite(mand_s) & (mand_s >= base_mand * (1 + MANDIBULA_SUBE)))
+        ventana_ojos = (t >= ta - PREVIO_S) & (t <= tb + OJOS_DESPUES_S)
+        vistos = ears_s[ventana_ojos & np.isfinite(ears_s)]
+        ojos_pct = float(vistos.min() / abierto * 100) if len(vistos) else None
+        ojos_dur = _racha_s(t, np.isfinite(ears_s) & (ears_s < OJOS_BOSTEZO_FRAC * abierto) & ventana_ojos)
+        muy_cerrados = np.isfinite(ears_s) & (ears_s < OJOS_MUY_FRAC * abierto) & (t >= ta) & (t <= tb + OJOS_DESPUES_S)
+        ojos_muy_dur = _racha_s(t, muy_cerrados)
+        ep.update({"boca_previa_s": boca_s, "boca_abriendo_s": abriendo_s, "mandibula_pct": mand_pct,
+                   "mandibula_s": mand_dur, "ojos_pct": ojos_pct, "ojos_s": ojos_dur, "ojos_muy_s": ojos_muy_dur,
+                   "mano_ok": tb - ta >= MANO_MIN_S,
+                   "boca_ok": boca_s >= MAR_PREVIO_S or abriendo_s >= MAR_ABRIENDO_S,
+                   "mandibula_ok": mand_dur >= MANDIBULA_MIN_S, "ojos_ok": ojos_dur >= OJOS_BOSTEZO_S,
+                   "ojos_cerrados_ok": ojos_muy_dur >= OJOS_MUY_S})
+        ep["bostezo"] = ep["mano_ok"] and ep["ojos_ok"] and (ep["boca_ok"] or ep["mandibula_ok"]
+                                                             or ep["ojos_cerrados_ok"])
+        ep["inicio"] = ta - PREVIO_S if ep["boca_ok"] else ta
+        salida.append(ep)
+    return salida
+
+
+def bostezos_tapados(t, mares, ears, manos, mandibulas) -> list[tuple[float, float]]:
+    """Bostezos tapados con la mano -> [(inicio, fin)] en segundos (ver episodios_mano)."""
+    return [(e["inicio"], e["fin"]) for e in episodios_mano(t, mares, ears, manos, mandibulas) if e["bostezo"]]
+
+
+def texto_episodio(ep: dict, corto: bool = False) -> str:
+    """Una mano en la boca explicada: qué se midió, qué pide cada condición y qué faltó. `corto`: sin tildes, para
+    la ventana de OpenCV."""
+    if ep.get("pendiente"):
+        return (f"MANO {ep['mano_s']:.1f}s | todavia sin reposo para comparar" if corto else
+                f"[vision] Mano en la boca {ep['mano_s']:.1f} s: todavía no hay {BASE_MIN_CUADROS} cuadros de reposo para "
+                f"comparar; se decide después")
+    mand = f"{ep['mandibula_pct']:+.0f}" if ep["mandibula_pct"] is not None else "?"
+    ojos = f"{ep['ojos_pct']:.0f}" if ep["ojos_pct"] is not None else "?"
+    if corto:
+        return (f"MANO {ep['mano_s']:.1f}s | boca {ep['boca_previa_s']:.1f}s/{ep['boca_abriendo_s']:.1f}s | mandibula "
+                f"{mand}% {ep['mandibula_s']:.1f}s | ojos {ojos}% {ep['ojos_s']:.1f}s, muy cerrados {ep['ojos_muy_s']:.1f}s"
+                f" -> {'BOSTEZO' if ep['bostezo'] else 'no'}")
+    faltan = []
+    if not ep["mano_ok"]:
+        faltan.append(f"la mano estuvo menos de {MANO_MIN_S:g} s")
+    if not ep["ojos_ok"]:
+        faltan.append("los ojos casi no se entrecerraron")
+    if not (ep["boca_ok"] or ep["mandibula_ok"] or ep["ojos_cerrados_ok"]):
+        faltan.append("no se vio la boca abierta (antes o entre los dedos), ni bajar la mandíbula, ni los ojos muy "
+                      "cerrados")
+    final = "BOSTEZO" if ep["bostezo"] else "no es bostezo: " + "; ".join(faltan)
+    return (f"[vision] Mano en la boca {ep['mano_s']:.1f} s | boca abierta {ep['boca_previa_s']:.1f} s con MAR >= "
+            f"{MAR_PREVIO:g} (pide {MAR_PREVIO_S:g}) o {ep['boca_abriendo_s']:.1f} s con >= {MAR_ABRIENDO:g} (pide "
+            f"{MAR_ABRIENDO_S:g}) | mandíbula hasta {mand} %, {ep['mandibula_s']:.1f} s sobre +{MANDIBULA_SUBE * 100:.0f} % "
+            f"(pide {MANDIBULA_MIN_S:g} s) | ojos hasta el {ojos} % del abierto, {ep['ojos_s']:.1f} s bajo el "
+            f"{OJOS_BOSTEZO_FRAC * 100:.0f} % (pide {OJOS_BOSTEZO_S:g} s) y {ep['ojos_muy_s']:.1f} s bajo el "
+            f"{OJOS_MUY_FRAC * 100:.0f} % (pide {OJOS_MUY_S:g} s) -> {final}")
+
+
+def _unir(tramos: list[tuple[float, float, bool]]) -> list[tuple[float, float, bool]]:
+    """(inicio, fin, tapado) que se solapan o están a menos de UNIR_S -> uno solo (tapado si alguno lo fue)."""
+    salida: list[tuple[float, float, bool]] = []
+    for ini, fin, tapado in sorted(tramos):
+        if salida and ini - salida[-1][1] <= UNIR_S:
+            p = salida[-1]
+            salida[-1] = (p[0], max(p[1], fin), p[2] or tapado)
+        else:
+            salida.append((ini, fin, tapado))
+    return salida
+
+
+def analizar_boca(t: np.ndarray, mares: np.ndarray, ears=None, manos=None, mandibulas=None) -> dict:
+    """Bostezos con la boca a la vista (MAR >= BOSTEZO_MAR sostenido BOSTEZO_MIN_S) y, si se dan por cuadro los
+    ojos, la mano en la boca (1, 0 o NaN) y la mandíbula, también los tapados con la mano (bostezos_tapados).
+    Los que se solapan cuentan una vez. Con la mano encima el MAR no sirve: esos cuadros no cuentan para la boca.
+
+    Devuelve bostezos, bostezos_tapados, bostezos_min y `durante` (máscara de los cuadros de cada bostezo)."""
+    t, mares = np.asarray(t, float), np.asarray(mares, float)
+    n = len(t)
+    con_manos = manos is not None and len(manos) == n and ears is not None and len(ears) == n
+    vista = mares.copy()
+    if con_manos:
+        vista[np.asarray(manos, float) == 1] = np.nan
+    tramos = [(float(t[a]), float(t[b - 1]), False) for a, b in _bostezos_abiertos(t, vista)]
+    if con_manos and n > 1:
+        mand = mandibulas if mandibulas is not None and len(mandibulas) == n else np.full(n, np.nan)
+        tramos += [(a, b, True) for a, b in bostezos_tapados(t, mares, ears, manos, mand)]
+    unidos = _unir(tramos)
+    durante = np.zeros(n, bool)
+    for ini, fin, _ in unidos:
+        durante |= (t >= ini) & (t <= fin)
+    tiempo_cara = float(np.isfinite(mares).sum() / max(n, 1) * (t[-1] - t[0])) if n > 1 else 0.0
+    bostezos = len(unidos)
+    return {"bostezos": bostezos, "bostezos_tapados": sum(1 for *_, tap in unidos if tap),
+            "bostezos_min": round(bostezos / (tiempo_cara / 60), 1) if tiempo_cara > 0 else None,
             "durante": durante}
+
+
+def puntaje_lentes(cuadro_bgr: np.ndarray, pts: np.ndarray) -> float | None:
+    """Indicio de lentes en un cuadro: el borde horizontal más marcado en el puente de la nariz (entre los ojos, por
+    donde cruza la montura) dividido por la textura típica de la piel (mejillas y frente). Sin lentes el puente es
+    piel lisa (cerca de 1 a 2); con montura sube mucho. La imagen se endereza antes con la línea de los ojos.
+    None si la cara es muy chica para ver una montura."""
+    import cv2
+    e = float(np.linalg.norm(pts[33] - pts[263]))
+    if e < 40:
+        return None
+    dx, dy = pts[263] - pts[33]
+    centro = (float(pts[168][0]), float(pts[168][1]))
+    lado = int(2.4 * e)
+    giro = cv2.getRotationMatrix2D(centro, float(np.degrees(np.arctan2(dy, dx))), 1.0)
+    giro[:, 2] += (lado / 2 - centro[0], lado / 2 - centro[1])  # el punto 168 queda en el centro del recorte
+    gris = cv2.cvtColor(cuadro_bgr, cv2.COLOR_BGR2GRAY) if cuadro_bgr.ndim == 3 else cuadro_bgr
+    recorte = cv2.warpAffine(gris, giro, (lado, lado), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    gy = np.abs(cv2.Sobel(cv2.GaussianBlur(recorte, (3, 3), 0).astype(np.float32), cv2.CV_32F, 0, 1, ksize=3))
+    p = pts @ giro[:, :2].T + giro[:, 2]  # los puntos, en el recorte enderezado
+
+    def filas(x0, y0, x1, y1):  # promedio de |Gy| de cada fila del rectángulo
+        x0, y0, x1, y1 = max(0, int(x0)), max(0, int(y0)), min(lado, int(x1)), min(lado, int(y1))
+        return gy[y0:y1, x0:x1].mean(axis=1) if x1 - x0 >= 4 and y1 - y0 >= 3 else None
+
+    cx = (p[168][0] + p[6][0]) / 2
+    puente = filas(cx - 0.09 * e, p[168][1] - 0.06 * e, cx + 0.09 * e, p[6][1] + 0.06 * e)
+    piel = []
+    for ojo, boca in ((33, 61), (263, 291)):  # mejillas
+        c = 0.45 * p[ojo] + 0.55 * p[boca]
+        piel.append(filas(c[0] - 0.12 * e, c[1] - 0.12 * e, c[0] + 0.12 * e, c[1] + 0.12 * e))
+    y_ceja, cxf = p[[105, 334, 66, 296]][:, 1].min(), (p[105][0] + p[334][0]) / 2
+    piel.append(filas(cxf - 0.32 * e, y_ceja - 0.38 * e, cxf + 0.32 * e, y_ceja - 0.08 * e))  # frente
+    niveles = [float(np.median(f)) for f in piel if f is not None]
+    if puente is None or not niveles:
+        return None
+    return float(puente.max() / (np.median(niveles) + 1.0))  # la mediana: un flequillo o una barba no la mueven
+
+
+class RevisionLentes:
+    """Decide si hay lentes con los cuadros con cara de los últimos LENTES_REVISION_S segundos, no con uno solo."""
+
+    def __init__(self, umbral: float = LENTES_UMBRAL, ventana_s: float = LENTES_REVISION_S):
+        self.umbral, self.ventana_s = umbral, ventana_s
+        self._marcas: deque[tuple[float, bool]] = deque()
+
+    def agregar(self, t: float, puntaje: float | None):
+        if puntaje is not None:
+            self._marcas.append((t, puntaje >= self.umbral))
+        while self._marcas and t - self._marcas[0][0] > self.ventana_s:
+            self._marcas.popleft()
+
+    def fraccion(self) -> float | None:
+        """Fracción de cuadros con lentes, o None si aún no hay bastantes (10 cuadros que cubran el 70 % de la ventana)."""
+        if len(self._marcas) < 10 or self._marcas[-1][0] - self._marcas[0][0] < 0.7 * self.ventana_s:
+            return None
+        return sum(m for _, m in self._marcas) / len(self._marcas)
 
 
 def regiones(pts: np.ndarray, ancho: int, alto: int) -> list[tuple[int, int, int, int]]:
@@ -297,26 +653,47 @@ class Registro:
 
     def __init__(self):
         self.t, self.rgb, self.ear, self.mar, self.brillo, self.saturado = [], [], [], [], [], []
-        self.inclinacion = []
+        self.inclinacion, self.mano, self.mandibula, self.lentes = [], [], [], []
+        self.ear_der, self.ear_izq = [], []  # cada ojo por separado (para no contar un guiño como parpadeo)
+        self.con_lentes = False   # se midió con lentes porque no se los quitaron a tiempo
+        self.sin_manos = False    # no se pudo usar la detección de manos
 
-    def agregar(self, t: float, pts, cuadro_bgr, inclinacion: float = float("nan")):
+    def agregar(self, t: float, pts, cuadro_bgr, inclinacion: float = float("nan"), mano: float = float("nan"),
+                lentes: float | None = None, z=None):
+        """mano: 1 con una mano en la boca, 0 sin, NaN si no se pudo ver. lentes: puntaje_lentes del cuadro.
+        z: profundidad de cada punto (para medir la mandíbula en 3D)."""
         self.t.append(t)
+        self.mano.append(mano)
+        self.lentes.append(np.nan if lentes is None else lentes)
         if pts is None:
             self.rgb.append([np.nan] * 3)
             self.ear.append(np.nan)
+            self.ear_der.append(np.nan)
+            self.ear_izq.append(np.nan)
             self.mar.append(np.nan)
+            self.mandibula.append(np.nan)
             self.inclinacion.append(np.nan)
             return
-        self.ear.append(ear_cara(pts))
+        der, izq = ear_ojos(pts)
+        self.ear.append((der + izq) / 2)  # el promedio: para los bostezos (los dos ojos se achican)
+        self.ear_der.append(der)
+        self.ear_izq.append(izq)
         self.mar.append(mar(pts))
+        self.mandibula.append(mandibula(pts, z))
         self.inclinacion.append(inclinacion)
         piel = color_piel(cuadro_bgr, regiones(pts, cuadro_bgr.shape[1], cuadro_bgr.shape[0]))
-        if piel is None:
+        if piel is None or mano == 1:  # con la mano en la boca, las mejillas pueden ser la mano: no cuenta para el pulso
             self.rgb.append([np.nan] * 3)
         else:
             self.rgb.append(list(piel[0]))
             self.brillo.append(piel[1])
             self.saturado.append(piel[2])
+
+    def ears_parpadeo(self) -> np.ndarray:
+        """EAR del ojo más abierto por cuadro (ver ear_parpadeo); si no hay de cada ojo, el promedio."""
+        if len(self.ear_der) == len(self.ear_izq) == len(self.ear):
+            return ear_parpadeo(self.ear_der, self.ear_izq)
+        return np.asarray(self.ear, float)
 
     def pulso_reciente(self, segundos: float = VIVO_SEGUNDOS) -> dict | None:
         if not self.t:
@@ -331,8 +708,11 @@ class Registro:
         cara_pct = float(np.isfinite(np.asarray(self.ear, float)).mean() * 100) if len(t) else 0.0
         fps = (len(t) - 1) / duracion if duracion > 0 else 0.0
         pulso = estimar_pulso(t, np.asarray(self.rgb, float)) if len(t) else None
-        boca = analizar_boca(t, np.asarray(self.mar, float)) if len(t) > 1 else None
-        ears = np.asarray(self.ear, float).copy()
+        n = len(t)
+        manos = self.mano if len(self.mano) == n and not self.sin_manos else None
+        mand = self.mandibula if len(self.mandibula) == n else None
+        boca = analizar_boca(t, np.asarray(self.mar, float), np.asarray(self.ear, float), manos, mand) if n > 1 else None
+        ears = self.ears_parpadeo().copy()  # el ojo más abierto: un guiño no es parpadeo ni cierre
         if boca is not None:
             ears[boca["durante"]] = np.nan  # al bostezar se achican los ojos: no cuenta como parpadeo ni cierre
         incl = self.inclinacion if len(self.inclinacion) == len(t) else None
@@ -351,6 +731,11 @@ class Registro:
         if ojos and ojos["cabeza_inclinada_pct"] > 20:
             avisos.append(f"La cabeza estuvo inclinada (mirando hacia abajo) el {ojos['cabeza_inclinada_pct']:.0f} % del "
                           f"tiempo: esos momentos no cuentan para los ojos.")
+        if self.con_lentes:
+            avisos.append("Se midió con lentes puestos: los ojos (parpadeos y PERCLOS) pueden salir mal y no cuentan "
+                          "para el semáforo.")
+        if self.sin_manos:
+            avisos.append("No se pudo usar la detección de manos: los bostezos tapados con la mano no se cuentan.")
         if pulso is None:
             avisos.append("No hubo datos suficientes para el pulso.")
         elif not pulso["confiable"]:
@@ -366,6 +751,8 @@ class Registro:
             "cabeza_inclinada_pct": ojos["cabeza_inclinada_pct"] if ojos else None,
             "bostezos": boca["bostezos"] if boca else None,
             "bostezos_min": boca["bostezos_min"] if boca else None,
+            "bostezos_tapados": boca["bostezos_tapados"] if boca else None,
+            "lentes": bool(self.con_lentes),
             "cara_detectada_pct": round(cara_pct, 1),
             "fps": round(fps, 1),
             "duracion_s": round(duracion, 1),
@@ -529,17 +916,19 @@ def listar_camaras():
     print("\nPongan el número en CAMARA dentro de config.env, o la URL de DroidCam (http://IP:4747/video).")
 
 
-def asegurar_modelo() -> Path:
-    if MODELO.exists():
-        return MODELO
+def asegurar_modelo(ruta: Path = MODELO, url: str = URL_MODELO, que: str = "de la cara") -> Path:
+    if ruta.exists():
+        return ruta
     import urllib.request
-    print(f"[vision] Descargando el modelo de la cara a {MODELO} (una sola vez)...")
-    MODELO.parent.mkdir(parents=True, exist_ok=True)
+    print(f"[vision] Descargando el modelo {que} a {ruta} (una sola vez)...")
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    parcial = ruta.with_suffix(".parcial")
     try:
-        urllib.request.urlretrieve(URL_MODELO, MODELO)
+        urllib.request.urlretrieve(url, parcial)
+        parcial.replace(ruta)  # si se corta la descarga no queda un modelo a medias
     except OSError as e:
-        raise ErrorMedicion(f"Falta {MODELO.name} y no se pudo descargar ({e}). Corran instalar.bat.") from e
-    return MODELO
+        raise ErrorMedicion(f"Falta {ruta.name} y no se pudo descargar ({e}). Corran instalar.bat.") from e
+    return ruta
 
 
 class Rostro:
@@ -557,6 +946,7 @@ class Rostro:
         self.conexiones = np.array([(c.start, c.end) for c in mpv.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION])
         self._ultimo_ms = -1
         self.inclinacion = float("nan")  # grados de cabeceo (arriba/abajo) del último cuadro con cara
+        self.z = None                    # profundidad de cada punto del último cuadro con cara (escala de x, píxeles)
 
     def puntos(self, cuadro_bgr, t_s: float):
         import cv2
@@ -565,14 +955,55 @@ class Rostro:
         rgb = cv2.cvtColor(cuadro_bgr, cv2.COLOR_BGR2RGB)
         r = self._lm.detect_for_video(self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb), ms)
         if not r.face_landmarks:
-            self.inclinacion = float("nan")
+            self.inclinacion, self.z = float("nan"), None
             return None
         self.inclinacion = float("nan")
+        self.z = np.array([p.z * cuadro_bgr.shape[1] for p in r.face_landmarks[0]])  # profundidad, en escala de x
         if getattr(r, "facial_transformation_matrixes", None):
             rot = np.asarray(r.facial_transformation_matrixes[0], float)[:3, :3]
             self.inclinacion = float(np.degrees(np.arctan2(rot[2, 1], rot[2, 2])))  # giro sobre el eje horizontal
         h, w = cuadro_bgr.shape[:2]
         return np.array([(p.x * w, p.y * h) for p in r.face_landmarks[0]])
+
+    def cerrar(self):
+        self._lm.close()
+
+
+class Manos:
+    """HandLandmarker de MediaPipe Tasks en modo video: cuadro BGR -> lista de manos (21 puntos en píxeles cada una).
+    Recibe el cuadro a la mitad de tamaño: una mano junto a la cara se ve grande y así tarda menos."""
+
+    def __init__(self):
+        import mediapipe as mp
+        from mediapipe.tasks.python import BaseOptions
+        from mediapipe.tasks.python import vision as mpv
+        self._mp = mp
+        modelo = asegurar_modelo(MODELO_MANOS, URL_MODELO_MANOS, "de las manos")
+        opciones = mpv.HandLandmarkerOptions(base_options=BaseOptions(model_asset_path=str(modelo)),
+                                             running_mode=mpv.RunningMode.VIDEO, num_hands=2,
+                                             min_hand_detection_confidence=0.4, min_hand_presence_confidence=0.4,
+                                             min_tracking_confidence=0.4)
+        self._lm = mpv.HandLandmarker.create_from_options(opciones)
+        self.conexiones = [(c.start, c.end) for c in mpv.HandLandmarksConnections.HAND_CONNECTIONS]
+        self._ultimo_ms = -1
+
+    @classmethod
+    def crear(cls):
+        """Manos, o None si no se puede (sin el modelo y sin internet): se mide igual, sin los bostezos tapados."""
+        try:
+            return cls()
+        except Exception as e:  # noqa: BLE001 - cualquier falla de MediaPipe o de la descarga
+            print(f"[vision] Sin detección de manos ({e}): los bostezos tapados con la mano no se van a contar.")
+            return None
+
+    def puntos(self, cuadro_bgr, t_s: float) -> list[np.ndarray]:
+        import cv2
+        ms = max(int(t_s * 1000), self._ultimo_ms + 1)  # el modo video exige horas crecientes
+        self._ultimo_ms = ms
+        h, w = cuadro_bgr.shape[:2]
+        chico = cv2.cvtColor(cv2.resize(cuadro_bgr, (w // 2, h // 2), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
+        r = self._lm.detect_for_video(self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=chico), ms)
+        return [np.array([(p.x * w, p.y * h) for p in mano]) for mano in (r.hand_landmarks or [])]
 
     def cerrar(self):
         self._lm.close()
@@ -590,6 +1021,12 @@ def dibujar(cuadro, pts, conexiones, info: dict):
             cv2.rectangle(capa, (x0, y0), (x1, y1), (80, 220, 80), 2)
         for i in OJO_DER + OJO_IZQ:
             cv2.circle(capa, tuple(pts[i].astype(int)), 2, (40, 210, 255), -1, cv2.LINE_AA)
+        if info.get("mano"):  # la zona de la boca, en amarillo, cuando una mano la tapa
+            x0, y0, x1, y1 = (int(v) for v in zona_boca(pts))
+            cv2.rectangle(capa, (x0, y0), (x1, y1), (60, 200, 255), 2)
+    for mano in info.get("manos") or []:
+        for a, b in info.get("conexiones_mano") or []:
+            cv2.line(capa, tuple(mano[a].astype(int)), tuple(mano[b].astype(int)), (255, 190, 80), 2, cv2.LINE_AA)
     cuadro[:] = cv2.addWeighted(capa, 0.75, cuadro, 0.25, 0)
     h, w = cuadro.shape[:2]
     panel = cuadro.copy()
@@ -597,6 +1034,12 @@ def dibujar(cuadro, pts, conexiones, info: dict):
     cuadro[:118] = cv2.addWeighted(panel[:118], 0.78, cuadro[:118], 0.22, 0)
     blanco, gris, verde, amarillo = (240, 240, 240), (170, 170, 170), (110, 220, 110), (60, 200, 255)
     cv2.putText(cuadro, "APTO HOY  -  VISION", (14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, gris, 1, cv2.LINE_AA)
+    puntaje, fraccion = info.get("lentes") or (None, None)
+    if puntaje is not None:  # para ajustar LENTES_UMBRAL mirando el número con y sin lentes
+        decision = "?" if fraccion is None else ("SI" if fraccion >= LENTES_FRAC else "NO")
+        texto = f"LENTES {decision}   puntaje {puntaje:.1f} (umbral {LENTES_UMBRAL:g})"
+        (tw, _), _ = cv2.getTextSize(texto, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.putText(cuadro, texto, (w - tw - 14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.5, gris, 1, cv2.LINE_AA)
     p = info.get("pulso")
     if pts is None:
         texto, color = "NO SE VE LA CARA", amarillo
@@ -614,9 +1057,17 @@ def dibujar(cuadro, pts, conexiones, info: dict):
     if info.get("bostezos") is not None:
         ojos += f"     BOSTEZOS  {info['bostezos']}"
     cv2.putText(cuadro, ojos, (14, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.65, blanco, 1, cv2.LINE_AA)
-    if info.get("boca_abierta"):
+    if info.get("mano"):
+        cv2.putText(cuadro, "MANO EN LA BOCA", (w - 260, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.6, amarillo, 2, cv2.LINE_AA)
+    elif info.get("boca_abierta"):
         cv2.putText(cuadro, "BOCA MUY ABIERTA (posible bostezo)", (w - 430, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                     amarillo, 2, cv2.LINE_AA)
+    if info.get("diagnostico"):  # la última mano en la boca: qué se midió (en --ver, para ajustar)
+        franja = cuadro.copy()
+        cv2.rectangle(franja, (0, 118), (w, 148), (12, 16, 22), -1)
+        cuadro[118:148] = cv2.addWeighted(franja[118:148], 0.78, cuadro[118:148], 0.22, 0)
+        cv2.putText(cuadro, info["diagnostico"], (14, 138), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    verde if info["diagnostico"].endswith("BOSTEZO") else amarillo, 1, cv2.LINE_AA)
     derecha = f"QUEDAN {info['quedan']:.0f} s" if info.get("quedan") is not None else "VISTA PREVIA  (q para salir)"
     (tw, _), _ = cv2.getTextSize(derecha, cv2.FONT_HERSHEY_DUPLEX, 0.75, 1)
     cv2.putText(cuadro, derecha, (w - tw - 14, 60), cv2.FONT_HERSHEY_DUPLEX, 0.75, blanco, 1, cv2.LINE_AA)
@@ -624,6 +1075,22 @@ def dibujar(cuadro, pts, conexiones, info: dict):
         cv2.putText(cuadro, aviso, (14, h - 18 - 26 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.6, amarillo, 2, cv2.LINE_AA)
     if info.get("progreso") is not None:
         cv2.rectangle(cuadro, (0, h - 6), (int(w * info["progreso"]), h), (90, 200, 255), -1)
+    lineas = info.get("mensaje") or []
+    if lineas:  # aviso grande en el centro (p. ej. «quítate los lentes»)
+        escalas = [1.1] + [0.75] * (len(lineas) - 1)
+        tamanos = [cv2.getTextSize(x, cv2.FONT_HERSHEY_DUPLEX, s, 2)[0] for x, s in zip(lineas, escalas)]
+        ancho = max(tw for tw, _ in tamanos) + 60
+        alto = sum(th for _, th in tamanos) + 26 * len(lineas) + 30
+        x0, y0 = (w - ancho) // 2, (h - alto) // 2
+        fondo = cuadro.copy()
+        cv2.rectangle(fondo, (x0, y0), (x0 + ancho, y0 + alto), (12, 16, 22), -1)
+        cuadro[:] = cv2.addWeighted(fondo, 0.85, cuadro, 0.15, 0)
+        cv2.rectangle(cuadro, (x0, y0), (x0 + ancho, y0 + alto), amarillo, 2)
+        y = y0 + 22
+        for texto, s, (tw, th) in zip(lineas, escalas, tamanos):
+            y += th + 18
+            cv2.putText(cuadro, texto, ((w - tw) // 2, y), cv2.FONT_HERSHEY_DUPLEX, s,
+                        amarillo if s > 1 else blanco, 2 if s > 1 else 1, cv2.LINE_AA)
     return cuadro
 
 
@@ -639,8 +1106,12 @@ def avisos_en_vivo(registro: Registro) -> list[str]:
     return []
 
 
-def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, camara: str | None = None) -> Registro:
-    """Abre la cámara y junta cuadros durante `segundos` (None = hasta q/Esc). al_avanzar(quedan) cada 5 s."""
+def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, camara: str | None = None,
+             revisar_lentes: bool = False, al_lentes=None) -> Registro:
+    """Abre la cámara y junta cuadros durante `segundos` (None = hasta q/Esc). al_avanzar(quedan) cada 5 s.
+
+    Con revisar_lentes (y `segundos`), antes de empezar mira LENTES_REVISION_S si hay lentes; si hay, llama a
+    al_lentes() y espera a que se los quiten (o LENTES_ESPERA_S) antes de empezar a contar los `segundos`."""
     import cv2
     fuente = fuente_camara(camara)
     if es_usb(fuente):
@@ -659,7 +1130,9 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
             extra = " ¿Está ocupada o desconectada?"
         raise ErrorMedicion(f"No se pudo abrir la cámara {fuente}.{extra}")
     rostro = Rostro()
+    manos = Manos.crear()
     registro = Registro()
+    registro.sin_manos = manos is None
     cam = None
     try:
         cuadro = primer_cuadro(cap)
@@ -678,32 +1151,91 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
                 cv2.setWindowProperty(VENTANA, cv2.WND_PROP_TOPMOST, 1)  # que quede adelante
             except cv2.error:
                 pass
-        inicio = time.perf_counter()
+        t0 = time.perf_counter()  # hora de los modelos (siempre creciente)
+        inicio = t0               # desde aquí cuentan los `segundos`; se mueve al terminar la revisión de lentes
+        fase = "revisando" if revisar_lentes and segundos is not None else "midiendo"
+        revision, espera_desde = RevisionLentes(), 0.0
         ultimo_aviso, vivo, ultimo_vivo, parpadeos, bostezos = -5.0, None, 0.0, None, None
+        n, manos_vistas, zona, zona_t = 0, [], None, -9.0
+        explicados, ultimo_episodio = set(), None  # manos en la boca ya explicadas en la consola
         while True:
             cuadro, llegada = cam.siguiente()
             if cuadro is None:
                 raise ErrorMedicion("La cámara dejó de enviar imágenes.")
-            t = llegada - inicio  # la hora en que llegó el cuadro, no la de procesarlo
+            ahora = llegada - t0  # la hora en que llegó el cuadro, no la de procesarlo
             cuadro = cv2.flip(cuadro, 1)  # como un espejo
-            pts = rostro.puntos(cuadro, t)
-            registro.agregar(t, pts, cuadro, rostro.inclinacion)
-            quedan = None if segundos is None else max(0.0, segundos - t)
-            if al_avanzar and quedan is not None and t - ultimo_aviso >= 5:
-                ultimo_aviso = t
-                al_avanzar(quedan)
+            pts = rostro.puntos(cuadro, ahora)
+            if pts is not None:
+                zona, zona_t = zona_boca(pts), ahora
+            if manos is not None and n % MANOS_CADA == 0:
+                manos_vistas = manos.puntos(cuadro, ahora)
+            n += 1
+            # Si la mano tapa tanto que se pierde la cara, vale la última zona de la boca (de hace 0,5 s o menos).
+            mano = (float(mano_en_boca(zona, manos_vistas)) if manos is not None and zona is not None
+                    and ahora - zona_t <= 0.5 else float("nan"))
+            p_lentes = puntaje_lentes(cuadro, pts) if pts is not None else None
+            revision.agregar(ahora, p_lentes)
+            fraccion = revision.fraccion()
+
+            if fase == "revisando":
+                if fraccion is not None and fraccion >= LENTES_FRAC:
+                    fase, espera_desde = "lentes", ahora
+                    print("[vision] Se ven lentes: se pide quitarlos antes de medir.")
+                    if al_lentes:
+                        al_lentes()
+                elif fraccion is not None or ahora > LENTES_REVISION_S + 6:  # sin lentes (o aún no se ve la cara)
+                    fase, inicio, ultimo_aviso = "midiendo", llegada, -5.0
+            elif fase == "lentes":
+                if fraccion is not None and fraccion <= LENTES_LIBRE_FRAC:
+                    print("[vision] Ya no se ven lentes: empieza la medición.")
+                    fase, inicio, ultimo_aviso = "midiendo", llegada, -5.0
+                elif ahora - espera_desde >= LENTES_ESPERA_S:
+                    print(f"[vision] Siguen los lentes a los {LENTES_ESPERA_S:.0f} s: se mide igual (los ojos no cuentan).")
+                    registro.con_lentes = True
+                    fase, inicio, ultimo_aviso = "midiendo", llegada, -5.0
+
+            midiendo = fase == "midiendo"
+            t = llegada - inicio
+            quedan = None
+            if midiendo:
+                registro.agregar(t, pts, cuadro, rostro.inclinacion, mano, p_lentes, rostro.z)
+                quedan = None if segundos is None else max(0.0, segundos - t)
+                if al_avanzar and quedan is not None and t - ultimo_aviso >= 5:
+                    ultimo_aviso = t
+                    al_avanzar(quedan)
             if ventana:
-                if t - ultimo_vivo >= 1.0:  # el pulso y los parpadeos en vivo se recalculan una vez por segundo
+                if midiendo and t - ultimo_vivo >= 1.0:  # el pulso, los parpadeos y los bostezos, una vez por segundo
                     ultimo_vivo, vivo = t, registro.pulso_reciente()
+                    tr = np.asarray(registro.t)
                     if t > CALIBRACION_S:  # también en --ver
-                        ojos = analizar_ojos(np.asarray(registro.t), np.asarray(registro.ear), registro.inclinacion)
+                        ojos = analizar_ojos(tr, registro.ears_parpadeo(), registro.inclinacion)
                         parpadeos = ojos["parpadeos"] if ojos else None
-                    if len(registro.t) > 1:
-                        bostezos = analizar_boca(np.asarray(registro.t), np.asarray(registro.mar))["bostezos"]
-                info = {"pulso": vivo, "ear": registro.ear[-1], "parpadeos": parpadeos, "quedan": quedan,
-                        "bostezos": bostezos, "boca_abierta": np.isfinite(registro.mar[-1]) and registro.mar[-1] >= BOSTEZO_MAR,
-                        "progreso": None if segundos is None else min(1.0, t / segundos),
-                        "avisos": avisos_en_vivo(registro)}
+                    if len(tr) > 1:
+                        bostezos = analizar_boca(tr, np.asarray(registro.mar), np.asarray(registro.ear),
+                                                 None if manos is None else registro.mano, registro.mandibula)["bostezos"]
+                        if manos is not None:  # cuando la mano ya se fue, se explica qué se midió y qué faltó
+                            for ep in episodios_mano(tr, registro.mar, registro.ear, registro.mano, registro.mandibula):
+                                clave = round(ep["mano_desde"], 2)
+                                if ep["fin"] < t - 0.6 and clave not in explicados and not ep["pendiente"]:
+                                    explicados.add(clave)
+                                    ultimo_episodio = ep
+                                    print(texto_episodio(ep))
+                mensaje = None
+                if fase == "lentes":
+                    mensaje = ["SE VEN LENTES", "Quitatelos para continuar con la medicion",
+                               f"(si no, se mide igual en {max(0.0, LENTES_ESPERA_S - (ahora - espera_desde)):.0f} s)"]
+                elif fase == "revisando":
+                    mensaje = ["PREPARANDO...", "Mira a la camara"]
+                mar_ahora = mar(pts) if pts is not None else float("nan")
+                info = {"pulso": vivo if midiendo else None, "ear": ear_cara(pts) if pts is not None else None,
+                        "parpadeos": parpadeos, "quedan": quedan, "bostezos": bostezos,
+                        "boca_abierta": np.isfinite(mar_ahora) and mar_ahora >= BOSTEZO_MAR, "mano": mano == 1,
+                        "manos": manos_vistas, "conexiones_mano": manos.conexiones if manos else None,
+                        "lentes": (p_lentes, fraccion), "mensaje": mensaje,
+                        "diagnostico": texto_episodio(ultimo_episodio, corto=True)
+                        if ultimo_episodio and segundos is None else None,  # solo en --ver
+                        "progreso": None if segundos is None or not midiendo else min(1.0, t / segundos),
+                        "avisos": avisos_en_vivo(registro) if midiendo else []}
                 cv2.imshow(VENTANA, dibujar(cuadro, pts, rostro.conexiones, info))
                 tecla = cv2.waitKey(1) & 0xFF
                 if tecla in (ord("q"), 27):
@@ -722,6 +1254,8 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
         else:
             cap.release()
         rostro.cerrar()
+        if manos is not None:
+            manos.cerrar()
         if ventana:
             cv2.destroyWindow(VENTANA)
             cv2.waitKey(1)
@@ -759,13 +1293,15 @@ def guardar_validacion(medicion: dict, referencia: float):
 
 
 def guardar_trazas(registro: Registro, sesion: str):
-    """Series numéricas de la medición (sin imágenes): hora, RGB de la piel y EAR por cuadro, para validar y
-    mejorar el cálculo después. datos/vision/trazas/{sesion}.npz"""
+    """Series numéricas de la medición (sin imágenes): hora, RGB de la piel, EAR, MAR, mano en la boca, mandíbula y
+    puntaje de lentes por cuadro, para validar y ajustar los umbrales después. datos/vision/trazas/{sesion}.npz"""
     carpeta = CARPETA_DATOS / "trazas"
     carpeta.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(carpeta / f"{sesion}.npz", t=np.asarray(registro.t), rgb=np.asarray(registro.rgb, float),
-                        ear=np.asarray(registro.ear, float), mar=np.asarray(registro.mar, float),
-                        inclinacion=np.asarray(registro.inclinacion, float))
+                        ear=np.asarray(registro.ear, float), ear_der=np.asarray(registro.ear_der, float),
+                        ear_izq=np.asarray(registro.ear_izq, float), mar=np.asarray(registro.mar, float),
+                        inclinacion=np.asarray(registro.inclinacion, float), mano=np.asarray(registro.mano, float),
+                        mandibula=np.asarray(registro.mandibula, float), lentes=np.asarray(registro.lentes, float))
 
 
 def ultima_medicion() -> dict | None:
@@ -786,7 +1322,10 @@ def evaluar(persona: str, segundos: float, linea_base: bool, cli: ClienteMQTT | 
 
     print(f"[vision] Midiendo a {persona} durante {segundos:.0f} s...")
     try:
-        registro = capturar(segundos, ventana, lambda q: estado(estado="midiendo", segundos_restantes=round(q)), camara)
+        registro = capturar(segundos, ventana, lambda q: estado(estado="midiendo", segundos_restantes=round(q)), camara,
+                            revisar_lentes=LENTES_REVISAR,
+                            al_lentes=lambda: estado(estado="lentes", mensaje=MENSAJE_LENTES,
+                                                     espera_s=round(LENTES_ESPERA_S)))
         r = registro.resultado()
         if r["cara_detectada_pct"] < 20:
             raise ErrorMedicion("No se vio la cara en casi toda la medición.")
@@ -846,9 +1385,14 @@ def main():
         return
     if args.ver:
         try:
-            capturar(None, ventana=True, camara=args.camara)
+            registro = capturar(None, ventana=True, camara=args.camara)
         except ErrorMedicion as e:
             print(f"[vision] {e}")
+            return
+        if len(registro.t) > 30:  # las series (sin imágenes), para revisar después por qué contó o no un bostezo
+            nombre = f"ver-{datetime.now():%Y%m%d-%H%M%S}"
+            guardar_trazas(registro, nombre)
+            print(f"[vision] Series de la vista previa (sin imágenes): {CARPETA_DATOS / 'trazas' / (nombre + '.npz')}")
         return
     if args.referencia is not None and not args.persona:
         ultima = ultima_medicion()
