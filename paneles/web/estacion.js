@@ -219,7 +219,8 @@
     $("sim-esp32").replaceChildren(...[etiquetaSimulado(d)].filter(Boolean));
     if (!d) {
       $("estado-esp32").textContent = !activo("esp32") && tarde
-        ? "El ESP32 no está conectado al broker. Revisen que esté encendido y en la misma red, o toquen Omitir."
+        ? "El ESP32 no está conectado al broker (si tiene los tres LED encendidos, no llega al broker). Revisen que " +
+          "esté encendido y en la misma red, o toquen Omitir."
         : tarde
           ? "No llegan datos del dispositivo. Revisen que el ESP32 esté encendido y conectado a la misma red, o toquen Omitir."
           : "Esperando el dispositivo...";

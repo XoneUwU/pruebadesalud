@@ -9,7 +9,7 @@ de Mosquitto, un simulador y los scripts de Windows.
 | Integrante | Módulo |
 |---|---|
 | **Bri** | Voz (fatiga en la voz) y copiloto por voz; la laptop de la estación (broker e integración) |
-| **Danilo** | Coordinador (calcula el semáforo); mientras tanto corre el coordinador provisional |
+| **Danilo** | Coordinador (calcula el semáforo; mientras tanto corre el coordinador provisional) y firmware del ESP32 (3 LED, zumbador, modo local sin Wi-Fi) |
 | **Sebas** | Paneles (estación, tripulación y Tierra) y prueba de reacción (PVT) |
 | **Erick** | Visión (cámara: pulso sin contacto, parpadeos, PERCLOS y bostezos) |
 | **Adrian** | ESP32 (firmware: pulso, HRV, SpO2, movimiento y semáforo) |
@@ -304,7 +304,55 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
 - **Prueba**: `python vision\pruebas_vision.py` (señales sintéticas: pulso de 72 lpm → 72 ± 3, parpadeos
   conocidos, PERCLOS, bostezos tapados, lentes, avisos y ventana).
 
-## 9. Reglas para sumar un módulo (todo el equipo)
+## 9. ESP32: luces y respaldo sin Wi-Fi
+
+Firmware en `firmware\apto_esp32\`. El cableado, las librerías y cómo subirlo están en `firmware/README.md`. El
+ESP32 muestra el semáforo en **3 LED sueltos**, en la pantalla OLED y con el zumbador:
+- **LED:** amarillo en GPIO 25, verde en GPIO 26 y rojo en GPIO 27, cada uno con 220 Ω y el cátodo a GND.
+- **Zumbador:** suena con un tono de 2 kHz, así que sirve uno activo o uno pasivo; da 3 pitidos al pasar a rojo.
+
+| LED | Significa |
+|---|---|
+| Uno solo: verde, amarillo o rojo | El semáforo de la evaluación (`apto/{persona}/semaforo`) |
+| **Los tres encendidos** | **Sin conexión al broker** (con Wi-Fi configurado) o, en el modo local, **midiendo** |
+| Los tres parpadeando | Modo local: «repite» (hubo poca señal buena) |
+| Al arrancar: amarillo, verde, rojo, los tres y un pitido | Prueba del cableado |
+
+### Respaldo de la demo: medición sin Wi-Fi (modo local)
+
+Si en la demo fallan la red o la laptop, el ESP32 puede medir solo, sin Wi-Fi ni MQTT:
+
+1. En `firmware\apto_esp32\secrets.h` dejar `#define WIFI_SSID ""` (vacío) y volver a subir el firmware. Conviene
+   hacerlo **antes** de la demo y tener las dos versiones a mano, porque cambiar de modo exige volver a subir el
+   firmware.
+2. La OLED dice «Coloca tu dedo». Al poner el dedo cuenta 3-2-1, con un pitido corto en cada número.
+3. Mide 30 s (la ventana de la HRV) con cuenta regresiva y el pulso en vivo, con **los tres LED encendidos**. Si se
+   retira el dedo, dice «Dedo retirado: repite».
+4. Muestra el resultado con las mismas reglas que el coordinador sin línea base:
+
+   | Resultado | Cuándo | LED | Zumbador |
+   |---|---|---|---|
+   | VERDE | Pulso de 50 a 99 | Verde | 1 pitido corto |
+   | AMARILLO | Pulso de 100 a 119 («Pulso en reposo alto») o menor que 50 («Pulso bajo: repite») | Amarillo | 1 pitido |
+   | ROJO | Pulso de 120 o más | Rojo | 3 pitidos |
+   | REPITE | Menos de 10 s de señal buena | Los tres parpadeando | 2 pitidos largos |
+
+   - **SpO₂:** si es menor que 92, solo agrega «Oxigeno bajo: repite» en la OLED, sin cambiar el color (la misma
+     regla que el aviso de SpO₂ del coordinador).
+   - **HRV:** se muestra, pero no se juzga, porque no hay línea base.
+5. Para otra medición, retirar el dedo y volver a ponerlo.
+
+**Es un respaldo, no la evaluación completa:** solo usa el pulso del sensor. No hay cámara, voz, prueba de reacción,
+cuestionario ni línea base, y nada llega a los paneles ni a MongoDB. La OLED muestra el nombre de
+`PERSONA_INICIAL` (en `config.h`), porque sin red no recibe la persona de la estación. Para volver al modo normal,
+poner otra vez el Wi-Fi en `secrets.h` y subir el firmware.
+
+Para probar los colores sin sensor hay que compilar en modo simulado con un pulso fijo; con 130 sale ROJO:
+```
+arduino-cli compile --fqbn esp32:esp32:esp32 --build-property "compiler.cpp.extra_flags=-DMODO_SIMULADO=1 -DPULSO_FORZADO=130" firmware\apto_esp32
+```
+
+## 10. Reglas para sumar un módulo (todo el equipo)
 
 1. Cada módulo vive en su carpeta, con `requirements.txt` y un README con el comando para correrlo.
 2. Usen `comun/mqtt_cliente.py`; nunca escriban la IP ni claves en el código (las opciones van en `config.env`; las
