@@ -3,39 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tripulación · ¿Está apto hoy?</title>
-  <link rel="stylesheet" href="estilo.css">
+  <title>Becspace · Tripulación</title>
+  <link rel="stylesheet" href="nocturne.css">
+  <link rel="stylesheet" href="vendor/phosphor/regular.css">
+  <link rel="stylesheet" href="vendor/phosphor/fill.css">
+  <link rel="stylesheet" href="app.css">
 </head>
-<body class="tripulacion">
-  <header class="barra">
-    <a class="marca" href="./">¿Está apto hoy?<span class="pagina">Tripulación</span></a>
-    <div class="barra-centro" id="reloj"></div>
-    <div class="barra-der">
-      <span id="conexion" class="conexion" data-estado="conectando"><span class="punto"></span><span class="texto">Conectando…</span></span>
-    </div>
-  </header>
-
-  <main>
-    <section class="recomendacion panel" id="recomendacion" aria-live="polite">
-      <span class="etiqueta" id="rec-etiqueta">Recomendación</span>
-      <div class="titular" id="rec-titular">Esperando evaluaciones…</div>
-      <p class="texto" id="rec-texto"></p>
-    </section>
-
-    <section aria-label="Integrantes">
-      <div class="tarjetas" id="tarjetas"></div>
-    </section>
-
-    <aside class="lateral panel" aria-label="Últimas respuestas del copiloto">
-      <h2 class="etiqueta">Copiloto · últimas respuestas</h2>
-      <ol id="copiloto"><li class="vacio">Todavía no hay respuestas.</li></ol>
-    </aside>
-  </main>
+<body data-pagina="tripulacion" data-inicio="dashboard">
+  <canvas id="fondo" aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none"></canvas>
+  <div id="app"></div>
+  <noscript>La estación necesita JavaScript.</noscript>
 
   <script src="config.js"></script>
   <script src="vendor/mqtt.min.js"></script>
   <script src="logica.js"></script>
   <script src="comun.js"></script>
-  <script src="tripulacion.js"></script>
+  <script src="plantilla.js"></script>
+  <script src="logo.js"></script>
+  <script src="fondo.js"></script>
+  <script src="estacion.js"></script>
 </body>
 </html>

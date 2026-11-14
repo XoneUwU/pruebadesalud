@@ -23,7 +23,7 @@ apto-hoy/
 ├── voz/                  análisis de fatiga en la voz (Bri)
 ├── copiloto/             copiloto por voz: Whisper + Ollama + fichas + Piper (Bri)
 │   └── protocolos.md     fichas que el copiloto usa para responder
-├── paneles/              paneles web: estación, tripulación y Tierra (servidor.py, sin internet)
+├── paneles/              paneles web: estación Becspace, tripulación y Tierra (servidor.py, sin internet)
 ├── coordinador/          coordinador_provisional.py, hasta que esté el de Danilo
 ├── registrador/          guarda todo apto/# en MongoDB, exporta a CSV y reproduce sesiones
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
@@ -112,12 +112,25 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 `python paneles\servidor.py` sirve las páginas en el puerto 8080 de toda la red y genera `/config.js` desde
 `config.env`. Las páginas son HTML y JavaScript sin frameworks y se conectan al broker por WebSocket (puerto
 `MQTT_WS_PORT`, 9001) en el mismo host desde el que se abrieron. **No usan internet**: la librería MQTT
-(mqtt.js 5.16.1) está en `paneles/web/vendor/` y no hay CDN ni fuentes externas.
+(mqtt.js 5.16.1), los íconos (Phosphor) y la fuente (Inter) están en `paneles/web/vendor/`; no hay CDN.
+
+La estación usa el diseño **Becspace** (hecho en Claude Design, sistema de diseño Nocturne en `paneles/web/nocturne.css`):
+barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siete pantallas:
+
+| Pantalla | Qué muestra (todo con datos reales de MQTT) |
+|---|---|
+| Panel | Recomendación para la tarea (la misma de `resumen_tripulacion()` del copiloto), conteo por color, una tarjeta por integrante (pulso, KSS y PVT), módulos abiertos, aviso de SpO2 y últimas respuestas del copiloto |
+| Evaluación | Paso a paso: inicio (persona, tarea, línea base, modo demo, símbolos y verificación de broker y módulos), dispositivo (pulso, HRV, SpO₂ y movimiento del ESP32), cámara (60 s, la mide el módulo de visión), voz (frase de `voz_fatiga.py`), reacción PVT-B (3 min, o 1 min con «Modo demo»), símbolos DSST (90 s, opcional), cuestionario de Karolinska y la espera del coordinador |
+| Pruebas | Cámara y micrófono de este navegador (imagen, luz, nivel, ruido y una grabación de 3 s), sin guardar nada |
+| Resultados | Semáforo, motivos, recomendación, aviso de SpO2, Becspace AI (el copiloto: pregunta escrita o 🎤 Hablar) e indicadores por fuente: medido, estimado, reportado o no disponible, con su calidad y sus puntos |
+| Historial | Evaluaciones guardadas por el registrador (MongoDB): gráfico por indicador, tabla, detalle, exportar CSV y el comando para reproducir la sesión |
+| Configuración | Ícono de cada tripulante, tema oscuro o claro, texto grande para proyector, reducir movimiento, alto contraste, permisos y los valores de `config.env` (se cambian en `config.local.env`) |
+| Sistema de diseño | Logo, colores, tipografía, botones y estados de la interfaz |
 
 | Página | Para qué | Quién la usa |
 |---|---|---|
-| http://localhost:8080/estacion.html | La evaluación paso a paso: qué módulos están abiertos, persona y tarea, dispositivo (pulso, HRV, SpO₂ en vivo), cámara (60 s, la mide el módulo de visión), voz (frase de `voz_fatiga.py`), prueba de reacción PVT-B (3 min, o 1 min con «Modo demo»), prueba de símbolos DSST (90 s, opcional), cuestionario de Karolinska y resultado con el semáforo y el copiloto | La persona que se evalúa, en la laptop de Bri (pantalla completa con ⛶) |
-| http://IP-de-Bri:8080/tripulacion.html | Una tarjeta por integrante, la recomendación para la tarea (la misma de `resumen_tripulacion()` del copiloto) y las últimas respuestas del copiloto | Proyector y otras laptops (solo lectura) |
+| http://localhost:8080/estacion.html | La estación completa (empieza en el Panel; «Nueva evaluación» abre la evaluación) | La persona que se evalúa, en la laptop de Bri (al tocar «Comenzar» pasa a pantalla completa) |
+| http://IP-de-Bri:8080/tripulacion.html | La misma estación en solo lectura: Panel, resultados e historial; no puede publicar | Proyector y otras laptops |
 | http://IP-de-Bri:8080/tierra.html | Las evaluaciones llegan con `RETRASO_TIERRA_S` de retraso: se ve que la tripulación decidió antes de que Tierra se enterara | Control de misión (solo lectura) |
 
 - **Credenciales**: si la página se abre en la misma laptop (localhost), `/config.js` lleva `MQTT_USER` y
@@ -134,14 +147,25 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
   y en pantalla. Necesita el copiloto abierto en modo voz (`iniciar.bat`; con `--texto` no tiene Whisper).
 - **Módulos que faltan**: al inicio, la estación muestra si están abiertos voz, copiloto, visión y coordinador
   (`apto/control/modulos/+`). En cada paso dice «el módulo X no está abierto» y cómo abrirlo, en vez de esperar.
-  El ESP32 no es un módulo de Python: si en 10 s no llegan datos, la estación lo avisa.
+  El ESP32 no es un módulo de Python: si en 10 s no llegan datos, la estación lo avisa (y recuerda que los tres
+  LED encendidos significan que no llega al broker).
+- **Lentes**: si el módulo de visión ve lentes antes de medir (`estado_vision` `"lentes"`), el paso de la cámara
+  muestra «Se ven lentes: quítatelos para continuar con la medición» y la cuenta de 60 s no corre hasta que el
+  módulo empieza a medir. Los datos de la cámara incluyen los bostezos tapados con la mano.
 - Cada página muestra si está conectada al broker. Los datos con `"simulado": true` llevan la etiqueta SIMULADO, y
-  los del coordinador provisional, PROVISIONAL.
-- **Atajo para probar** una pantalla de la estación sin hacer todo el recorrido:
-  `estacion.html?paso=reaccion&persona=bri&demo=1` (pasos: dispositivo, camara, voz, reaccion, simbolos,
-  cuestionario, resultado; `&dsst=1` agrega los símbolos). No publica la sesión.
-- **Prueba**: `python paneles\pruebas_paneles.py` (servidor, `/config.js`, que no se salga de `paneles/web`, sin
-  recursos externos, `node --check` y la recomendación comparada con la del copiloto).
+  los del coordinador provisional, PROVISIONAL. La onda del pulso en el paso del dispositivo es ILUSTRATIVA: va al
+  ritmo del pulso medido, porque el ESP32 manda un resumen por segundo y no la señal cruda.
+- **Historial**: `servidor.py` lee el MongoDB del registrador (`/historial.json`, `/historial.csv` y `/sesion.json`,
+  ver `paneles/historial.py`; solo lee). Necesita `pymongo` en el Python de `servidor.py` (`instalar.bat` ya lo
+  instala para el registrador) y MongoDB abierto; si no, la pantalla lo dice y el resto funciona igual. Con el
+  historial, el Panel y los Resultados se completan aunque la página se abra después de la evaluación.
+- **Atajos para probar** una pantalla sin hacer todo el recorrido: `estacion.html?pantalla=historial` (dashboard,
+  evaluacion, pruebas, resultados, historial, config, sistema) y `estacion.html?paso=reaccion&persona=bri&demo=1`
+  (pasos: dispositivo, camara, voz, reaccion, simbolos, cuestionario, resultado; `&dsst=1` agrega los símbolos).
+  `?paso=` no publica la sesión.
+- **Prueba**: `python paneles\pruebas_paneles.py` (servidor, `/config.js`, historial sin MongoDB, que no se salga de
+  `paneles/web`, sin recursos externos, `node --check`, el escape de las plantillas y la recomendación comparada con
+  la del copiloto).
 
 ## 6. Coordinador provisional (hasta que esté el de Danilo)
 
