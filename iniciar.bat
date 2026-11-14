@@ -30,9 +30,10 @@ start "Copiloto" cmd /k %PY% copiloto\copiloto.py
 rem ---- Modulos del equipo: quitar "rem" cuando esten en esta laptop ----
 rem start "Coordinador" cmd /k %PY% coordinador\coordinador.py
 rem start "Vision" cmd /k %PY% vision\vision.py
-rem start "Paneles" cmd /k %PY% paneles\servidor.py
+start "Paneles" cmd /k %PY% paneles\servidor.py
 
 rem ---- Para probar sin los demas modulos ----
 rem start "Simulador" cmd /k %PY% herramientas\simulador.py
 
 echo Sistema iniciado. Cada modulo tiene su propia ventana.
+echo Paneles: http://localhost:8080  (desde otra laptop: http://IP-de-esta-laptop:8080/tripulacion.html)

@@ -43,22 +43,22 @@ Fuente: guía interna del prototipo.
 
 ## Pulso en reposo elevado
 Claves: pulso, corazón, latidos, ritmo cardíaco, acelerado, alto
-Si tu pulso en reposo está más alto que tu línea base, quédate sentado y tranquilo 5 minutos y repite la medición. Revisa también que el sensor esté bien colocado. Si sigue alto, o si hay dolor de pecho, mareo o falta de aire, avisa de inmediato al comandante, al responsable médico de la tripulación y, si hay comunicación, al médico de vuelo en Tierra.
+Si tu pulso en reposo está más alto que tu línea base, siéntate y descansa con calma 5 minutos, y repite la medición. Revisa también que el sensor esté bien colocado. Si sigue alto, o si hay dolor de pecho, mareo o falta de aire, avisa de inmediato al comandante, al responsable médico de la tripulación y, si hay comunicación, al médico de vuelo en Tierra.
 Fuente: guía interna del prototipo.
 
 ## Falta de aire
 Claves: falta de aire, me falta el aire, no puedo respirar, me cuesta respirar, ahogo, asfixia, respiración
-Detén la tarea y quédate quieto en un lugar seguro. Avisa al comandante, al responsable médico de la tripulación y, si hay comunicación, al médico de vuelo en Tierra, y no te quedes solo. Respira despacio mientras llega la ayuda y sigue el procedimiento de emergencia de la misión. La revisión del sensor se hace después de avisar, no antes.
+Detén la tarea y quédate sin moverte en un lugar seguro. Avisa al comandante, al responsable médico de la tripulación y, si hay comunicación, al médico de vuelo en Tierra, y no te quedes sin compañía. Respira despacio mientras llega la ayuda y sigue el procedimiento de emergencia de la misión. La revisión del sensor se hace después de avisar, no antes.
 Fuente: guía interna del prototipo.
 
 ## Mareo o sensación de desmayo
 Claves: mareo, mareada, mareado, mareos, vértigo, me da vueltas, desmayo, me voy a desmayar, débil
-Detén la tarea y siéntate o recuéstate en un lugar seguro. No te quedes solo hasta que llegue la ayuda, y no retomes la tarea sin la autorización del comandante.
+Detén la tarea y siéntate o recuéstate en un lugar seguro. No te quedes sin compañía hasta que llegue la ayuda, y no retomes la tarea sin la autorización del comandante.
 Fuente: guía interna del prototipo.
 
 ## Dolor de pecho
 Claves: dolor de pecho, me duele el pecho, dolor en el pecho, opresión, presión en el pecho
-Detén la tarea y quédate en reposo, sin hacer esfuerzo, en un lugar seguro. No te quedes solo hasta que llegue la ayuda.
+Detén la tarea y quédate en reposo, sin hacer esfuerzo, en un lugar seguro. No te quedes sin compañía hasta que llegue la ayuda.
 Fuente: guía interna del prototipo.
 
 ## Oxígeno en sangre bajo
@@ -83,7 +83,7 @@ Fuente: guía interna del prototipo.
 
 ## Datos dudosos o sensor mal colocado
 Claves: error, falla, sensor, no funciona, dato raro, mal colocado, medición
-Si un valor parece imposible o cambia de golpe, puede ser un problema del sensor: dedo mal apoyado, movimiento, poca luz para la cámara o ruido en el micrófono. Acomoda el sensor, quédate quieto y repite la medición antes de tomar una decisión.
+Si un valor parece imposible o cambia de golpe, puede ser un problema del sensor: dedo mal apoyado, movimiento, poca luz para la cámara o ruido en el micrófono. Acomoda el sensor, quédate sin moverte y repite la medición antes de tomar una decisión.
 Fuente: guía interna del prototipo.
 
 ## Qué hace y qué no hace este sistema

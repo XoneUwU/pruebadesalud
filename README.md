@@ -2,8 +2,8 @@
 
 NASA Space Apps Challenge 2026 · Reto «Create Health Monitoring Software for Astronauts on Space Missions».
 
-Esta carpeta es la base del repositorio común. Ya incluye los módulos de **Bri** (voz y copiloto), la
-conexión MQTT que usan todos, la configuración de Mosquitto, un simulador y los scripts de Windows.
+Esta carpeta es la base del repositorio común. Ya incluye los módulos de **Bri** (voz y copiloto), los
+paneles web, la conexión MQTT que usan todos, la configuración de Mosquitto, un simulador y los scripts de Windows.
 
 ```
 apto-hoy/
@@ -14,9 +14,10 @@ apto-hoy/
 ├── voz/                  análisis de fatiga en la voz (Bri)
 ├── copiloto/             copiloto por voz: Whisper + Ollama + fichas + Piper (Bri)
 │   └── protocolos.md     fichas que el copiloto usa para responder
+├── paneles/              paneles web: estación, tripulación y Tierra (servidor.py, sin internet)
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
 ├── mosquitto/            configuración del broker (evento y desarrollo)
-├── firmware/  vision/  coordinador/  paneles/     ← carpetas del resto del equipo
+├── firmware/  vision/  coordinador/     ← carpetas del resto del equipo
 └── datos/                grabaciones e historial (no se sube a Git)
 ```
 
@@ -38,6 +39,7 @@ Abrir una terminal en la carpeta del proyecto (`.venv\Scripts\activate` primero)
 | Copiloto escrito | `python copiloto\copiloto.py --texto` | Responde y habla |
 | Simulador | `python herramientas\simulador.py` y luego `2` | El copiloto lee el resultado amarillo en voz alta |
 | Copiloto por voz | `python copiloto\copiloto.py` y Enter vacío | Te escucha, transcribe y responde |
+| Paneles web | `python paneles\servidor.py` y abrir http://localhost:8080 | Estación, tripulación y Tierra (ver la sección 5) |
 
 Opciones útiles del copiloto: `--sin-llm` (sin Ollama, responde con las fichas), `--sin-voz` (solo texto),
 `--sin-auto` (no lee cada evaluación nueva). Muestra cuánto tarda Whisper y el modelo: la meta es menos de 5 s.
@@ -48,14 +50,17 @@ Ollama (`ollama pull qwen2.5:3b` y `OLLAMA_MODEL=qwen2.5:3b`).
 ## 3. Modo evento (con usuarios)
 
 1. `mosquitto\crear_usuarios.bat` → crea `sistema` (publica y lee) y `equipo` (solo lee).
-2. En `config.env`: `MQTT_HOST` = IP de la laptop de Bri, `MQTT_USER=sistema` y su clave.
+2. En `config.env`: `MQTT_HOST` = IP de la laptop de Bri, `MQTT_USER=sistema` y su clave, y
+   `MQTT_USER_LECTURA=equipo` y su clave (los usan los paneles abiertos desde otras laptops).
 3. Firewall, en PowerShell como administrador:
    ```
    Set-NetConnectionProfile -InterfaceAlias "Wi-Fi" -NetworkCategory Private
    New-NetFirewallRule -DisplayName "Apto hoy" -Direction Inbound -Protocol TCP -LocalPort 1883,9001,8080 -Action Allow -Profile Private
    ```
 4. Si el servicio de Mosquitto de Windows está activo, detenerlo: `net stop mosquitto` (como administrador).
-5. `iniciar.bat` arranca el broker, la voz y el copiloto, cada uno en su ventana.
+5. `iniciar.bat` arranca el broker, la voz, el copiloto y el servidor de los paneles, cada uno en su ventana.
+6. En la laptop de Bri: http://localhost:8080/estacion.html. En el proyector y las otras laptops (misma red):
+   http://IP-de-Bri:8080/tripulacion.html y http://IP-de-Bri:8080/tierra.html.
 
 ## 4. Temas MQTT
 
@@ -63,20 +68,46 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 
 | Tema | Publica | Lee | Contenido |
 |---|---|---|---|
-| `apto/control/sesion` | Panel (Sebas), copiloto | Todos | `{"persona", "tarea"}`: inicio de una evaluación y persona activa. El copiloto lo publica cuando alguien dice «soy Erick», «habla Sebas» o «aquí Bri» (nombres de `TRIPULACION` en `config.env`). |
-| `apto/control/orden_voz` | Panel (Sebas) | Voz | `{"accion": "grabar", "persona", "segundos", "linea_base"}` |
+| `apto/control/sesion` | Panel (Sebas), copiloto | Todos | `{"persona", "tarea", "sesion"}`: inicio de una evaluación y persona activa. La estación lo publica al tocar «Comenzar» (`sesion` = `20261113-193005-bri`). El copiloto lo publica cuando alguien dice «soy Erick», «habla Sebas» o «aquí Bri» (nombres de `TRIPULACION` en `config.env`). |
+| `apto/control/orden_vision` | Panel (Sebas) | Visión | `{"accion": "medir", "persona", "segundos": 60, "sesion"}`: la estación pide un minuto de medición con la cámara |
+| `apto/control/orden_voz` | Panel (Sebas) | Voz | `{"accion": "grabar", "persona", "segundos", "linea_base", "sesion"}` |
 | `apto/control/estado_voz` | Voz | Panel | `{"persona", "estado": "grabando" o "listo"}` |
-| `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta"}`: pregunta escrita desde la interfaz |
+| `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta", "sesion"}`: pregunta escrita desde la estación |
 | `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador | Pulso, HRV, SpO₂, movimiento, sueño |
 | `apto/{persona}/vision` | Visión (Erick) | Coordinador | Pulso por cámara, parpadeo, PERCLOS |
 | `apto/{persona}/voz` | Voz (Bri) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
-| `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | Reacción media, lapsos, anticipadas |
-| `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | Escala de Karolinska, horas de sueño |
+| `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | PVT-B en el navegador: `rt_media_ms`, `rt_mediana_ms`, `lapsos` (355 ms o más, o sin respuesta en 30 s), `anticipadas` (antes del estímulo o en menos de 100 ms), `n_estimulos`, `duracion_s`, `linea_base` |
+| `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | `kss` (escala de somnolencia de Karolinska, 1 a 9), `kss_texto`, `horas_sueno` (de 0 a 16, de media en media hora), `linea_base` |
 | `apto/{persona}/evaluacion` | Coordinador (Danilo) | Paneles, copiloto | `color`, `puntaje`, `motivos`, `accion`, `pesos`. **Publicar con retain.** Los `motivos` se escriben como frases neutras, sin sujeto («Menos horas de sueño de lo habitual», no «Durmió menos»), porque el copiloto los lee después de «tu resultado… Motivos:». |
 | `apto/{persona}/semaforo` | Coordinador | ESP32 | Solo `color`. **Con retain.** |
 | `apto/{persona}/copiloto` | Copiloto (Bri) | Paneles | `pregunta`, `respuesta`, `fichas`, `modo` |
 
-## 5. Reglas para sumar un módulo (todo el equipo)
+## 5. Paneles web
+
+`python paneles\servidor.py` sirve las páginas en el puerto 8080 de toda la red y genera `/config.js` desde
+`config.env`. Las páginas son HTML y JavaScript sin frameworks y se conectan al broker por WebSocket (puerto
+`MQTT_WS_PORT`, 9001) en el mismo host desde el que se abrieron. **No usan internet**: la librería MQTT
+(mqtt.js 5.16.1) está en `paneles/web/vendor/` y no hay CDN ni fuentes externas.
+
+| Página | Para qué | Quién la usa |
+|---|---|---|
+| http://localhost:8080/estacion.html | La evaluación paso a paso: persona y tarea, dispositivo (pulso, HRV, SpO₂ en vivo), cámara (60 s), voz (frase de `voz_fatiga.py`), prueba de reacción PVT-B, cuestionario de Karolinska y resultado con el semáforo y el copiloto | La persona que se evalúa, en la laptop de Bri (pantalla completa con ⛶) |
+| http://IP-de-Bri:8080/tripulacion.html | Una tarjeta por integrante, la recomendación para la tarea (la misma de `resumen_tripulacion()` del copiloto) y las últimas respuestas del copiloto | Proyector y otras laptops (solo lectura) |
+| http://IP-de-Bri:8080/tierra.html | Las evaluaciones llegan con `RETRASO_TIERRA_S` de retraso: se ve que la tripulación decidió antes de que Tierra se enterara | Control de misión (solo lectura) |
+
+- **Credenciales**: si la página se abre en la misma laptop (localhost), `/config.js` lleva `MQTT_USER` y
+  `MQTT_PASS` (puede publicar). Desde otra laptop lleva `MQTT_USER_LECTURA` y `MQTT_PASS_LECTURA` (solo lee).
+  Por eso la estación solo funciona en la laptop de Bri. En desarrollo todos quedan vacíos.
+- **Opciones** en `config.env`: `PVT_SEGUNDOS` (180 = PVT-B de 3 minutos; 60 para demos), `RETRASO_TIERRA_S`
+  (20 s), `MQTT_WS_PORT` (9001) y `TRIPULACION` (los botones de la estación y las tarjetas). Si se cambian,
+  hay que reiniciar `servidor.py`.
+- Cada página muestra si está conectada al broker. Los datos con `"simulado": true` llevan la etiqueta SIMULADO.
+- **Atajo para probar** una pantalla de la estación sin hacer todo el recorrido: `estacion.html?paso=4&persona=bri`
+  (pasos 1 a 6; no publica la sesión).
+- **Prueba**: `python paneles\pruebas_paneles.py` (servidor, `/config.js`, que no se salga de `paneles/web`, sin
+  recursos externos, `node --check` y la recomendación comparada con la del copiloto).
+
+## 6. Reglas para sumar un módulo (todo el equipo)
 
 1. Cada módulo vive en su carpeta, con `requirements.txt` y un README con el comando para correrlo.
 2. Usen `comun/mqtt_cliente.py`; nunca escriban la IP ni claves en el código (van en `config.env`).

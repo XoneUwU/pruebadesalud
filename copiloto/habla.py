@@ -82,7 +82,7 @@ def leer_audio_16k(ruta_wav: Path) -> np.ndarray:
 
 # ---------------------------------------------------------------- pronunciación
 def leer_pronunciacion(valor: str) -> dict[str, str]:
-    """"Xone:Yone, PVT:pe ve te" -> {"xone": "Yone", "pvt": "pe ve te"} (PRONUNCIAR en config.env)."""
+    """"PVT:pe ve te, SpO2:saturación" -> {"pvt": "pe ve te", "spo2": "saturación"} (PRONUNCIAR en config.env)."""
     pares = {}
     for par in (valor or "").split(","):
         palabra, _, lectura = par.partition(":")

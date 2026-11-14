@@ -13,8 +13,8 @@ Uso:
 
 Temas MQTT:
   lee      apto/+/evaluacion       evaluación del coordinador (mejor si viene con retain)
-  lee      apto/control/sesion     {"persona": "eric", "tarea": "caminata espacial"} cambia la persona activa
-  lee      apto/control/pregunta   {"persona": "eric", "pregunta": "..."} pregunta enviada desde un panel
+  lee      apto/control/sesion     {"persona": "erick", "tarea": "caminata espacial"} cambia la persona activa
+  lee      apto/control/pregunta   {"persona": "erick", "pregunta": "..."} pregunta enviada desde un panel
   publica  apto/{persona}/copiloto {"pregunta", "respuesta", "fichas", "modo", "origen"}
   publica  apto/control/sesion     {"persona", "tarea"} cuando alguien se identifica («soy Erick»)
 """
@@ -159,7 +159,7 @@ def _puntaje(ev: dict) -> float:
 
 
 def _lista(items: list[str]) -> str:
-    """["Sebas"] -> "Sebas"; ["Sebas", "Ana", "Eric"] -> "Sebas, Ana y Eric"."""
+    """["Sebas"] -> "Sebas"; ["Sebas", "Ana", "Erick"] -> "Sebas, Ana y Erick"."""
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " y " + items[-1]
 
 

@@ -1,1 +1,0 @@
-Carpeta del módulo: paneles. Agreguen aquí su código, requirements.txt y un README con el comando para correrlo.

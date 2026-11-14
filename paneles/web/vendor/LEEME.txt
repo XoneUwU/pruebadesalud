@@ -1,0 +1,8 @@
+mqtt.min.js: mqtt.js 5.16.1 (licencia MIT, ver mqtt-LICENSE.md), archivo dist/mqtt.min.js del paquete de npm.
+Se guarda aquí para que los paneles funcionen sin internet: no se usa ningún CDN.
+
+Origen:  npm pack mqtt@5.16.1  (https://registry.npmjs.org/mqtt/-/mqtt-5.16.1.tgz)
+SHA-256: 75873D04A6400BBBAC093B3602CAF06F44ED92EE032925E1F4F21C03EBA05A4E
+
+Para actualizar: npm pack mqtt@<versión>, copiar package/dist/mqtt.min.js aquí y cambiar la versión
+y el SHA-256 de este archivo y de paneles/requirements.txt.

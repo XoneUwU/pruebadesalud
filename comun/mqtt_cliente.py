@@ -4,7 +4,7 @@ Uso:
     from comun.mqtt_cliente import ClienteMQTT
     cli = ClienteMQTT("voz")
     cli.conectar()
-    cli.publicar("apto/xone/voz", {"f0_media": 180.2})
+    cli.publicar("apto/bri/voz", {"f0_media": 180.2})
     cli.suscribir("apto/+/evaluacion", mi_funcion)   # mi_funcion(tema, datos_dict)
 
 Todos los mensajes son JSON y llevan persona, sesion y ts (ver el documento del proyecto).
@@ -27,7 +27,7 @@ def ahora_iso() -> str:
 
 
 def tema(persona: str, tipo: str) -> str:
-    """tema("eric", "voz") -> "apto/eric/voz"."""
+    """tema("erick", "voz") -> "apto/erick/voz"."""
     return f"{PREFIJO}/{persona}/{tipo}"
 
 
@@ -115,6 +115,6 @@ class ClienteMQTT:
 
 
 def persona_de_tema(tema_mqtt: str) -> str:
-    """'apto/eric/evaluacion' -> 'eric'."""
+    """'apto/erick/evaluacion' -> 'erick'."""
     partes = tema_mqtt.split("/")
     return partes[1] if len(partes) >= 3 else ""

@@ -5,8 +5,8 @@ Graba (o lee un .wav) mientras la persona lee la frase fija, extrae rasgos de la
 
 Modos:
   python voz/voz_fatiga.py --listar                        lista los micrófonos
-  python voz/voz_fatiga.py --persona eric                  graba y analiza una vez
-  python voz/voz_fatiga.py --persona eric --linea-base     igual, marcado como línea base
+  python voz/voz_fatiga.py --persona erick                 graba y analiza una vez
+  python voz/voz_fatiga.py --persona erick --linea-base    igual, marcado como línea base
   python voz/voz_fatiga.py --archivo grabacion.wav         analiza un .wav existente
   python voz/voz_fatiga.py --servicio                      espera órdenes por MQTT (apto/control/orden_voz)
 
@@ -16,7 +16,7 @@ cada medición se compara con ellas y el mensaje lleva z_rasgos, indice_cansanci
 y motivos_voz. Es una sugerencia, no un diagnóstico: no detecta miedo ni emociones.
 
 Orden por MQTT para el modo servicio (la envía el panel de Sebas):
-  tema apto/control/orden_voz  ->  {"accion": "grabar", "persona": "eric", "segundos": 12, "linea_base": false}
+  tema apto/control/orden_voz  ->  {"accion": "grabar", "persona": "erick", "segundos": 12, "linea_base": false}
 """
 import argparse
 import json

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estación · ¿Está apto hoy?</title>
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body class="estacion">
+  <header class="barra">
+    <a class="marca" href="./">¿Está apto hoy?<span class="pagina">Estación</span></a>
+    <div class="barra-centro" id="info-sesion"></div>
+    <div class="barra-der">
+      <button class="boton-icono" id="pantalla-completa" type="button" title="Pantalla completa" aria-label="Pantalla completa">⛶</button>
+      <span id="conexion" class="conexion" data-estado="conectando"><span class="punto"></span><span class="texto">Conectando…</span></span>
+    </div>
+  </header>
+
+  <div id="aviso-lectura" class="aviso" hidden>
+    Abriste la estación desde otra laptop: aquí solo se puede mirar, porque el usuario de solo lectura no puede
+    publicar. Para hacer una evaluación, usen la laptop de la estación (http://localhost:8080/estacion.html).
+  </div>
+
+  <ol class="pasos" id="pasos" aria-label="Pasos de la evaluación">
+    <li><span class="numero-paso">0</span> <span class="nombre-paso">Inicio</span></li>
+    <li><span class="numero-paso">1</span> <span class="nombre-paso">Dispositivo</span></li>
+    <li><span class="numero-paso">2</span> <span class="nombre-paso">Cámara</span></li>
+    <li><span class="numero-paso">3</span> <span class="nombre-paso">Voz</span></li>
+    <li><span class="numero-paso">4</span> <span class="nombre-paso">Reacción</span></li>
+    <li><span class="numero-paso">5</span> <span class="nombre-paso">Cuestionario</span></li>
+    <li><span class="numero-paso">6</span> <span class="nombre-paso">Resultado</span></li>
+  </ol>
+
+  <main>
+    <!-- 0. Inicio -->
+    <section class="paso" data-paso="0">
+      <h1>Nueva evaluación</h1>
+      <h2 class="etiqueta">¿Quién se evalúa?</h2>
+      <div class="opciones grande" id="personas"></div>
+      <h2 class="etiqueta">Tarea</h2>
+      <div class="opciones" id="tareas"></div>
+      <label class="casilla">
+        <input type="checkbox" id="linea-base">
+        <span>Medición de línea base
+          <small>Márcala si hoy descansaste bien: esta medición servirá para comparar las siguientes.</small></span>
+      </label>
+      <div class="acciones">
+        <button class="boton primario" id="comenzar" type="button" disabled>Comenzar</button>
+      </div>
+    </section>
+
+    <!-- 1. Dispositivo -->
+    <section class="paso" data-paso="1" hidden>
+      <h1>Dispositivo <span id="sim-esp32"></span></h1>
+      <p class="indicacion">Colócate el sensor en el dedo y quédate sin moverte.</p>
+      <div class="medidas">
+        <div class="medida panel"><span class="etiqueta">Pulso</span><span class="valor" id="v-pulso">–</span><span class="unidad">latidos por minuto</span></div>
+        <div class="medida panel"><span class="etiqueta">HRV</span><span class="valor" id="v-hrv">–</span><span class="unidad">ms (RMSSD)</span></div>
+        <div class="medida panel"><span class="etiqueta">SpO₂</span><span class="valor" id="v-spo2">–</span><span class="unidad">% de oxígeno en sangre</span></div>
+      </div>
+      <p class="estado" id="estado-esp32">Esperando el dispositivo...</p>
+      <div class="acciones">
+        <button class="boton" id="omitir-1" type="button">Omitir</button>
+        <button class="boton primario" id="continuar-1" type="button" disabled>Continuar</button>
+      </div>
+    </section>
+
+    <!-- 2. Cámara -->
+    <section class="paso" data-paso="2" hidden>
+      <h1>Cámara <span id="sim-vision"></span></h1>
+      <p class="indicacion">Mira a la cámara con la cara bien iluminada y sin moverte.</p>
+      <div class="cuenta" id="cuenta-camara">60</div>
+      <div class="progreso"><div id="progreso-camara"></div></div>
+      <div class="datos" id="datos-vision"></div>
+      <p class="estado" id="estado-vision">Esperando datos de la cámara…</p>
+      <div class="acciones">
+        <button class="boton" id="omitir-2" type="button">Omitir</button>
+        <button class="boton primario" id="continuar-2" type="button" hidden>Continuar</button>
+      </div>
+    </section>
+
+    <!-- 3. Voz -->
+    <section class="paso" data-paso="3" hidden>
+      <h1>Voz</h1>
+      <p class="indicacion">Cuando empiece la grabación, lee esta frase en voz alta, con tono normal:</p>
+      <blockquote class="frase" id="frase-voz"></blockquote>
+      <p class="estado fuerte" id="estado-voz" aria-live="polite">Presiona Grabar cuando quieras empezar.</p>
+      <div class="progreso" id="progreso-voz-caja" hidden><div id="progreso-voz"></div></div>
+      <div class="resultado-voz panel" id="resultado-voz" hidden></div>
+      <div class="acciones">
+        <button class="boton izquierda" id="omitir-3" type="button">Omitir</button>
+        <button class="boton primario" id="grabar" type="button">Grabar (12 s)</button>
+        <button class="boton primario" id="continuar-3" type="button" hidden>Continuar</button>
+      </div>
+    </section>
+
+    <!-- 4. Prueba de reacción (PVT-B) -->
+    <section class="paso" data-paso="4" hidden>
+      <h1>Prueba de reacción</h1>
+      <div id="pvt-intro">
+        <p class="indicacion">Cuando aparezca el contador, presiona la <kbd>barra espaciadora</kbd> o toca la
+          pantalla lo más rápido que puedas. No te adelantes: si respondes antes, cuenta como anticipada.</p>
+        <p class="estado" style="margin-top: 1rem">Dura <span id="pvt-duracion">3 minutos</span>.</p>
+        <div class="acciones">
+          <button class="boton" id="omitir-4" type="button">Omitir</button>
+          <button class="boton primario" id="pvt-empezar" type="button">Empezar la prueba</button>
+        </div>
+      </div>
+      <div id="pvt-area" class="pvt-area" hidden>
+        <div class="pvt-restante" id="pvt-restante"></div>
+        <div class="pvt-contador" id="pvt-contador"></div>
+        <div class="pvt-mensaje" id="pvt-mensaje" aria-live="polite"></div>
+        <div class="pvt-ayuda">Cuando aparezca el contador: barra espaciadora o toca aquí</div>
+      </div>
+      <div id="pvt-fin" hidden>
+        <div class="medidas">
+          <div class="medida panel"><span class="etiqueta">Reacción media</span><span class="valor" id="pvt-media">–</span><span class="unidad">ms</span></div>
+          <div class="medida panel"><span class="etiqueta">Mediana</span><span class="valor" id="pvt-mediana">–</span><span class="unidad">ms</span></div>
+          <div class="medida panel"><span class="etiqueta">Lapsos</span><span class="valor" id="pvt-lapsos">–</span><span class="unidad">355 ms o más</span></div>
+          <div class="medida panel"><span class="etiqueta">Anticipadas</span><span class="valor" id="pvt-anticipadas">–</span><span class="unidad" id="pvt-estimulos"></span></div>
+        </div>
+        <div class="acciones">
+          <button class="boton primario" id="continuar-4" type="button">Continuar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Cuestionario -->
+    <section class="paso" data-paso="5" hidden>
+      <h1>Cuestionario</h1>
+      <h2 class="etiqueta">¿Cuánto sueño tienes ahora? (escala de somnolencia de Karolinska)</h2>
+      <div class="kss" id="kss"></div>
+      <h2 class="etiqueta">¿Cuántas horas dormiste anoche?</h2>
+      <div class="horas">
+        <button class="boton" id="horas-menos" type="button" aria-label="Media hora menos">−</button>
+        <output id="horas" aria-live="polite">7</output>
+        <button class="boton" id="horas-mas" type="button" aria-label="Media hora más">+</button>
+        <span class="estado">horas</span>
+      </div>
+      <div class="acciones">
+        <button class="boton primario" id="enviar-cuestionario" type="button" disabled>Ver resultado</button>
+      </div>
+    </section>
+
+    <!-- 6. Resultado -->
+    <section class="paso" data-paso="6" hidden>
+      <div class="analizando" id="analizando">
+        <div class="giro"></div>
+        <h1>Analizando...</h1>
+        <p class="estado" id="pista-analizando" hidden>
+          Todavía no llega la evaluación del coordinador. Para probar sin el coordinador:
+          <kbd>python herramientas\simulador.py</kbd> y una de las opciones 1, 2 o 3.
+        </p>
+      </div>
+      <div class="resultado" id="resultado" hidden>
+        <div class="semaforo panel" id="semaforo">
+          <div class="luz"></div>
+          <div class="palabra" id="palabra-color"></div>
+        </div>
+        <div class="detalle">
+          <p class="puntaje" id="puntaje"></p>
+          <h2 class="etiqueta">Motivos</h2>
+          <ul id="motivos"></ul>
+          <h2 class="etiqueta">Recomendación</h2>
+          <p class="accion" id="accion"></p>
+        </div>
+      </div>
+      <section class="copiloto panel">
+        <h2 class="etiqueta">Copiloto</h2>
+        <ol class="conversacion" id="conversacion"></ol>
+        <form class="form-pregunta" id="form-pregunta" autocomplete="off">
+          <input id="pregunta" type="text" placeholder="Escribe una pregunta para el copiloto" aria-label="Pregunta para el copiloto">
+          <button class="boton primario" type="submit">Enviar</button>
+        </form>
+      </section>
+      <div class="acciones">
+        <button class="boton" id="nueva" type="button">Nueva evaluación</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="vendor/mqtt.min.js"></script>
+  <script src="logica.js"></script>
+  <script src="comun.js"></script>
+  <script src="estacion.js"></script>
+</body>
+</html>

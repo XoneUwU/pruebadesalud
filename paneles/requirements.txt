@@ -1,0 +1,2 @@
+# Sin dependencias: servidor.py usa solo la biblioteca estándar de Python.
+# La biblioteca MQTT del navegador está en web/vendor/mqtt.min.js (mqtt.js 5.16.1), sin internet.

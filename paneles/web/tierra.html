@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tierra · ¿Está apto hoy?</title>
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body class="tierra">
+  <header class="barra">
+    <a class="marca" href="./">¿Está apto hoy?<span class="pagina">Control de misión · Tierra</span></a>
+    <div class="barra-centro" id="reloj"></div>
+    <div class="barra-der">
+      <span id="conexion" class="conexion" data-estado="conectando"><span class="punto"></span><span class="texto">Conectando…</span></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="retraso panel">
+      <span class="etiqueta">Retraso de comunicación</span>
+      <span><span class="cifra" id="retraso">20 s</span> <span class="estado">simulado para la demo</span></span>
+      <span class="real">Retraso real a Marte: de 3 a 22 minutos</span>
+      <p class="nota">Tierra ve cada evaluación cuando llega, no cuando ocurre. La tripulación ya vio su resultado y
+        decidió a bordo antes de que Tierra se enterara.</p>
+    </section>
+
+    <div class="dos-columnas">
+      <section>
+        <h2 class="etiqueta titulo-seccion">Lo que Tierra sabe ahora</h2>
+        <div class="tarjetas" id="tarjetas"></div>
+      </section>
+      <section>
+        <h2 class="etiqueta titulo-seccion">Transmisiones desde la nave</h2>
+        <ol class="transmisiones" id="transmisiones"><li class="vacio">Todavía no llegó ninguna transmisión.</li></ol>
+      </section>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="vendor/mqtt.min.js"></script>
+  <script src="logica.js"></script>
+  <script src="comun.js"></script>
+  <script src="tierra.js"></script>
+</body>
+</html>
