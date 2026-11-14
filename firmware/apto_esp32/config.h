@@ -22,9 +22,10 @@
 #define DIR_OLED 0x3C          // el MAX30102 (0x57) lo maneja la librería de SparkFun
 
 // ---------------------------------------------------------------- persona y tiempos
-#define PERSONA_INICIAL "bri"  // hasta que llegue apto/control/sesion (la estación la publica con retain)
+#define PERSONA_INICIAL "danilo"  // hasta que llegue apto/control/sesion (la estación la publica con retain)
 #define CADA_PUBLICAR_MS 1000  // apto/{persona}/esp32 cada 1 s
-#define CADA_PANTALLA_MS 500
+#define CADA_PANTALLA_MS 200
+#define MEDICION_S 30          // medición guiada: 30 s = la ventana de la HRV (RMSSD); mínimo para una estimación ultracorta
 #define CADA_WIFI_MS 10000     // reintento de Wi-Fi (sin bloquear)
 #define CADA_MQTT_MS 5000      // reintento de MQTT (bloquea como máximo MQTT_ESPERA_S)
 #define MQTT_ESPERA_S 2

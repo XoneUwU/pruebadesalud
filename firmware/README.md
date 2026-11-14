@@ -32,7 +32,7 @@ Los tres módulos I2C van en paralelo en el mismo bus (SDA 21, SCL 22). Alimént
 
 ## Librerías (Gestor de librerías del Arduino IDE)
 
-- **SparkFun MAX3010x Pulse and Proximity Sensor Library** (MAX30102, `checkForBeat`, `spo2_algorithm`)
+- **SparkFun MAX3010x Pulse and Proximity Sensor Library** (MAX30102 y `spo2_algorithm`; los latidos los detecta el propio firmware)
 - **PubSubClient** (Nick O'Leary)
 - **ArduinoJson** 7 (Benoît Blanchon)
 - **Adafruit SSD1306** y **Adafruit GFX Library** (instala también Adafruit BusIO)
@@ -66,6 +66,30 @@ El MPU6050 se lee directo por I2C: no necesita librería.
    ROJO y suenan 3 pitidos. `1` verde, `2` amarillo.
 4. Con sensores (`MODO_SIMULADO 0`): poner el dedo en el MAX30102 sin apretar; a los pocos segundos aparece el
    pulso, la HRV después de unos 30 s y el SpO2 cada 4 s.
+
+## Medición guiada sin red (modo local)
+
+Con `WIFI_SSID ""` en `secrets.h` el ESP32 no usa Wi-Fi ni MQTT y hace una medición guiada él solo:
+
+1. OLED «Coloca tu dedo». Al poner el dedo: cuenta 3-2-1 (pitido corto en cada número).
+2. Mide `MEDICION_S` (30 s, la ventana de la HRV) con cuenta regresiva, pulso en vivo y LED **azul**. Si se retira
+   el dedo: «Dedo retirado: repite».
+3. Resultado (mediana del pulso con calidad ≥ 0,5; mismas reglas que el coordinador sin línea base):
+
+| Resultado | Cuándo | LED | Zumbador |
+|---|---|---|---|
+| VERDE | pulso 50–99 | verde | 1 pitido corto |
+| AMARILLO | pulso 100–119 («Pulso en reposo alto») o < 50 («Pulso bajo: repite») | amarillo | 1 pitido |
+| ROJO | pulso ≥ 120 | rojo | 3 pitidos |
+| REPITE | menos de 10 s de señal buena | magenta parpadeando | 2 pitidos largos |
+
+El SpO2 < 92 solo agrega «Oxigeno bajo: repite» en la OLED, sin cambiar el color. La HRV se muestra pero no se
+juzga sin línea base. Para otra medición: retirar el dedo y volver a ponerlo. Probar los colores sin sensor:
+`--build-property "compiler.cpp.extra_flags=-DMODO_SIMULADO=1 -DPULSO_FORZADO=130"`.
+
+Los latidos los detecta el propio firmware (`detectarLatido`): `checkForBeat` de SparkFun descartaba los latidos
+con más de 1000 cuentas de pico a pico y este sensor da 3000–13000. Para capturar la señal cruda (IR y rojo a
+100 muestras/s por el monitor serie): `-DDEPURAR_IR=1`.
 
 Monitor serie a 115200: dice qué sensores encontró y, cada 5 s, las lecturas y el estado de Wi-Fi y MQTT.
 **LED azul** = sin conexión al broker. `MQTT ... estado -2`: no llega a la IP (revisen la IP, la red y el
