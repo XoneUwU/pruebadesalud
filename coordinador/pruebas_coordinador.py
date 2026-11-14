@@ -48,6 +48,17 @@ CASOS = [
     ("voz cansada (señal débil)", sesion(voz={"estado_voz": "más cansada que su línea base"}), None, "amarillo",
      ["Voz más cansada de lo habitual"]),
     ("visión PERCLOS 0,3", sesion(vision={"perclos": 0.3}), None, "rojo", ["Ojos cerrados más tiempo de lo normal"]),
+    ("visión: pulso 110 con buena calidad", sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 110, "calidad_rppg": 0.8}),
+     None, "amarillo", ["Pulso en reposo alto"]),
+    ("visión: pulso 130 con mala calidad no cuenta", sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 130, "calidad_rppg": 0.3}),
+     None, "verde", []),
+    ("visión con base: +60 % parpadeos", sesion(vision={"perclos": 0.05, "parpadeos_min": 24}),
+     {"vision": [{"perclos": 0.05, "parpadeos_min": 15}]}, "amarillo", ["Más parpadeos de lo habitual"]),
+    ("visión con base: pulso +20 % (base de mala calidad ignorada)",
+     sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 84, "calidad_rppg": 0.9}),
+     {"vision": [{"perclos": 0.05, "pulso_rppg_lpm": 70, "calidad_rppg": 0.9},
+                 {"perclos": 0.05, "pulso_rppg_lpm": 110, "calidad_rppg": 0.2}]},
+     "amarillo", ["Pulso en reposo más alto de lo habitual"]),
     ("solo el cuestionario (DSST omitido)", {"cuestionario": {"kss": 4, "horas_sueno": 7}}, None, "verde", []),
 ]
 

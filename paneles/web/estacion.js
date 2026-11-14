@@ -80,8 +80,13 @@
     }
     const deLaPersona = estado.sesion && datos.persona === estado.persona;
     if (tema === "apto/control/estado_voz") { if (deLaPersona) alEstadoVoz(datos); return; }
-    if (tema === "apto/control/estado_vision") {
-      if (deLaPersona) { estado.estadoVision = String(datos.estado || ""); pintarCamara(); }
+    if (tema === "apto/control/estado_vision") {  // {"estado": "midiendo", "segundos_restantes"} / "listo" / "error" + "motivo"
+      if (deLaPersona) {
+        estado.estadoVision = String(datos.estado || "");
+        estado.visionRestantes = datos.segundos_restantes;
+        estado.visionMotivo = datos.motivo || "";
+        pintarCamara();
+      }
       return;
     }
     const [persona, tipo] = Comun.partesTema(tema);
@@ -227,6 +232,8 @@
   function entrarCamara() {
     estado.vision = null;
     estado.estadoVision = "";
+    estado.visionRestantes = null;
+    estado.visionMotivo = "";
     camaraIniciada = false;
     $("continuar-camara").hidden = true;
     pintarCamara();
@@ -254,9 +261,11 @@
   }
 
   const NOMBRES_VISION = {
-    pulso_lpm: ["Pulso (cámara)", "lpm", 0], perclos: ["PERCLOS", "", 2], parpadeos_min: ["Parpadeos", "por minuto", 0],
+    perclos: ["PERCLOS", "fracción de tiempo con los ojos cerrados", 2], parpadeos_min: ["Parpadeos", "por minuto", 0],
+    pulso_rppg_lpm: ["Pulso (cámara)", "lpm", 0], calidad_rppg: ["Calidad del pulso", "de 0 a 1", 2],
+    pulso_lpm: ["Pulso (cámara)", "lpm", 0],
   };
-  const NO_MOSTRAR = new Set(["persona", "sesion", "ts", "fuente", "simulado"]);
+  const NO_MOSTRAR = new Set(["persona", "sesion", "ts", "fuente", "simulado", "linea_base", "duracion_s", "reproducido", "ts_original"]);
 
   function pintarCamara() {
     if (estado.paso !== "camara") return;
@@ -270,12 +279,16 @@
       $("progreso-camara-caja").hidden = true;
     } else if (d) {
       texto = "Datos de la cámara recibidos.";
+    } else if (estado.estadoVision === "error") {
+      texto = `La medición con la cámara falló: ${estado.visionMotivo || "sin motivo"}. Pueden seguir sin ella.`;
+      $("continuar-camara").hidden = false;
     } else if (!activo("vision")) {
       texto = "El módulo de visión se cerró: no llegaron datos de la cámara.";
     } else if (estado.estadoVision === "listo") {
       texto = "La medición terminó, pero no llegaron datos.";
     } else if (estado.estadoVision === "midiendo") {
-      texto = "Midiendo…";
+      const quedan = Number(estado.visionRestantes);
+      texto = estado.visionRestantes != null && Number.isFinite(quedan) ? `Midiendo… quedan ${Math.round(quedan)} s.` : "Midiendo…";
     } else {
       texto = estado.estadoVision || "Esperando al módulo de visión…";
     }

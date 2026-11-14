@@ -24,6 +24,9 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
                 horas de sueño: 1,5 h menos = 1, 3 h menos = 2 | sin base: menos de 6 = 1, menos de 4 = 2
   Voz           "más cansada que su línea base" (de voz_fatiga.py) = 1 (señal débil: nunca 2)
   Visión        PERCLOS (0 a 1): +0,05 = 1, +0,10 = 2     | sin base: 0,15 = 1, 0,25 = 2
+                parpadeos por minuto: +50 % = 1 (solo con base: lo normal varía mucho entre personas; nunca 2)
+                pulso por cámara (pulso_rppg_lpm), SOLO si calidad_rppg >= CALIDAD_RPPG_MIN (0 a 1):
+                +15 % = 1, +30 % = 2                       | sin base: 100 lpm = 1, 120 lpm = 2
 Los puntos de cada fuente (pvt, dsst, cuestionario, voz, vision) son los de su peor indicador.
   rojo      si alguna fuente tiene 2 puntos, o si 3 fuentes o más tienen puntos
   amarillo  si alguna fuente tiene puntos
@@ -45,6 +48,7 @@ from comun.mqtt_cliente import ClienteMQTT, persona_de_tema, tema  # noqa: E402
 TIPOS = ("pvt", "dsst", "cuestionario", "voz", "vision")
 ARCHIVO_BASE = config.RAIZ / "datos" / "coordinador" / "linea_base.jsonl"
 ESPERA_S = 1.5  # tras el cuestionario, para juntar los mensajes que todavía vienen en camino
+CALIDAD_RPPG_MIN = 0.5  # calidad_rppg (0 a 1) desde la que se cree el pulso medido por la cámara
 ACCIONES = {
     "verde": "Puede realizar la tarea",
     "amarillo": "Reasignar la tarea o hacerla en pareja, y descansar antes",
@@ -137,7 +141,25 @@ def _indicadores(tipo: str, m: dict, base: list[dict]) -> list[tuple[int, str]]:
             r.append((_escala(p - p_b, 0.05, 0.10), "Ojos cerrados más tiempo de lo habitual"))
         elif p is not None:
             r.append((_escala(p, 0.15, 0.25), "Ojos cerrados más tiempo de lo normal"))
+        pm, pm_b = _num(m.get("parpadeos_min")), _promedio(_num(b.get("parpadeos_min")) for b in base)
+        if pm is not None and pm_b:
+            r.append((min(1, _escala(pm / pm_b - 1, 0.5, 99)), "Más parpadeos de lo habitual"))
+        elif pm is not None:
+            r.append((0, ""))  # medido, pero sin base no se juzga
+        if rppg_confiable(m):
+            hr = _num(m.get("pulso_rppg_lpm"))
+            hr_b = _promedio(_num(b.get("pulso_rppg_lpm")) for b in base if rppg_confiable(b))
+            if hr is not None and hr_b:
+                r.append((_escala(hr / hr_b - 1, 0.15, 0.30), "Pulso en reposo más alto de lo habitual"))
+            elif hr is not None:
+                r.append((_escala(hr, 100, 120), "Pulso en reposo alto"))
     return r
+
+
+def rppg_confiable(m: dict) -> bool:
+    """El pulso por cámara solo cuenta si su calidad llega al mínimo (sin calidad, no cuenta)."""
+    calidad = _num(m.get("calidad_rppg"))
+    return calidad is not None and calidad >= CALIDAD_RPPG_MIN and _num(m.get("pulso_rppg_lpm")) is not None
 
 
 def evaluar(datos: dict[str, dict], base: dict[str, list[dict]] | None = None) -> dict:
