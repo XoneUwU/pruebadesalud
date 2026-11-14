@@ -214,6 +214,12 @@ el programa DroidCam de Windows (si se usa, su cámara virtual aparece en `--lis
 La cámara del celular suele dar más cuadros por segundo y mejor imagen que la de la laptop, y eso mejora el pulso.
 Solo un programa a la vez puede recibir la imagen de DroidCam.
 
+**DroidCam por cable USB** (Android; no depende del Wi-Fi): activar en el celular las opciones de desarrollador
+(tocar 7 veces «Número de compilación») y la «Depuración USB», conectar con un cable de datos, aceptar el permiso y
+dejar la app DroidCam abierta en pantalla. En `config.local.env`: `CAMARA=http://127.0.0.1:4747/video`. Antes de
+cada medición la visión ejecuta `adb forward tcp:4747 tcp:4747` (se pierde al desconectar el celular). Usa el `adb`
+de Android SDK Platform-Tools; si está en otro lugar, poner su ruta en `ADB=`.
+
 | Modo | Qué hace |
 |---|---|
 | `--listar` | Lista las cámaras |

@@ -163,6 +163,12 @@ def main() -> int:
     real = np.random.default_rng(3).integers(40, 200, (480, 640, 3), dtype=np.uint8)
     revisar(v.es_plano(verde) and v.es_plano(negro) and not v.es_plano(real),
             "imagen plana: verde liso y negro sí; una imagen con variación no")
+    salida = "List of devices attached\nR5CY73Q2MQA\tdevice\nABC123\tunauthorized\n\n"
+    revisar(v.leer_dispositivos(salida) == {"R5CY73Q2MQA": "device", "ABC123": "unauthorized"}
+            and v.leer_dispositivos("List of devices attached\n\n") == {},
+            "adb devices: celular listo, sin permiso y ninguno")
+    revisar(v.es_usb("http://127.0.0.1:4747/video") and not v.es_usb("http://192.168.1.50:4747/video")
+            and not v.es_usb("0"), "DroidCam por cable = URL en 127.0.0.1; por Wi-Fi o índice, no")
 
     class CapFalsa:  # entrega un cuadro cada 20 ms
         def __init__(self):

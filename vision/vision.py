@@ -18,7 +18,8 @@ Mientras mide, abre la ventana de vista previa (la estación le dice a la person
 apto/control/estado_vision {"estado": "midiendo", "segundos_restantes"} cada 5 s y al final "listo", o "error"
 con "motivo". Al terminar cierra la ventana y suelta la cámara.
 
-Cámara: CAMARA en config.env (índice 0, 1… o la URL de DroidCam, como http://IP:4747/video).
+Cámara: CAMARA en config.env (índice 0, 1… o la URL de DroidCam, como http://IP:4747/video). Por cable USB:
+CAMARA=http://127.0.0.1:4747/video; antes de cada medición se rehace «adb forward» hacia el celular.
 
 MÉTODOS
   Pulso (rPPG): promedio RGB de la frente y las dos mejillas en cada cuadro, con su hora. Se vuelve a muestrear a
@@ -379,6 +380,54 @@ def fuente_camara(valor: str | None = None) -> str:
     return (valor or config.get("CAMARA", "0")).strip()
 
 
+def es_usb(fuente: str) -> bool:
+    """DroidCam por cable: con «adb forward» el celular se ve en esta laptop como 127.0.0.1."""
+    return fuente.startswith(("http://127.0.0.1:", "http://localhost:"))
+
+
+def buscar_adb() -> str | None:
+    """adb de Android (ADB en config, el del PATH o el del SDK). El que trae el cliente de DroidCam va al final: dos adb
+    de versiones distintas se cierran el servidor uno al otro."""
+    import shutil
+    opciones = [config.get("ADB", ""), shutil.which("adb") or "",
+                os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"),
+                r"C:\Program Files\DroidCam\Client\data\obs-plugins\droidcam-obs\adb\adb.exe"]
+    return next((o for o in opciones if o and Path(o).is_file()), None)
+
+
+def leer_dispositivos(salida: str) -> dict[str, str]:
+    """Salida de «adb devices» -> {serie: estado} ("device" = listo, "unauthorized" = falta aceptar el permiso)."""
+    return {s.strip(): e.strip() for s, e in (l.split("\t", 1) for l in salida.splitlines()[1:] if "\t" in l)}
+
+
+def puente_usb(fuente: str) -> str | None:
+    """Rehace «adb forward» hacia el puerto de DroidCam (se pierde cada vez que se desconecta el celular).
+    None si quedó listo; si no, el motivo para mostrar."""
+    import subprocess
+    from urllib.parse import urlparse
+    adb = buscar_adb()
+    if adb is None:
+        return "No encontré adb (Android SDK Platform-Tools) para usar DroidCam por cable."
+
+    def correr(*args):
+        return subprocess.run([adb, *args], capture_output=True, text=True, timeout=15,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        dispositivos = leer_dispositivos(correr("devices").stdout)
+        listos = [s for s, e in dispositivos.items() if e == "device"]
+        if not listos:
+            if "unauthorized" in dispositivos.values():
+                return "El celular pide permiso: acepten «¿Permitir depuración USB?» en su pantalla."
+            return "No veo el celular por USB: revisen el cable (que pase datos) y que la depuración USB esté activa."
+        puerto = urlparse(fuente).port or 4747
+        r = correr("-s", listos[0], "forward", f"tcp:{puerto}", f"tcp:{puerto}")
+        if r.returncode != 0:
+            return f"No se pudo conectar el puerto {puerto} por USB: {(r.stderr or r.stdout).strip()}"
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"adb falló: {e}"
+    return None
+
+
 def abrir_camara(fuente: str):
     """Media Foundation primero: en Windows da 30 cuadros por segundo donde DirectShow da 16, y ve las cámaras
     virtuales nuevas (como DroidCam). Si no abre, DirectShow."""
@@ -594,10 +643,20 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
     """Abre la cámara y junta cuadros durante `segundos` (None = hasta q/Esc). al_avanzar(quedan) cada 5 s."""
     import cv2
     fuente = fuente_camara(camara)
+    if es_usb(fuente):
+        motivo = puente_usb(fuente)
+        if motivo:
+            raise ErrorMedicion(motivo)
     cap = abrir_camara(fuente)
     if cap is None:
-        extra = (" ¿DroidCam está tomado por otro programa (por ejemplo, el cliente de Windows)? El celular acepta "
-                 "uno a la vez." if not fuente.isdigit() else " ¿Está ocupada o desconectada?")
+        if es_usb(fuente):
+            extra = (" Abran la app DroidCam en el celular y déjenla en pantalla, y cierren DroidCam en la laptop: el "
+                     "celular acepta un programa a la vez.")
+        elif not fuente.isdigit():
+            extra = (" ¿DroidCam está tomado por otro programa (por ejemplo, el cliente de Windows)? El celular acepta "
+                     "uno a la vez.")
+        else:
+            extra = " ¿Está ocupada o desconectada?"
         raise ErrorMedicion(f"No se pudo abrir la cámara {fuente}.{extra}")
     rostro = Rostro()
     registro = Registro()
