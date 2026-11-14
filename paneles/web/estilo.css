@@ -218,6 +218,10 @@ kbd {
 .simulado.provisional { border-color: var(--amarillo); color: var(--amarillo); }
 #etiquetas-resultado { display: flex; gap: 0.4rem; }
 .avisos-vision { margin: 0.5rem 0 0; padding-left: 1.2rem; font-size: 1rem; color: var(--amarillo); }
+.aviso-spo2 {
+  margin: 0; padding: 0.6rem 0.9rem; max-width: 18rem; text-align: center; font-weight: 600;
+  border: 1px solid var(--amarillo); border-radius: var(--radio); background: rgba(255, 201, 60, 0.12); color: var(--amarillo);
+}
 .opciones.frases { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
 .opciones.frases .opcion { min-height: 3rem; font-size: 1rem; }
 #hablar.escuchando { border-color: var(--rojo); color: var(--rojo); animation: parpadeo 1s infinite; }

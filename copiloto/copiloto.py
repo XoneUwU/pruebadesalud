@@ -44,6 +44,8 @@ AVISO = ("Avisa al comandante y al responsable médico de la tripulación y, si 
          "al médico de vuelo en Tierra.")
 ADVERTENCIA = "Esto es solo una sugerencia temporal: busca atención de personal capacitado lo antes posible."
 MEDIDA_SIN_FICHA = "Detén la tarea y quédate en un lugar seguro."
+# Aviso de SpO2 del coordinador ("aviso_spo2": true): no cambia el color; el resumen lo dice al final.
+AVISO_SPO2 = "Aviso: el oxígeno en sangre salió más bajo de lo habitual; repite la medición."
 
 # Recordatorio fijo (sin el modelo) al final de las respuestas cuya ficha principal es de salud.
 RECORDATORIO = "Si no mejora, busca la ayuda de personal capacitado."
@@ -244,12 +246,17 @@ def resumen(ev: dict, tarea_activa: str = "") -> str:
     color = ev.get("color", "sin color")
     tarea = ev.get("tarea") or tarea_activa
     partes = [f"{nombre}, tu resultado{' para ' + con_articulo(tarea) if tarea else ''} es {color}."]
-    if ev.get("motivos"):
-        partes.append(f"Motivos: {_unir(ev['motivos'])}.")
-    elif color == "verde":
+    aviso_spo2 = bool(ev.get("aviso_spo2"))
+    # El aviso de SpO2 no es un motivo del color: se dice aparte, al final.
+    motivos = [m for m in (ev.get("motivos") or []) if not (aviso_spo2 and m.lower().startswith("oxígeno más bajo"))]
+    if motivos:
+        partes.append(f"Motivos: {_unir(motivos)}.")
+    elif color == "verde" and not aviso_spo2:
         partes.append("Tus señales están en tu rango habitual.")
     if ev.get("accion"):
         partes.append(f"Recomendación: {_minuscula_inicial(ev['accion'].strip().rstrip('.'))}.")
+    if aviso_spo2:
+        partes.append(AVISO_SPO2)
     return " ".join(partes)
 
 

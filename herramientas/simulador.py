@@ -2,6 +2,7 @@
 
   python herramientas/simulador.py                 menú: 1 verde, 2 amarillo, 3 rojo
   python herramientas/simulador.py --auto 20       publica una evaluación al azar cada 20 s
+  python herramientas/simulador.py --esp32 40 --spo2 89   40 lecturas del ESP32 (1 por segundo) con SpO2 ~89
 
 Los datos son FALSOS: sirven solo para probar el copiloto y los paneles.
 """
@@ -50,12 +51,12 @@ def publicar_evaluacion(cli: ClienteMQTT, persona: str, color: str, tarea: str, 
     print(f"Publicado: {persona} -> {color}")
 
 
-def publicar_esp32(cli: ClienteMQTT, persona: str):
+def publicar_esp32(cli: ClienteMQTT, persona: str, spo2: float | None = None):
     cli.publicar(tema(persona, "esp32"), {
         "persona": persona, "simulado": True,
         "pulso_lpm": round(random.gauss(72, 4)), "hrv_rmssd_ms": round(random.gauss(42, 6), 1),
-        "spo2": round(random.gauss(97.5, 0.6), 1), "movimiento": round(abs(random.gauss(0.02, 0.01)), 3),
-        "dedo": True, "calidad": 0.9,
+        "spo2": round(random.gauss(spo2 if spo2 is not None else 97.5, 0.4), 1),
+        "movimiento": round(abs(random.gauss(0.02, 0.01)), 3), "dedo": True, "calidad": 0.9,
     })
 
 
@@ -64,12 +65,20 @@ def main():
     ap.add_argument("--persona", default=config.get("PERSONA", "bri"))
     ap.add_argument("--tarea", default="caminata espacial")
     ap.add_argument("--auto", type=int, default=0, help="segundos entre evaluaciones al azar")
+    ap.add_argument("--esp32", type=int, default=0,
+                    help="solo publica lecturas del ESP32 (una por segundo) durante estos segundos y termina")
+    ap.add_argument("--spo2", type=float, default=None, help="SpO2 de las lecturas del ESP32 (por defecto ~97,5)")
     args = ap.parse_args()
 
     cli = ClienteMQTT("simulador")
     if not cli.conectar():
         return
-    if args.auto:
+    if args.esp32:  # p. ej. --esp32 40 --spo2 89 para probar el aviso de oxígeno bajo
+        print(f"Publicando {args.esp32} lecturas del ESP32 de {args.persona} (SpO2 ~{args.spo2 or 97.5})")
+        for _ in range(args.esp32):
+            publicar_esp32(cli, args.persona, args.spo2)
+            time.sleep(1)
+    elif args.auto:
         print(f"Publicando cada {args.auto} s (Ctrl+C para salir)")
         try:
             while True:

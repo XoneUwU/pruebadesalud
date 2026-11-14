@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from coordinador_provisional import evaluar, guardar_linea_base, leer_linea_base  # noqa: E402
+from coordinador_provisional import MOTIVO_SPO2, evaluar, evaluar_spo2, guardar_linea_base, leer_linea_base  # noqa: E402
 
 PVT_BIEN = {"rt_media_ms": 280, "lapsos": 0, "anticipadas": 0, "duracion_s": 180, "lapsos_por_min": 0, "anticipadas_por_min": 0}
 DSST_BIEN = {"correctas": 60, "incorrectas": 1, "por_minuto": 40, "duracion_s": 90}
@@ -104,6 +104,34 @@ def main() -> int:
         fallas += not ok
         print(f"{'OK   ' if ok else 'FALLA'}  línea base de sebas sin la sesión evaluada: {base}")
 
+    # Aviso de SpO2: 30 s seguidos con el SpO2 bajo (con dedo y calidad >= 0,5); no cambia el color.
+    def lecturas(valores, desde=0.0, dedo=True, calidad=0.9):
+        return [(desde + i, {"dedo": dedo, "calidad": calidad, "spo2": v}) for i, v in enumerate(valores)]
+
+    base_spo2 = [{"spo2": 98}, {"spo2": 97}]  # promedio 97,5: bajo = 93,5 o menos
+    cada_4 = [89 if i % 4 == 0 else None for i in range(36)]  # el sensor da el SpO2 cada ~4 s
+    casos_spo2 = [
+        ("sin base: 89 durante 35 s", lecturas([89] * 36), None, True),
+        ("sin base: 89 solo 25 s", lecturas([89] * 26), None, False),
+        ("con base 97,5: 93 durante 35 s", lecturas([93] * 36), base_spo2, True),
+        ("con base 97,5: 95 durante 35 s (solo 2,5 abajo)", lecturas([95] * 36), base_spo2, False),
+        ("dedo afuera a la mitad corta la racha", lecturas([89] * 20) + lecturas([89], 20, dedo=False)
+         + lecturas([89] * 20, 21), None, False),
+        ("mala calidad no cuenta", lecturas([89] * 40, calidad=0.3), None, False),
+        ("SpO2 cada ~4 s (sin valor entre medio) no corta", lecturas(cada_4), None, True),
+    ]
+    for nombre, lect, base_e, esperado in casos_spo2:
+        aviso, seg = evaluar_spo2(lect, base_e)
+        ok = aviso == esperado
+        fallas += not ok
+        print(f"{'OK   ' if ok else 'FALLA'}  SpO2 {nombre}: aviso={aviso} ({seg} s seguidos)")
+    sin, con = evaluar(sesion()), evaluar(sesion(), aviso_spo2=True)
+    ok = (con["color"] == sin["color"] == "verde" and con["puntaje"] == sin["puntaje"] and con["aviso_spo2"]
+          and con["motivos"] == [MOTIVO_SPO2] and not sin["aviso_spo2"])
+    fallas += not ok
+    print(f"{'OK   ' if ok else 'FALLA'}  el aviso de SpO2 no cambia el color ni el puntaje: {con['color']} {con['puntaje']} "
+          f"{con['motivos']}")
+
     # El ESP32 manda una lectura por segundo: se juntan (mediana) y no reinician la espera del cálculo.
     from coordinador_provisional import Coordinador
 
@@ -135,7 +163,23 @@ def main() -> int:
     print(f"{'OK   ' if ok else 'FALLA'}  ESP32: 10 lecturas juntadas, solo 4 válidas (con dedo y calidad) en la mediana "
           f"-> {ev['color']} {ev['senales']}")
 
-    total = len(CASOS) + 3
+    # El aviso llega a la evaluación publicada (las lecturas, separadas 1 s como las del ESP32).
+    cli.mensajes.clear()
+    coord._al_sesion("apto/control/sesion", {"persona": "sebas", "tarea": "caminata espacial", "sesion": "s10"})
+    for _ in range(40):
+        coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": 72, "spo2": 89, "dedo": True, "calidad": 0.9})
+    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s10", "kss": 3, "horas_sueno": 8})
+    s10 = coord.sesiones[("sebas", "s10")]
+    s10["timer"].cancel()
+    s10["esp32"] = [(1000.0 + i, m) for i, (_, m) in enumerate(s10["esp32"])]
+    coord._publicar("sebas", "s10")
+    ev10 = next(d for t, d in cli.mensajes if t == "apto/sebas/evaluacion")
+    ok = ev10["aviso_spo2"] is True and MOTIVO_SPO2 in ev10["motivos"] and ev10["color"] == "verde"
+    fallas += not ok
+    print(f"{'OK   ' if ok else 'FALLA'}  el coordinador publica el aviso: aviso_spo2={ev10['aviso_spo2']}, "
+          f"{ev10['color']}, {ev10['motivos']}")
+
+    total = len(CASOS) + 3 + len(casos_spo2) + 2
     print(f"\n{total - fallas} de {total} pasaron.")
     return 1 if fallas else 0
 

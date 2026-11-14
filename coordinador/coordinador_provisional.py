@@ -33,6 +33,9 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
                 pulso: +15 % = 1, +30 % = 2 | sin base: 100 = 1, 120 = 2.
                 HRV (RMSSD): 25 % más baja que la base = 1, 50 % = 2 (solo con base).
                 SI HAY PULSO DEL SENSOR, MANDA: el de la cámara no se usa.
+                SpO2: NO suma al semáforo. Si durante al menos 30 s seguidos (lecturas con dedo y calidad >= 0,5)
+                el SpO2 está 4 puntos o más por debajo del promedio de la línea base (o por debajo de 92 sin
+                línea base), la evaluación lleva "aviso_spo2": true y el motivo MOTIVO_SPO2, sin cambiar el color.
 Los puntos de cada fuente (pvt, dsst, cuestionario, voz, vision) son los de su peor indicador.
   rojo      si alguna fuente tiene 2 puntos, o si 3 fuentes o más tienen puntos
   amarillo  si alguna fuente tiene puntos
@@ -57,6 +60,11 @@ ESPERA_S = 1.5  # tras el cuestionario, para juntar los mensajes que todavía vi
 CALIDAD_RPPG_MIN = 0.5  # calidad_rppg (0 a 1) desde la que se cree el pulso medido por la cámara
 CARA_MIN_PCT = 50       # con la cara visible menos tiempo, la visión no cuenta
 CALIDAD_ESP32_MIN = 0.5  # lecturas del ESP32 con menos calidad (o sin dedo) no cuentan
+# Aviso de SpO2 (no suma al semáforo)
+SPO2_SEGUNDOS = 30          # tiempo seguido con el SpO2 bajo para avisar
+SPO2_PUNTOS_BAJO = 4        # puntos por debajo del promedio de la línea base
+SPO2_MINIMO_SIN_BASE = 92   # sin línea base: avisar por debajo de esto
+MOTIVO_SPO2 = "Oxígeno más bajo de lo habitual: repetir la medición"
 ACCIONES = {
     "verde": "Puede realizar la tarea",
     "amarillo": "Reasignar la tarea o hacerla en pareja, y descansar antes",
@@ -193,10 +201,37 @@ def rppg_confiable(m: dict) -> bool:
     return calidad is not None and calidad >= CALIDAD_RPPG_MIN and _num(m.get("pulso_rppg_lpm")) is not None
 
 
-def evaluar(datos: dict[str, dict], base: dict[str, list[dict]] | None = None) -> dict:
+def evaluar_spo2(lecturas: list[tuple[float, dict]], base_esp32: list[dict] | None = None) -> tuple[bool, float]:
+    """(¿avisar?, segundos seguidos con el SpO2 bajo) con las lecturas del ESP32 de una sesión: (hora de llegada, mensaje).
+
+    Bajo = SPO2_PUNTOS_BAJO o más por debajo del promedio de la línea base, o < SPO2_MINIMO_SIN_BASE sin línea base.
+    Solo cuentan lecturas con dedo y calidad >= CALIDAD_ESP32_MIN: una sin dedo (o con mala calidad) o con el SpO2
+    normal corta la racha; una sin valor de SpO2 (el sensor lo da cada ~4 s) no la corta ni la alarga."""
+    base = _promedio(_num(b.get("spo2")) for b in (base_esp32 or []))
+    racha_desde, mayor = None, 0.0
+    for t, m in sorted(lecturas, key=lambda x: x[0]):
+        calidad = _num(m.get("calidad"))
+        if m.get("dedo") is not True or calidad is None or calidad < CALIDAD_ESP32_MIN:
+            racha_desde = None
+            continue
+        v = _num(m.get("spo2"))
+        if v is None:
+            continue
+        baja = v <= base - SPO2_PUNTOS_BAJO if base is not None else v < SPO2_MINIMO_SIN_BASE
+        if not baja:
+            racha_desde = None
+            continue
+        if racha_desde is None:
+            racha_desde = t
+        mayor = max(mayor, t - racha_desde)
+    return mayor >= SPO2_SEGUNDOS, round(mayor, 1)
+
+
+def evaluar(datos: dict[str, dict], base: dict[str, list[dict]] | None = None, aviso_spo2: bool = False) -> dict:
     """datos: {"pvt": mensaje, "cuestionario": mensaje, ...} de una sesión; base: línea base por tipo.
 
-    Devuelve color, puntaje, motivos (hasta 3, frases neutras), accion y senales (puntos por fuente)."""
+    Devuelve color, puntaje, motivos (hasta 3, frases neutras), accion, senales (puntos por fuente) y aviso_spo2.
+    El aviso de SpO2 agrega MOTIVO_SPO2 pero no cambia el color ni el puntaje."""
     base = base or {}
     senales, motivos = {}, []
     hay_pulso_sensor = _num((datos.get("esp32") or {}).get("pulso_lpm")) is not None
@@ -217,9 +252,10 @@ def evaluar(datos: dict[str, dict], base: dict[str, list[dict]] | None = None) -
         color = "verde"
     puntaje = 1 - sum(senales.values()) / (2 * len(senales)) if senales else 1.0
     motivos.sort(key=lambda x: -x[0])  # los más fuertes primero (orden estable)
+    textos = [t for _, t in motivos[:3]] + ([MOTIVO_SPO2] if aviso_spo2 else [])  # el aviso va aparte del color
     return {
-        "color": color, "puntaje": round(max(0.0, puntaje), 2), "motivos": [t for _, t in motivos[:3]],
-        "accion": ACCIONES[color], "senales": senales,
+        "color": color, "puntaje": round(max(0.0, puntaje), 2), "motivos": textos,
+        "accion": ACCIONES[color], "senales": senales, "aviso_spo2": bool(aviso_spo2),
     }
 
 
@@ -294,8 +330,8 @@ class Coordinador:
         with self._lock:
             s = self.sesiones.setdefault((persona, sesion), {"datos": {}, "lista": False, "timer": None,
                                                              "inicio": time.time(), "esp32": [], "base_esp32": False})
-            if tipo == "esp32":  # llega una lectura por segundo: se juntan y no se recalcula por cada una
-                s["esp32"].append(d)
+            if tipo == "esp32":  # llega una lectura por segundo: se juntan (con su hora) y no se recalcula por cada una
+                s["esp32"].append((time.time(), d))
                 return
             s["datos"][tipo] = d
             if d.get("linea_base"):
@@ -315,13 +351,18 @@ class Coordinador:
         with self._lock:
             s = self.sesiones[(persona, sesion)]
             datos = dict(s["datos"])
-            if s["esp32"]:
-                datos["esp32"] = resumen_esp32(s["esp32"])
+            lecturas_esp32 = list(s["esp32"])
+            if lecturas_esp32:
+                datos["esp32"] = resumen_esp32([m for _, m in lecturas_esp32])
                 # el ESP32 no marca línea base: se toma la de la sesión (la del cuestionario), una sola vez
                 if (datos.get("cuestionario") or {}).get("linea_base") and not s["base_esp32"]:
                     guardar_linea_base(persona, "esp32", sesion, datos["esp32"])
                     s["base_esp32"] = True
-        r = evaluar(datos, leer_linea_base(persona, sin_sesion=sesion))
+        base = leer_linea_base(persona, sin_sesion=sesion)
+        aviso, segundos_bajo = evaluar_spo2(lecturas_esp32, base.get("esp32"))
+        r = evaluar(datos, base, aviso_spo2=aviso)
+        if aviso:
+            print(f"[coordinador] {persona}: SpO2 bajo durante {segundos_bajo:.0f} s seguidos -> aviso (no cambia el color)")
         ev = {"persona": persona, "sesion": sesion, "tarea": self.tareas.get(sesion, ""), **r, "provisional": True}
         self.cli.publicar(tema(persona, "evaluacion"), ev, retener=True)
         self.cli.publicar(tema(persona, "semaforo"), {"persona": persona, "sesion": sesion, "color": r["color"],

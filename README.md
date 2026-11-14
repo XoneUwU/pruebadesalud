@@ -52,6 +52,7 @@ Abrir una terminal en la carpeta del proyecto (`.venv\Scripts\activate` primero)
 | Voz con micrófono | `python voz\voz_fatiga.py --persona bri` | Rasgos de tu voz y el mensaje en escuchar.py |
 | Copiloto escrito | `python copiloto\copiloto.py --texto` | Responde y habla |
 | Simulador | `python herramientas\simulador.py` y luego `2` | El copiloto lee el resultado amarillo en voz alta |
+| Simulador del ESP32 | `python herramientas\simulador.py --esp32 40 --spo2 89` | 40 lecturas del ESP32 (1 por segundo); con SpO2 bajo, la evaluación lleva el aviso de oxígeno |
 | Copiloto por voz | `python copiloto\copiloto.py` y Enter vacío | Te escucha, transcribe y responde |
 | Paneles web | `python paneles\servidor.py` y abrir http://localhost:8080 | Estación, tripulación y Tierra (ver la sección 5) |
 | Coordinador provisional | `python coordinador\coordinador_provisional.py` | Calcula el semáforo al terminar el cuestionario de la estación (sección 6) |
@@ -102,7 +103,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/{persona}/voz` | Voz (Bri) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | PVT-B en el navegador: `rt_media_ms`, `rt_mediana_ms`, `lapsos` (355 ms o más, o sin respuesta en 30 s), `anticipadas` (antes del estímulo o en menos de 100 ms), `lapsos_por_min` y `anticipadas_por_min` (para comparar 3 min con 1 min), `n_estimulos`, `duracion_s`, `linea_base`, `modo_demo` (true = 1 minuto) |
 | `apto/{persona}/dsst` | Panel (Sebas) | Coordinador | Prueba de símbolos (DSST, 90 s, opcional): `correctas`, `incorrectas`, `por_minuto` (correctas por minuto), `duracion_s`, `linea_base` || `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | `kss` (escala de somnolencia de Karolinska, 1 a 9), `kss_texto`, `horas_sueno` (de 0 a 16, de media en media hora), `linea_base` |
-| `apto/{persona}/evaluacion` | Coordinador (Danilo; por ahora el provisional) | Paneles, copiloto | `color`, `puntaje`, `motivos`, `accion`, `pesos` y `sesion` (la de la estación, para que la estación lo reconozca). El provisional agrega `"provisional": true` y `senales` (puntos por fuente). **Publicar con retain.** Los `motivos` se escriben como frases neutras, sin sujeto («Menos horas de sueño de lo habitual», no «Durmió menos»), porque el copiloto los lee después de «tu resultado… Motivos:». |
+| `apto/{persona}/evaluacion` | Coordinador (Danilo; por ahora el provisional) | Paneles, copiloto | `color`, `puntaje`, `motivos`, `accion`, `pesos` y `sesion` (la de la estación, para que la estación lo reconozca). El provisional agrega `"provisional": true`, `senales` (puntos por fuente) y `aviso_spo2` (true si el SpO2 del ESP32 estuvo bajo 30 s seguidos: **no cambia el color**; va con el motivo «Oxígeno más bajo de lo habitual: repetir la medición»). **Publicar con retain.** Los `motivos` se escriben como frases neutras, sin sujeto («Menos horas de sueño de lo habitual», no «Durmió menos»), porque el copiloto los lee después de «tu resultado… Motivos:». |
 | `apto/{persona}/semaforo` | Coordinador | ESP32 | Solo `color`. **Con retain.** |
 | `apto/{persona}/copiloto` | Copiloto (Bri) | Paneles | `pregunta`, `respuesta`, `fichas`, `modo` |
 
@@ -154,6 +155,12 @@ con el promedio de la persona (`datos/coordinador/linea_base.jsonl`); sin línea
 referencia del prototipo, que hay que calibrar. **Rojo** si alguna fuente tiene 2 puntos o si 3 fuentes tienen
 puntos; **amarillo** si alguna tiene puntos; **verde** si ninguna. Los motivos son frases neutras, sin sujeto
 («Somnolencia alta según la escala de Karolinska»). La voz pesa como máximo 1 punto, porque es una señal débil.
+**SpO2: aviso, no puntaje.** Si durante al menos 30 s seguidos, con dedo y calidad ≥ 0,5, el SpO2 está 4 puntos o
+más por debajo del promedio de la línea base de la persona (o por debajo de 92 si no tiene línea base), la evaluación
+lleva `"aviso_spo2": true` y el motivo «Oxígeno más bajo de lo habitual: repetir la medición», **sin cambiar el
+color**. Sacar el dedo o una lectura normal cortan la racha. La estación lo muestra en amarillo debajo del semáforo y
+el copiloto lo dice al final del resumen. Para probarlo: `python herramientas\simulador.py --persona bri --esp32 40
+--spo2 89` durante una sesión, antes del cuestionario.
 **Pulso: manda el sensor.** Si llegan lecturas del ESP32 en la sesión (una por segundo; se usa su mediana), su
 pulso es el que cuenta y el de la cámara (rPPG) no se usa; sin sensor, el de la cámara solo cuenta si
 `calidad_rppg` ≥ 0,5.

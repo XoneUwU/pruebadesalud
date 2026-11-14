@@ -133,7 +133,24 @@ def main() -> int:
     fallas += not ok
     print(f"{'OK   ' if ok else 'FALLA'}  en modo texto avisa que no puede escuchar: {estados[-1]['motivo'] if estados else '-'}")
 
-    total = len(CASOS) + len(grupos) + len(casos_corte) + 1
+    # Aviso de SpO2 en el resumen: aparte de los motivos y sin «señales en rango habitual».
+    print("\n--- aviso de SpO2 ---")
+    from copiloto import AVISO_SPO2, resumen
+    motivo = "Oxígeno más bajo de lo habitual: repetir la medición"
+    casos_spo2 = [
+        ({**ev("bri", "verde", 0.9), "motivos": [motivo], "aviso_spo2": True, "accion": "Puede realizar la tarea"},
+         lambda r: r.endswith(AVISO_SPO2) and "Motivos" not in r and "rango habitual" not in r),
+        ({**ev("bri", "amarillo", 0.6), "motivos": ["Menos de 6 horas de sueño", motivo], "aviso_spo2": True},
+         lambda r: "Motivos: menos de 6 horas de sueño." in r and r.endswith(AVISO_SPO2)),
+        ({**ev("bri", "verde", 0.9), "motivos": []}, lambda r: "rango habitual" in r and AVISO_SPO2 not in r),
+    ]
+    for e, cumple in casos_spo2:
+        r = resumen(e)
+        ok = cumple(r)
+        fallas += not ok
+        print(f"{'OK   ' if ok else 'FALLA'}  {r}")
+
+    total = len(CASOS) + len(grupos) + len(casos_corte) + 1 + len(casos_spo2)
     print(f"\n{total - fallas} de {total} pasaron.")
     return 1 if fallas else 0
 

@@ -766,7 +766,15 @@
     $("palabra-color").textContent = palabraColor(color);
     $("etiquetas-resultado").replaceChildren(...[etiquetaProvisional(ev), etiquetaSimulado(ev)].filter(Boolean));
     $("puntaje").textContent = ev.puntaje != null ? `Puntaje ${L.decimal(ev.puntaje)} · ${L.hora(L.tsAMs(ev.ts))}` : "";
-    const motivos = ev.motivos && ev.motivos.length ? ev.motivos : ["Tus señales están en tu rango habitual."];
+    // Aviso de SpO2: no cambia el color; va en amarillo debajo del semáforo y no se repite en los motivos.
+    const esAvisoSpo2 = (m) => ev.aviso_spo2 && /^ox[ií]geno m[aá]s bajo/i.test(m);
+    $("aviso-spo2").hidden = !ev.aviso_spo2;
+    $("aviso-spo2").textContent = ev.aviso_spo2
+      ? `⚠ ${(ev.motivos || []).find(esAvisoSpo2) || "Oxígeno más bajo de lo habitual: repetir la medición"}`
+      : "";
+    const propios = (ev.motivos || []).filter((m) => !esAvisoSpo2(m));
+    const motivos = propios.length ? propios
+      : [ev.aviso_spo2 ? "Sin motivos que cambien el color." : "Tus señales están en tu rango habitual."];
     $("motivos").replaceChildren(...motivos.map((m) => el("li", {}, m)));
     $("accion").textContent = ev.accion || "–";
   }
