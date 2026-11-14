@@ -218,6 +218,9 @@ kbd {
 .simulado.provisional { border-color: var(--amarillo); color: var(--amarillo); }
 #etiquetas-resultado { display: flex; gap: 0.4rem; }
 .avisos-vision { margin: 0.5rem 0 0; padding-left: 1.2rem; font-size: 1rem; color: var(--amarillo); }
+.opciones.frases { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+.opciones.frases .opcion { min-height: 3rem; font-size: 1rem; }
+#hablar.escuchando { border-color: var(--rojo); color: var(--rojo); animation: parpadeo 1s infinite; }
 .analizando kbd { white-space: normal; }
 
 /* Prueba de símbolos (DSST) */

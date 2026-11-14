@@ -111,7 +111,29 @@ def main() -> int:
         if not ok:
             print(f"       esperado: {esperado}")
 
-    total = len(CASOS) + len(grupos)
+    # Preguntar en voz alta desde la estación (botón Hablar).
+    print("\n--- escuchar por voz ---")
+    from habla import decidir_corte
+    ruido, voz = [0.002] * 6, [0.05]
+    casos_corte = [
+        ("habla y se calla 1,2 s", ruido + voz * 30 + [0.002] * 24, "fin"),
+        ("habla y lleva 0,5 s callado", ruido + voz * 30 + [0.002] * 10, None),
+        ("5 s sin hablar", ruido + [0.003] * 94, "sin_voz"),
+        ("todavía no habla (2 s)", ruido + [0.003] * 34, None),
+    ]
+    for nombre, volumenes, esperado in casos_corte:
+        r = decidir_corte(volumenes)
+        ok = r == esperado
+        fallas += not ok
+        print(f"{'OK   ' if ok else 'FALLA'}  cortar la escucha: {nombre} -> {r}")
+    cop = nuevo_copiloto()  # abierto con --texto: no tiene Whisper
+    cop._escuchar_panel("bri", {"segundos_max": 5})
+    estados = [d for t, d in cop.cli.mensajes if t == "apto/control/estado_escucha"]
+    ok = len(estados) == 1 and estados[0]["estado"] == "error" and "modo texto" in estados[0]["motivo"]
+    fallas += not ok
+    print(f"{'OK   ' if ok else 'FALLA'}  en modo texto avisa que no puede escuchar: {estados[-1]['motivo'] if estados else '-'}")
+
+    total = len(CASOS) + len(grupos) + len(casos_corte) + 1
     print(f"\n{total - fallas} de {total} pasaron.")
     return 1 if fallas else 0
 

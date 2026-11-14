@@ -70,6 +70,10 @@ def probar_servidor():
                 f"GET /config.js -> {codigo} {tipo}")
         revisar(datos.get("puede_publicar") is True and datos.get("mqtt_puerto_ws") == 9001,
                 "config.js desde localhost: puede publicar, WebSocket 9001", str(datos))
+        frases = datos.get("frases_voz", {})
+        revisar(list(frases)[:1] == ["estandar"] and "trabalenguas" in frases and len(frases) >= 3
+                and all(f.get("texto") for f in frases.values()),
+                f"config.js trae las frases de voz para elegir: {list(frases)}")
         revisar(len(datos.get("tripulacion", [])) >= 1 and datos.get("pvt_segundos", 0) > 0
                 and "retraso_tierra_s" in datos and "caminata" in datos.get("frase_voz", ""),
                 f"config.js trae tripulación {datos.get('tripulacion')}, PVT {datos.get('pvt_segundos')} s, "

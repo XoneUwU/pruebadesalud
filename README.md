@@ -82,7 +82,9 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/control/modulos/{modulo}` | Todos los módulos de Python (`comun/mqtt_cliente.py`) | Estación | `{"modulo", "activo": true}` al conectarse, **con retain**; el Last Will publica `{"activo": false}` si el programa se cae, y `cerrar()` lo publica al salir bien. La estación espera los nombres `voz`, `copiloto`, `vision` y `coordinador`. Son cuatro niveles a propósito: `apto/estado/{modulo}` coincidiría con `apto/+/voz`. |
 | `apto/control/orden_vision` | Panel (Sebas) | Visión | `{"accion": "medir", "persona", "segundos": 60, "sesion"}`: la estación pide un minuto de medición con la cámara (la estación no abre la cámara: lo hace el módulo de visión, que muestra el rostro en su ventana) |
 | `apto/control/estado_vision` | Visión | Panel | `{"persona", "sesion", "estado": "midiendo", "segundos_restantes"}` cada 5 s mientras mide; al terminar `"listo"`, o `"error"` con `"motivo"` (por ejemplo «No se encontró la cámara»). La estación lo muestra en el paso de la cámara. |
-| `apto/control/orden_voz` | Panel (Sebas) | Voz | `{"accion": "grabar", "persona", "segundos", "linea_base", "sesion"}` |
+| `apto/control/orden_voz` | Panel (Sebas) | Voz | `{"accion": "grabar", "persona", "segundos", "linea_base", "sesion", "frase"}`. `frase`: `estandar` (por defecto), `variacion_1`, `variacion_2` o `trabalenguas`; cada frase tiene su propia línea base |
+| `apto/control/escuchar` | Panel (Sebas) | Copiloto | `{"persona", "sesion", "segundos_max"}`: botón 🎤 Hablar de la estación; el copiloto graba con el micrófono de la laptop hasta que la persona se calla, transcribe con Whisper y responde |
+| `apto/control/estado_escucha` | Copiloto | Panel | `{"persona", "estado"}`: `escuchando`, `transcribiendo`, `listo` (con `texto`: la pregunta entendida) o `error` (con `motivo`) |
 | `apto/control/estado_voz` | Voz | Panel | `{"persona", "estado": "grabando" o "listo"}` |
 | `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta", "sesion"}`: pregunta escrita desde la estación |
 | `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador | Pulso, HRV, SpO₂, movimiento, sueño |
@@ -113,6 +115,12 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 - **Opciones** en `config.env`: `PVT_SEGUNDOS` (180 = PVT-B de 3 minutos; la casilla «Modo demo» de la estación
   la baja a 1 minuto y lo anota como `modo_demo: true`), `RETRASO_TIERRA_S` (20 s), `MQTT_WS_PORT` (9001) y
   `TRIPULACION` (los botones de la estación y las tarjetas). Si se cambian, hay que reiniciar `servidor.py`.
+- **Examen de voz con variaciones (opcional)**: en el paso de voz se elige la frase: la estándar (por defecto) o
+  variaciones de menos a más difícil hasta un trabalenguas. Cada frase tiene su **propia línea base** (una
+  medición solo se compara con las de la misma frase), así que cada una necesita sus 3 mediciones de línea base.
+- **Preguntar por voz**: en el resultado, el botón 🎤 Hablar le pide al copiloto que escuche con el micrófono de la
+  laptop; se detiene solo cuando la persona se calla (o a los 10 s), transcribe con Whisper y responde en voz alta
+  y en pantalla. Necesita el copiloto abierto en modo voz (`iniciar.bat`; con `--texto` no tiene Whisper).
 - **Módulos que faltan**: al inicio, la estación muestra si están abiertos voz, copiloto, visión y coordinador
   (`apto/control/modulos/+`). En cada paso dice «el módulo X no está abierto» y cómo abrirlo, en vez de esperar.
   El ESP32 no es un módulo de Python: si en 10 s no llegan datos, la estación lo avisa.

@@ -31,16 +31,28 @@ def es_local(ip: str) -> bool:
     return ip in ("::1", "localhost") or ip.startswith("127.") or ip.startswith("::ffff:127.")
 
 
-def frase_voz() -> str:
-    """La FRASE de voz/voz_fatiga.py, leída sin importar el módulo (así no hace falta Praat aquí)."""
+def constante_voz(nombre: str, defecto):
+    """Una constante literal de voz/voz_fatiga.py, leída sin importar el módulo (así no hace falta Praat aquí)."""
     try:
         arbol = ast.parse((RAIZ / "voz" / "voz_fatiga.py").read_text(encoding="utf-8"))
         for nodo in arbol.body:
-            if isinstance(nodo, ast.Assign) and any(getattr(t, "id", "") == "FRASE" for t in nodo.targets):
+            if isinstance(nodo, ast.Assign) and any(getattr(t, "id", "") == nombre for t in nodo.targets):
                 return ast.literal_eval(nodo.value)
     except (OSError, SyntaxError, ValueError):
         pass
-    return ""
+    return defecto
+
+
+def frase_voz() -> str:
+    return constante_voz("FRASE", "")
+
+
+def frases_voz() -> dict:
+    """{"estandar": {"titulo", "texto"}, "variacion_1": ..., "trabalenguas": ...} para elegir en la estación."""
+    frases = {"estandar": {"titulo": "Frase estándar", "texto": frase_voz()}}
+    for clave, (titulo, texto) in constante_voz("VARIACIONES", {}).items():
+        frases[clave] = {"titulo": titulo, "texto": texto}
+    return frases
 
 
 def configuracion(local: bool) -> dict:
@@ -55,6 +67,7 @@ def configuracion(local: bool) -> dict:
         "pvt_segundos": config.get_int("PVT_SEGUNDOS", 180),
         "retraso_tierra_s": config.get_int("RETRASO_TIERRA_S", 20),
         "frase_voz": frase_voz(),
+        "frases_voz": frases_voz(),
     }
 
 

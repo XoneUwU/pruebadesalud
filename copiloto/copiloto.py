@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # para importar
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from buscador import Buscador
-from habla import Locutor, Transcriptor, grabar_hasta_enter
+from habla import Locutor, Transcriptor, grabar_hasta_enter, grabar_hasta_silencio
 from llm import CerebroLLM
 
 from comun import config
@@ -328,6 +328,7 @@ class Copiloto:
         self._listo_para_auto = False      # evita leer en voz alta evaluaciones viejas al arrancar
         self._ultimo_id_eval: dict[str, str] = {}
         self._lock = threading.Lock()      # una respuesta a la vez
+        self._escuchando = threading.Lock()  # un pedido de escuchar a la vez (botón Hablar de la estación)
 
         self.buscador = Buscador()
         print(f"[copiloto] {len(self.buscador.fichas)} fichas de protocolo cargadas.")
@@ -340,6 +341,7 @@ class Copiloto:
             self.cli.suscribir("apto/+/evaluacion", self._al_recibir_evaluacion)
             self.cli.suscribir("apto/control/sesion", self._al_cambiar_sesion)
             self.cli.suscribir("apto/control/pregunta", self._al_recibir_pregunta)
+            self.cli.suscribir("apto/control/escuchar", self._al_pedir_escucha)
             time.sleep(0.5)  # dar tiempo a que lleguen las evaluaciones guardadas (retain)
         elif self.cli:
             print("\n" + "!" * 60)
@@ -390,6 +392,46 @@ class Copiloto:
         if pregunta:
             persona = datos.get("persona") or self.persona
             threading.Thread(target=self.responder, args=(pregunta, "panel", persona), daemon=True).start()
+
+    def _al_pedir_escucha(self, _tema: str, datos: dict):
+        """Botón Hablar de la estación: escuchar con el micrófono de esta laptop, transcribir y responder."""
+        persona = datos.get("persona") or self.persona
+        threading.Thread(target=self._escuchar_panel, args=(persona, datos), daemon=True).start()
+
+    def _escuchar_panel(self, persona: str, datos: dict):
+        def estado(valor: str, **extra):
+            if self.cli:
+                self.cli.publicar("apto/control/estado_escucha", {"persona": persona, "estado": valor, **extra})
+
+        if not self.transcriptor:
+            estado("error", motivo="El copiloto está abierto en modo texto (--texto): no puede escuchar.")
+            return
+        if not self._escuchando.acquire(blocking=False):
+            estado("error", motivo="Ya estoy escuchando otra pregunta.")
+            return
+        try:
+            self.locutor.esperar()  # que no se grabe su propia voz
+            estado("escuchando")
+            print("   [panel] Escuchando una pregunta por el micrófono...")
+            marca = datetime.now().strftime("%Y%m%d-%H%M%S")
+            ruta = grabar_hasta_silencio(CARPETA_AUDIO / f"{marca}-panel.wav",
+                                         max_s=float(datos.get("segundos_max") or 10))
+            if not ruta:
+                estado("error", motivo="No escuché nada. Acércate al micrófono e intenta de nuevo.")
+                return
+            estado("transcribiendo")
+            t0 = time.time()
+            pregunta = self.transcriptor.transcribir(ruta)
+            print(f"   [Whisper {time.time() - t0:.1f} s] Escuché: «{pregunta}»")
+            if not pregunta:
+                estado("error", motivo="No entendí la pregunta. Intenta de nuevo, más cerca del micrófono.")
+                return
+            estado("listo", texto=pregunta)
+            self.responder(pregunta, "voz-panel", persona)
+        except Exception as e:  # micrófono ocupado o sin permiso, etc.
+            estado("error", motivo=f"No se pudo escuchar ({e}).")
+        finally:
+            self._escuchando.release()
 
     def _publicar(self, persona, pregunta, respuesta, fichas, modo, origen):
         if self.cli:

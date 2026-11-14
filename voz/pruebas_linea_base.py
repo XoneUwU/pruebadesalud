@@ -77,7 +77,19 @@ def main() -> int:
         fallas += not ok
         print(f"{'OK   ' if ok else 'FALLA'}  leer_linea_base: {n} mediciones de bri (esperadas 3)")
 
-    total = len(CASOS) + 1
+        # Cada frase tiene su propia línea base: el trabalenguas no se mezcla con la estándar.
+        mas = [{**BASE[0], "frase_id": "trabalenguas"}, {**BASE[1], "frase_id": "trabalenguas"},
+               {**BASE[2], "frase_id": "estandar"}]
+        with open(historial, "a", encoding="utf-8") as f:
+            f.write("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in mas))
+        estandar = len(leer_linea_base("bri", historial))
+        trabalenguas = len(leer_linea_base("bri", historial, frase_id="trabalenguas"))
+        ok = estandar == 4 and trabalenguas == 2
+        fallas += not ok
+        print(f"{'OK   ' if ok else 'FALLA'}  línea base por frase: estándar {estandar} (3 viejas sin frase_id + 1), "
+              f"trabalenguas {trabalenguas} (esperadas 4 y 2)")
+
+    total = len(CASOS) + 2
     print(f"\n{total - fallas} de {total} pasaron.")
     return 1 if fallas else 0
 

@@ -100,7 +100,9 @@
     <section class="paso" data-paso="voz" hidden>
       <h1>Voz</h1>
       <p class="indicacion">Cuando empiece la grabación, lee esta frase en voz alta, con tono normal:</p>
+      <div class="opciones frases" id="frases-voz" aria-label="Frase a leer"></div>
       <blockquote class="frase" id="frase-voz"></blockquote>
+      <p class="estado" id="nota-frase"></p>
       <p class="estado fuerte" id="estado-voz" aria-live="polite"></p>
       <div class="progreso" id="progreso-voz-caja" hidden><div id="progreso-voz"></div></div>
       <div class="resultado-voz panel" id="resultado-voz" hidden></div>
@@ -215,9 +217,11 @@
       <section class="copiloto panel">
         <h2 class="etiqueta">Copiloto</h2>
         <p class="estado" id="estado-copiloto" hidden></p>
+        <p class="estado" id="estado-escucha" aria-live="polite" hidden></p>
         <ol class="conversacion" id="conversacion"></ol>
         <form class="form-pregunta" id="form-pregunta" autocomplete="off">
-          <input id="pregunta" type="text" placeholder="Escribe una pregunta para el copiloto" aria-label="Pregunta para el copiloto">
+          <input id="pregunta" type="text" placeholder="Escribe una pregunta o toca Hablar" aria-label="Pregunta para el copiloto">
+          <button class="boton" id="hablar" type="button" title="Preguntar en voz alta: el copiloto escucha con el micrófono de la laptop">🎤 Hablar</button>
           <button class="boton primario" id="enviar-pregunta" type="submit">Enviar</button>
         </form>
       </section>

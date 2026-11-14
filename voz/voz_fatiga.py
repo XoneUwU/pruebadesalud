@@ -15,8 +15,13 @@ cada medición se compara con ellas y el mensaje lleva z_rasgos, indice_cansanci
 ("normal", "más cansada que su línea base", "con más energía que su línea base" o "sin línea base")
 y motivos_voz. Es una sugerencia, no un diagnóstico: no detecta miedo ni emociones.
 
-Orden por MQTT para el modo servicio (la envía el panel de Sebas):
-  tema apto/control/orden_voz  ->  {"accion": "grabar", "persona": "erick", "segundos": 12, "linea_base": false}
+Frases: la estándar (por defecto) y, como opción, variaciones de menos a más difícil hasta un trabalenguas
+(--frase variacion_1, variacion_2 o trabalenguas). Cada frase tiene su propia línea base: una medición solo se
+compara con las de la misma frase (frase_id), porque los rasgos cambian con el texto.
+
+Orden por MQTT para el modo servicio (la envía la estación):
+  tema apto/control/orden_voz  ->  {"accion": "grabar", "persona": "erick", "segundos": 12, "linea_base": false,
+                                    "frase": "estandar"}
 """
 import argparse
 import json
@@ -38,6 +43,21 @@ FRASE = (
     "El astronauta revisa el sistema de soporte vital antes de iniciar la caminata espacial. "
     "Confirma la presión del traje, el nivel de oxígeno y la comunicación con la base."
 )
+# Frases opcionales, de menos a más difícil. Cada frase tiene su PROPIA línea base: solo se compara una
+# medición con las de la misma frase (frase_id). La estándar es la de siempre y la que se usa por defecto.
+VARIACIONES = {
+    "variacion_1": ("Variación 1", "La tripulación verifica los paneles solares y el sistema de navegación antes "
+                    "de la maniobra. Registra la temperatura, la presión de la cabina y el consumo de energía."),
+    "variacion_2": ("Variación 2", "Quien está de turno prepara el brazo robótico, comprueba los anclajes del traje "
+                    "extravehicular y transmite el informe completo por la frecuencia principal."),
+    "trabalenguas": ("Trabalenguas", "Tres tristes tigres tragaban trigo en un trigal. Erre con erre cigarro, erre "
+                     "con erre barril: rápido ruedan los carros cargados de azúcar del ferrocarril."),
+}
+FRASES = {"estandar": ("Frase estándar", FRASE), **VARIACIONES}
+
+
+def frase_valida(frase_id: str | None) -> str:
+    return frase_id if frase_id in FRASES else "estandar"
 CARPETA_DATOS = config.RAIZ / "datos" / "voz"
 HISTORIAL = CARPETA_DATOS / "historial.jsonl"
 F0_MIN, F0_MAX = 75, 500  # Hz, rango para voces de hombres y mujeres
@@ -76,14 +96,15 @@ def listar_microfonos():
     print("\nPongan el número del micrófono en MIC_DISPOSITIVO dentro de config.env.")
 
 
-def grabar(segundos: int, destino: Path) -> Path:
+def grabar(segundos: int, destino: Path, frase_id: str = "estandar") -> Path:
     import sounddevice as sd
     import soundfile as sf
 
     dispositivo = config.get("MIC_DISPOSITIVO")
     dispositivo = int(dispositivo) if dispositivo.isdigit() else None
-    print("\nLee en voz alta, con tono normal:\n")
-    print(f"   «{FRASE}»\n")
+    titulo, texto = FRASES[frase_valida(frase_id)]
+    print(f"\nLee en voz alta, con tono normal ({titulo}):\n")
+    print(f"   «{texto}»\n")
     for n in (3, 2, 1):
         print(f"   Empieza en {n}...", end="\r")
         time.sleep(1)
@@ -163,8 +184,9 @@ def analizar(ruta_wav: Path) -> dict:
 
 
 # ---------------------------------------------------------------- línea base
-def leer_linea_base(persona: str, historial: Path = HISTORIAL) -> list[dict]:
-    """Mediciones de la persona marcadas con linea_base (y con voz detectada) en historial.jsonl."""
+def leer_linea_base(persona: str, historial: Path = HISTORIAL, frase_id: str = "estandar") -> list[dict]:
+    """Mediciones de la persona marcadas con linea_base (y con voz detectada) en historial.jsonl, de la MISMA
+    frase (las mediciones viejas, sin frase_id, son de la frase estándar)."""
     if not historial.exists():
         return []
     base = []
@@ -174,7 +196,8 @@ def leer_linea_base(persona: str, historial: Path = HISTORIAL) -> list[dict]:
                 m = json.loads(linea)
             except json.JSONDecodeError:
                 continue
-            if m.get("persona") == persona and m.get("linea_base") and m.get("voz_detectada"):
+            if (m.get("persona") == persona and m.get("linea_base") and m.get("voz_detectada")
+                    and (m.get("frase_id") or "estandar") == frase_id):
                 base.append(m)
     return base
 
@@ -223,19 +246,21 @@ def comparar_con_linea_base(rasgos: dict, base: list[dict]) -> dict:
 
 # ---------------------------------------------------------------- flujo completo
 def evaluar(persona: str, segundos: int, linea_base: bool, cli: ClienteMQTT | None,
-            archivo: Path | None = None, sesion: str = "") -> dict:
+            archivo: Path | None = None, sesion: str = "", frase_id: str = "estandar") -> dict:
     marca = datetime.now().strftime("%Y%m%d-%H%M%S")
+    frase_id = frase_valida(frase_id)
     if archivo is None:
-        archivo = grabar(segundos, CARPETA_DATOS / persona / f"{marca}.wav")
+        archivo = grabar(segundos, CARPETA_DATOS / persona / f"{marca}.wav", frase_id)
     rasgos = analizar(archivo)
     mensaje = {
         "persona": persona,
         "sesion": sesion or marca,
         "linea_base": linea_base,
+        "frase_id": frase_id,
         "archivo": archivo.name,
         **rasgos,
-        # se compara con la línea base guardada antes de esta medición
-        **comparar_con_linea_base(rasgos, leer_linea_base(persona)),
+        # se compara con la línea base de la misma frase guardada antes de esta medición
+        **comparar_con_linea_base(rasgos, leer_linea_base(persona, frase_id=frase_id)),
     }
     if not rasgos["voz_detectada"]:
         mensaje["aviso"] = "No se detectó voz: revisen el micrófono o la distancia."
@@ -264,7 +289,8 @@ def modo_servicio(cli: ClienteMQTT):
                     persona = orden.get("persona") or config.get("PERSONA", "bri")
                     cli.publicar("apto/control/estado_voz", {"persona": persona, "estado": "grabando"})
                     evaluar(persona, int(orden.get("segundos", config.get_int("VOZ_SEGUNDOS", 12))),
-                            bool(orden.get("linea_base", False)), cli, sesion=orden.get("sesion", ""))
+                            bool(orden.get("linea_base", False)), cli, sesion=orden.get("sesion", ""),
+                            frase_id=orden.get("frase") or "estandar")
                     cli.publicar("apto/control/estado_voz", {"persona": persona, "estado": "listo"})
             time.sleep(0.1)
     except KeyboardInterrupt:
@@ -277,6 +303,8 @@ def main():
     ap.add_argument("--segundos", type=int, default=config.get_int("VOZ_SEGUNDOS", 12))
     ap.add_argument("--linea-base", action="store_true", help="marca esta medición como línea base")
     ap.add_argument("--archivo", type=Path, help="analiza un .wav en vez de grabar")
+    ap.add_argument("--frase", choices=list(FRASES), default="estandar",
+                    help="frase a leer (cada una con su línea base): " + ", ".join(FRASES))
     ap.add_argument("--servicio", action="store_true", help="espera órdenes por MQTT")
     ap.add_argument("--sin-mqtt", action="store_true", help="no conecta a MQTT (solo muestra el resultado)")
     ap.add_argument("--listar", action="store_true", help="lista los micrófonos")
@@ -298,7 +326,7 @@ def main():
     if args.servicio:
         modo_servicio(cli)
     else:
-        evaluar(args.persona, args.segundos, args.linea_base, cli, args.archivo)
+        evaluar(args.persona, args.segundos, args.linea_base, cli, args.archivo, frase_id=args.frase)
         if cli:
             time.sleep(0.5)  # dar tiempo a que salga el mensaje
             cli.cerrar()

@@ -43,6 +43,53 @@ def grabar_hasta_enter(destino: Path, max_s: int = 30) -> Path | None:
     return destino
 
 
+BLOQUE_S = 0.05  # se mide el volumen cada 50 ms
+
+
+def decidir_corte(volumenes: list[float], silencio_s: float = 1.2, espera_s: float = 5.0) -> str | None:
+    """Con el volumen (RMS) de cada bloque de 50 ms: "fin" si ya habló y lleva silencio_s callado, "sin_voz" si
+    pasaron espera_s sin que hablara, o None para seguir grabando. El ruido de fondo se toma de los primeros
+    0,3 s; hablar es superar 3 veces ese ruido (y al menos 0,01)."""
+    n_ruido = 6
+    if len(volumenes) <= n_ruido:
+        return None
+    umbral = max(3 * float(np.median(volumenes[:n_ruido])), 0.01)
+    habla = [v > umbral for v in volumenes[n_ruido:]]
+    if not any(habla):
+        return "sin_voz" if len(volumenes) * BLOQUE_S >= espera_s else None
+    callado = 0
+    for h in reversed(habla):
+        if h:
+            break
+        callado += 1
+    return "fin" if callado * BLOQUE_S >= silencio_s else None
+
+
+def grabar_hasta_silencio(destino: Path, max_s: float = 10.0, silencio_s: float = 1.2,
+                          espera_s: float = 5.0) -> Path | None:
+    """Graba hasta que la persona se calla (o max_s). Si no habla en espera_s, devuelve None."""
+    import sounddevice as sd
+    import soundfile as sf
+
+    disp = config.get("MIC_DISPOSITIVO")
+    disp = int(disp) if disp.isdigit() else None
+    bloque = int(BLOQUE_S * FS)
+    trozos, volumenes = [], []
+    with sd.InputStream(samplerate=FS, channels=1, dtype="float32", device=disp, blocksize=bloque) as entrada:
+        while len(trozos) * BLOQUE_S < max_s:
+            datos, _ = entrada.read(bloque)
+            trozos.append(datos.copy())
+            volumenes.append(float(np.sqrt(np.mean(datos ** 2))))
+            corte = decidir_corte(volumenes, silencio_s, espera_s)
+            if corte == "sin_voz":
+                return None
+            if corte == "fin":
+                break
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(destino, np.concatenate(trozos), FS)
+    return destino
+
+
 # ---------------------------------------------------------------- Whisper
 class Transcriptor:
     """Whisper local con faster-whisper. El modelo se carga la primera vez que se usa."""

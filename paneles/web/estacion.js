@@ -32,7 +32,7 @@
   const estado = {
     paso: "inicio", persona: "", tarea: "", lineaBase: false, demo: false, conDsst: false, sesion: "", inicio: 0,
     esp32: null, esp32Llegada: 0, vision: null, estadoVision: "", voz: null, evaluacion: null,
-    conversacion: [], pendientes: [], kss: null, horas: 7, pistaVencida: false,
+    conversacion: [], pendientes: [], kss: null, horas: 7, pistaVencida: false, fraseVoz: "estandar", escuchando: false,
   };
   const temporizadores = new Set();  // se limpian al cambiar de paso
 
@@ -58,7 +58,7 @@
   // ------------------------------------------------------------ MQTT
   const mqttc = Comun.conectar("estacion", [
     "apto/+/esp32", "apto/+/vision", "apto/+/voz", "apto/+/evaluacion", "apto/+/copiloto",
-    "apto/control/estado_voz", "apto/control/estado_vision", "apto/control/modulos/+",
+    "apto/control/estado_voz", "apto/control/estado_vision", "apto/control/estado_escucha", "apto/control/modulos/+",
   ], alMensaje);
 
   function publicar(tema, datos) {
@@ -80,6 +80,7 @@
     }
     const deLaPersona = estado.sesion && datos.persona === estado.persona;
     if (tema === "apto/control/estado_voz") { if (deLaPersona) alEstadoVoz(datos); return; }
+    if (tema === "apto/control/estado_escucha") { if (deLaPersona) alEstadoEscucha(datos); return; }
     if (tema === "apto/control/estado_vision") {  // {"estado": "midiendo", "segundos_restantes"} / "listo" / "error" + "motivo"
       if (deLaPersona) {
         estado.estadoVision = String(datos.estado || "");
@@ -153,7 +154,7 @@
     Object.assign(estado, {
       persona: "", tarea: "", lineaBase: false, sesion: "", inicio: 0, esp32: null, esp32Llegada: 0, vision: null,
       estadoVision: "", voz: null, evaluacion: null, conversacion: [], pendientes: [], kss: null, horas: 7,
-      pistaVencida: false,
+      pistaVencida: false, fraseVoz: "estandar", escuchando: false,
     });
     $("linea-base").checked = false;  // modo demo y símbolos se quedan como estaban
     estado.conDsst = $("con-dsst").checked;
@@ -314,8 +315,31 @@
   // Voz --------------------------------------------------------
   let vozFase = "inicio";  // inicio, esperando, grabando, analizando, listo
 
+  /** Frases para elegir (la estándar y, como opción, variaciones hasta un trabalenguas), desde config.js. */
+  function frasesVoz() {
+    return CFG.frases_voz && Object.keys(CFG.frases_voz).length
+      ? CFG.frases_voz : { estandar: { titulo: "Frase estándar", texto: CFG.frase_voz || "" } };
+  }
+
+  function pintarFrases() {
+    const frases = frasesVoz();
+    if (!frases[estado.fraseVoz]) estado.fraseVoz = "estandar";
+    const ocupado = ["esperando", "grabando", "analizando"].includes(vozFase);
+    $("frases-voz").replaceChildren(...Object.entries(frases).map(([id, f]) => el("button", {
+      class: "opcion", type: "button", "aria-pressed": String(estado.fraseVoz === id), disabled: ocupado,
+      onclick: () => { estado.fraseVoz = id; pintarFrases(); },
+    }, f.titulo)));
+    $("frases-voz").hidden = Object.keys(frases).length < 2;
+    $("frase-voz").textContent = frases[estado.fraseVoz].texto || "(Falta la frase: revisen voz/voz_fatiga.py)";
+    $("nota-frase").textContent = estado.fraseVoz === "estandar"
+      ? "La frase de siempre: se compara con tu línea base."
+      : estado.fraseVoz === "trabalenguas"
+        ? "La más difícil: léela clara y sin apurarte. Tiene su propia línea base."
+        : "Tiene su propia línea base: se compara solo con mediciones de esta misma frase.";
+  }
+
   function entrarVoz() {
-    $("frase-voz").textContent = CFG.frase_voz || "(Falta la frase: revisen voz/voz_fatiga.py)";
+    pintarFrases();
     vozFase = "inicio";
     estado.voz = null;
     $("resultado-voz").hidden = true;
@@ -355,7 +379,10 @@
     $("continuar-voz").hidden = true;
     $("grabar").disabled = true;
     $("estado-voz").textContent = "Preparando la grabación…";
-    publicar("apto/control/orden_voz", { accion: "grabar", segundos: SEGUNDOS_VOZ, linea_base: estado.lineaBase });
+    publicar("apto/control/orden_voz", {
+      accion: "grabar", segundos: SEGUNDOS_VOZ, linea_base: estado.lineaBase, frase: estado.fraseVoz,
+    });
+    pintarFrases();  // no se cambia la frase mientras se graba
     despues(ESPERA_MODULO_VOZ_MS, () => {
       if (vozFase !== "esperando") return;
       vozFase = "inicio";
@@ -415,8 +442,10 @@
         "sin línea base": "Todavía no hay línea base: hacen falta 3 mediciones marcadas como línea base.",
         "sin voz detectada": "No se detectó voz en la grabación.",
       }[d.estado_voz];
+      const frase = frasesVoz()[d.frase_id || "estandar"];
       caja.replaceChildren(...[  // replaceChildren escribiría "null": se filtran las partes vacías
-        el("span", { class: "etiqueta" }, "Voz comparada con la línea base", etiquetaSimulado(d)),
+        el("span", { class: "etiqueta" }, `Voz comparada con la línea base · ${frase ? frase.titulo : "Frase estándar"}`,
+          etiquetaSimulado(d)),
         el("p", { class: "grande" }, d.estado_voz ? d.estado_voz.charAt(0).toUpperCase() + d.estado_voz.slice(1) : "Sin comparación"),
         explicacion ? el("p", { class: "estado" }, explicacion) : null,
         d.motivos_voz && d.motivos_voz.length ? el("ul", {}, d.motivos_voz.map((m) => el("li", {}, m))) : null,
@@ -427,6 +456,7 @@
     $("grabar").disabled = !activo("voz");
     $("grabar").textContent = "Grabar otra vez";
     $("continuar-voz").hidden = false;
+    pintarFrases();
   }
   $("continuar-voz").addEventListener("click", siguiente);
   $("omitir-voz").addEventListener("click", siguiente);
@@ -738,7 +768,40 @@
     if (!abierto) $("estado-copiloto").replaceChildren("El copiloto no está abierto. Ábranlo con ", el("kbd", {}, COMANDO.copiloto), ".");
     $("pregunta").disabled = !abierto;
     $("enviar-pregunta").disabled = !abierto;
+    $("hablar").disabled = !abierto || estado.escuchando;
+    $("hablar").classList.toggle("escuchando", estado.escuchando);
     pintarConversacion();
+  }
+
+  // Preguntar en voz alta: el copiloto escucha con el micrófono de la laptop, transcribe y responde.
+  let escuchaVence = null;
+  function mostrarEscucha(texto) {
+    $("estado-escucha").hidden = !texto;
+    $("estado-escucha").textContent = texto;
+  }
+  function terminarEscucha(texto) {
+    estado.escuchando = false;
+    clearTimeout(escuchaVence);
+    mostrarEscucha(texto);
+    pintarCopiloto();
+  }
+  $("hablar").addEventListener("click", () => {
+    if (!estado.sesion || !activo("copiloto") || estado.escuchando) return;
+    estado.escuchando = true;
+    publicar("apto/control/escuchar", { segundos_max: 10 });
+    mostrarEscucha("Pidiendo el micrófono al copiloto…");
+    clearTimeout(escuchaVence);
+    escuchaVence = setTimeout(() => { if (estado.escuchando) terminarEscucha("El copiloto no respondió al pedido de escuchar."); }, 25000);
+    pintarCopiloto();
+  });
+  function alEstadoEscucha(d) {
+    if (!estado.escuchando) return;
+    if (d.estado === "escuchando") mostrarEscucha("Escuchando… habla ahora (se detiene cuando te callas).");
+    else if (d.estado === "transcribiendo") mostrarEscucha("Transcribiendo…");
+    else if (d.estado === "listo") {
+      if (d.texto) estado.pendientes.push({ pregunta: d.texto, desde: Date.now() });
+      terminarEscucha("");
+    } else if (d.estado === "error") terminarEscucha(d.motivo || "No se pudo escuchar.");
   }
 
   function agregarConversacion(datos) {
