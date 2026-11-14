@@ -36,8 +36,8 @@ rem Cuando exista coordinador\coordinador.py: poner "rem" al provisional y quita
 start "Coordinador provisional" cmd /k %PY% coordinador\coordinador_provisional.py
 rem start "Coordinador" cmd /k %PY% coordinador\coordinador.py
 
-rem ---- Modulos del equipo: quitar "rem" cuando esten en esta laptop ----
-rem start "Vision" cmd /k %PY% vision\vision.py
+rem ---- Vision (abre su ventana sola al medir) y paneles ----
+start "Vision" cmd /k %PY% vision\vision.py --servicio
 start "Paneles" cmd /k %PY% paneles\servidor.py
 
 rem ---- Para probar sin los demas modulos ----

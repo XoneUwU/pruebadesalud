@@ -4,6 +4,8 @@
 
 - Datos en datos/mongo (no se sube a Git) y registro en datos/mongo/mongod.log.
 - Escucha SOLO en 127.0.0.1, en el puerto de MONGO_URI: nadie de la red puede conectarse.
+- Caché de WiredTiger limitada a 256 MB (--wiredTigerCacheSizeGB 0.25): la RAM es justa con Ollama, Whisper
+  y la visión abiertos.
 - Si ese puerto ya está ocupado (por ejemplo, por el servicio de Windows de MongoDB), no arranca otro y avisa.
 - Busca mongod en MONGOD_EXE (config.env), en el PATH o en C:\\Program Files\\MongoDB\\Server\\*\\bin.
 Ctrl+C lo detiene.
@@ -20,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from comun import config  # noqa: E402
 
 CARPETA = config.RAIZ / "datos" / "mongo"
+CACHE_GB = "0.25"  # 256 MB de caché como máximo
 
 
 def buscar_mongod() -> str | None:
@@ -59,7 +62,7 @@ def main():
     print(f"[mongo] Escuchando solo en 127.0.0.1:{puerto}. Datos en {CARPETA}. Registro en {log.name}.")
     print("[mongo] Ctrl+C para detenerlo.")
     proceso = subprocess.Popen([mongod, "--dbpath", str(CARPETA), "--bind_ip", "127.0.0.1", "--port", str(puerto),
-                                "--logpath", str(log), "--logappend"])
+                                "--wiredTigerCacheSizeGB", CACHE_GB, "--logpath", str(log), "--logappend"])
     try:
         codigo = proceso.wait()
     except KeyboardInterrupt:

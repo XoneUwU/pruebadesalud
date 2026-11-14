@@ -217,6 +217,7 @@ kbd {
 .casillas { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.75rem; }
 .simulado.provisional { border-color: var(--amarillo); color: var(--amarillo); }
 #etiquetas-resultado { display: flex; gap: 0.4rem; }
+.avisos-vision { margin: 0.5rem 0 0; padding-left: 1.2rem; font-size: 1rem; color: var(--amarillo); }
 .analizando kbd { white-space: normal; }
 
 /* Prueba de símbolos (DSST) */

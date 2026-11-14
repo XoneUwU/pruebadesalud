@@ -261,11 +261,14 @@
   }
 
   const NOMBRES_VISION = {
-    perclos: ["PERCLOS", "fracción de tiempo con los ojos cerrados", 2], parpadeos_min: ["Parpadeos", "por minuto", 0],
     pulso_rppg_lpm: ["Pulso (cámara)", "lpm", 0], calidad_rppg: ["Calidad del pulso", "de 0 a 1", 2],
-    pulso_lpm: ["Pulso (cámara)", "lpm", 0],
+    perclos: ["PERCLOS", "fracción de tiempo con los ojos cerrados", 2], parpadeos_min: ["Parpadeos", "por minuto", 1],
+    ear_abierto: ["EAR ojo abierto", "", 2], bostezos: ["Bostezos", "en la medición", 0],
+    cara_detectada_pct: ["Cara detectada", "% del tiempo", 0],
+    fps: ["Cuadros por segundo", "", 0], pulso_lpm: ["Pulso (cámara)", "lpm", 0],
   };
-  const NO_MOSTRAR = new Set(["persona", "sesion", "ts", "fuente", "simulado", "linea_base", "duracion_s", "reproducido", "ts_original"]);
+  const NO_MOSTRAR = new Set(["persona", "sesion", "ts", "fuente", "simulado", "linea_base", "duracion_s", "reproducido",
+    "ts_original", "snr_rppg_db", "parpadeos", "brillo_piel", "bostezos_min"]);
 
   function pintarCamara() {
     if (estado.paso !== "camara") return;
@@ -294,6 +297,9 @@
     }
     $("estado-camara").textContent = texto;
     if (!d) { $("datos-vision").replaceChildren(); return; }
+    if (Array.isArray(d.avisos) && d.avisos.length) {  // avisos de calidad del módulo (luz, cara, fps, pulso dudoso)
+      $("estado-camara").replaceChildren(texto, el("ul", { class: "avisos-vision" }, d.avisos.map((a) => el("li", {}, a))));
+    }
     const filas = Object.entries(d).filter(([k, v]) => !NO_MOSTRAR.has(k) && (typeof v === "number" || typeof v === "string"));
     $("datos-vision").replaceChildren(...filas.map(([k, v]) => {
       const [nombre, unidad, cifras] = NOMBRES_VISION[k] || [k.replace(/_/g, " "), "", 2];

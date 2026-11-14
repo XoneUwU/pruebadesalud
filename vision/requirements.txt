@@ -1,0 +1,5 @@
+# MediaPipe 1.2 (API Tasks: FaceLandmarker). Trae opencv-contrib-python. El modelo face_landmarker.task
+# lo descarga instalar.bat a modelos\ (o vision.py la primera vez).
+mediapipe==1.2.0
+numpy
+paho-mqtt>=2.0

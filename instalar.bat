@@ -19,7 +19,7 @@ echo Usando: %PYEXE%
 .venv\Scripts\python -m pip install --upgrade pip
 
 echo [2/5] Instalando librerias...
-.venv\Scripts\pip install -r voz\requirements.txt -r copiloto\requirements.txt -r registrador\requirements.txt || (echo Fallo la instalacion de librerias & pause & exit /b 1)
+.venv\Scripts\pip install -r voz\requirements.txt -r copiloto\requirements.txt -r registrador\requirements.txt -r vision\requirements.txt || (echo Fallo la instalacion de librerias & pause & exit /b 1)
 
 echo [3/5] Instalando Piper (voz natural). Si falla, se usara la voz de Windows...
 .venv\Scripts\pip install piper-tts || echo AVISO: Piper no se instalo; el copiloto usara la voz de Windows.
@@ -30,6 +30,8 @@ curl -L -o modelos\es_MX-ald-medium.onnx https://huggingface.co/rhasspy/piper-vo
 curl -L -o modelos\es_MX-ald-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_MX/ald/medium/es_MX-ald-medium.onnx.json
 curl -L -o modelos\es_MX-claude-high.onnx https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_MX/claude/high/es_MX-claude-high.onnx
 curl -L -o modelos\es_MX-claude-high.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_MX/claude/high/es_MX-claude-high.onnx.json
+echo Descargando el modelo de la cara de MediaPipe (vision)...
+curl -L -o modelos\face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
 
 echo [5/5] Descargando modelos de IA (puede tardar)...
 set "OLLAMA=ollama"

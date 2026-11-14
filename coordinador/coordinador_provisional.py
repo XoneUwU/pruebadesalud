@@ -27,6 +27,10 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
                 parpadeos por minuto: +50 % = 1 (solo con base: lo normal varía mucho entre personas; nunca 2)
                 pulso por cámara (pulso_rppg_lpm), SOLO si calidad_rppg >= CALIDAD_RPPG_MIN (0 a 1):
                 +15 % = 1, +30 % = 2                       | sin base: 100 lpm = 1, 120 lpm = 2
+                bostezos (desde 2 en la medición): 2 por minuto = 1 | con base: 2 por minuto más = 1 (nunca 2)
+                si cara_detectada_pct < CARA_MIN_PCT (50), la visión no cuenta
+  ESP32         pulso del sensor (mediana de las lecturas de la sesión): +15 % = 1, +30 % = 2 | sin base: 100 = 1,
+                120 = 2. SI HAY PULSO DEL SENSOR, MANDA: el de la cámara no se usa.
 Los puntos de cada fuente (pvt, dsst, cuestionario, voz, vision) son los de su peor indicador.
   rojo      si alguna fuente tiene 2 puntos, o si 3 fuentes o más tienen puntos
   amarillo  si alguna fuente tiene puntos
@@ -45,10 +49,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # para importar
 from comun import config  # noqa: E402
 from comun.mqtt_cliente import ClienteMQTT, persona_de_tema, tema  # noqa: E402
 
-TIPOS = ("pvt", "dsst", "cuestionario", "voz", "vision")
+TIPOS = ("pvt", "dsst", "cuestionario", "voz", "vision", "esp32")
 ARCHIVO_BASE = config.RAIZ / "datos" / "coordinador" / "linea_base.jsonl"
 ESPERA_S = 1.5  # tras el cuestionario, para juntar los mensajes que todavía vienen en camino
 CALIDAD_RPPG_MIN = 0.5  # calidad_rppg (0 a 1) desde la que se cree el pulso medido por la cámara
+CARA_MIN_PCT = 50       # con la cara visible menos tiempo, la visión no cuenta
 ACCIONES = {
     "verde": "Puede realizar la tarea",
     "amarillo": "Reasignar la tarea o hacerla en pareja, y descansar antes",
@@ -86,9 +91,16 @@ def _escala(valor, uno, dos) -> int:
     return 2 if valor >= dos else 1 if valor >= uno else 0
 
 
-def _indicadores(tipo: str, m: dict, base: list[dict]) -> list[tuple[int, str]]:
+def _indicadores(tipo: str, m: dict, base: list[dict], hay_pulso_sensor: bool = False) -> list[tuple[int, str]]:
     """(puntos, motivo) de cada indicador de una fuente."""
     r = []
+    if tipo == "esp32":
+        hr, hr_b = _num(m.get("pulso_lpm")), _promedio(_num(b.get("pulso_lpm")) for b in base)
+        if hr is not None and hr_b:
+            r.append((_escala(hr / hr_b - 1, 0.15, 0.30), "Pulso en reposo más alto de lo habitual"))
+        elif hr is not None:
+            r.append((_escala(hr, 100, 120), "Pulso en reposo alto"))
+        return r
     if tipo == "pvt":
         rt, rt_b = _num(m.get("rt_media_ms")), _promedio(_num(b.get("rt_media_ms")) for b in base)
         if rt is not None and rt_b:
@@ -133,6 +145,9 @@ def _indicadores(tipo: str, m: dict, base: list[dict]) -> list[tuple[int, str]]:
         elif m.get("estado_voz") in ("normal", "con más energía que su línea base"):
             r.append((0, ""))
     elif tipo == "vision":
+        cara = _num(m.get("cara_detectada_pct"))
+        if cara is not None and cara < CARA_MIN_PCT:
+            return r  # se vio poco la cara: la visión no cuenta como fuente evaluada
         p = _num(m.get("perclos"))
         p = p / 100 if p is not None and p > 1 else p  # por si llega en porcentaje
         p_b = _promedio((_num(b.get("perclos")) for b in base))
@@ -146,7 +161,15 @@ def _indicadores(tipo: str, m: dict, base: list[dict]) -> list[tuple[int, str]]:
             r.append((min(1, _escala(pm / pm_b - 1, 0.5, 99)), "Más parpadeos de lo habitual"))
         elif pm is not None:
             r.append((0, ""))  # medido, pero sin base no se juzga
-        if rppg_confiable(m):
+        n_bost, bm = _num(m.get("bostezos")), _num(m.get("bostezos_min"))
+        bm_b = _promedio(_num(b.get("bostezos_min")) for b in base)
+        if n_bost is not None and n_bost < 2:  # un bostezo suelto no marca
+            r.append((0, ""))
+        elif bm is not None and bm_b is not None:
+            r.append((1 if bm - bm_b >= 2 else 0, "Más bostezos de lo habitual"))
+        elif bm is not None:
+            r.append((1 if bm >= 2 else 0, "Bostezos durante la medición"))
+        if rppg_confiable(m) and not hay_pulso_sensor:  # el pulso del sensor manda sobre el de la cámara
             hr = _num(m.get("pulso_rppg_lpm"))
             hr_b = _promedio(_num(b.get("pulso_rppg_lpm")) for b in base if rppg_confiable(b))
             if hr is not None and hr_b:
@@ -168,10 +191,11 @@ def evaluar(datos: dict[str, dict], base: dict[str, list[dict]] | None = None) -
     Devuelve color, puntaje, motivos (hasta 3, frases neutras), accion y senales (puntos por fuente)."""
     base = base or {}
     senales, motivos = {}, []
+    hay_pulso_sensor = _num((datos.get("esp32") or {}).get("pulso_lpm")) is not None
     for tipo in TIPOS:
         if tipo not in datos:
             continue
-        ind = _indicadores(tipo, datos[tipo], base.get(tipo, []))
+        ind = _indicadores(tipo, datos[tipo], base.get(tipo, []), hay_pulso_sensor)
         if not ind:
             continue  # nada medible (voz sin línea base, visión sin PERCLOS): no cuenta como fuente evaluada
         senales[tipo] = max(p for p, _ in ind)
@@ -189,6 +213,15 @@ def evaluar(datos: dict[str, dict], base: dict[str, list[dict]] | None = None) -
         "color": color, "puntaje": round(max(0.0, puntaje), 2), "motivos": [t for _, t in motivos[:3]],
         "accion": ACCIONES[color], "senales": senales,
     }
+
+
+def resumen_esp32(lecturas: list[dict]) -> dict:
+    """Mediana de las lecturas del ESP32 de una sesión (resiste lecturas sueltas malas)."""
+    def mediana(campo):
+        vs = [x for x in (_num(m.get(campo)) for m in lecturas) if x is not None]
+        return round(float(sorted(vs)[len(vs) // 2]), 1) if vs else None
+    return {"pulso_lpm": mediana("pulso_lpm"), "spo2": mediana("spo2"), "hrv_rmssd_ms": mediana("hrv_rmssd_ms"),
+            "lecturas": len(lecturas)}
 
 
 # ---------------------------------------------------------------- línea base
@@ -241,7 +274,11 @@ class Coordinador:
         if not persona or persona == "control" or not sesion:
             return
         with self._lock:
-            s = self.sesiones.setdefault((persona, sesion), {"datos": {}, "lista": False, "timer": None, "inicio": time.time()})
+            s = self.sesiones.setdefault((persona, sesion), {"datos": {}, "lista": False, "timer": None,
+                                                             "inicio": time.time(), "esp32": [], "base_esp32": False})
+            if tipo == "esp32":  # llega una lectura por segundo: se juntan y no se recalcula por cada una
+                s["esp32"].append(d)
+                return
             s["datos"][tipo] = d
             if d.get("linea_base"):
                 guardar_linea_base(persona, tipo, sesion, d)
@@ -258,7 +295,14 @@ class Coordinador:
 
     def _publicar(self, persona: str, sesion: str):
         with self._lock:
-            datos = dict(self.sesiones[(persona, sesion)]["datos"])
+            s = self.sesiones[(persona, sesion)]
+            datos = dict(s["datos"])
+            if s["esp32"]:
+                datos["esp32"] = resumen_esp32(s["esp32"])
+                # el ESP32 no marca línea base: se toma la de la sesión (la del cuestionario), una sola vez
+                if (datos.get("cuestionario") or {}).get("linea_base") and not s["base_esp32"]:
+                    guardar_linea_base(persona, "esp32", sesion, datos["esp32"])
+                    s["base_esp32"] = True
         r = evaluar(datos, leer_linea_base(persona, sin_sesion=sesion))
         ev = {"persona": persona, "sesion": sesion, "tarea": self.tareas.get(sesion, ""), **r, "provisional": True}
         self.cli.publicar(tema(persona, "evaluacion"), ev, retener=True)

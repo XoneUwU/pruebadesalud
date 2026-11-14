@@ -50,6 +50,15 @@ CASOS = [
     ("visión PERCLOS 0,3", sesion(vision={"perclos": 0.3}), None, "rojo", ["Ojos cerrados más tiempo de lo normal"]),
     ("visión: pulso 110 con buena calidad", sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 110, "calidad_rppg": 0.8}),
      None, "amarillo", ["Pulso en reposo alto"]),
+    ("visión: 3 bostezos en 1 min", sesion(vision={"perclos": 0.05, "bostezos": 3, "bostezos_min": 3.0}), None, "amarillo",
+     ["Bostezos durante la medición"]),
+    ("visión: 1 bostezo suelto no marca", sesion(vision={"perclos": 0.05, "bostezos": 1, "bostezos_min": 1.0}), None,
+     "verde", []),
+    ("sensor 75 lpm manda sobre la cámara (130 con buena calidad)",
+     sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 130, "calidad_rppg": 0.9}, esp32={"pulso_lpm": 75}), None, "verde", []),
+    ("sensor 110 lpm", sesion(esp32={"pulso_lpm": 110}), None, "amarillo", ["Pulso en reposo alto"]),
+    ("visión: cara vista el 30 % del tiempo no cuenta", sesion(vision={"perclos": 0.4, "cara_detectada_pct": 30}),
+     None, "verde", []),
     ("visión: pulso 130 con mala calidad no cuenta", sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 130, "calidad_rppg": 0.3}),
      None, "verde", []),
     ("visión con base: +60 % parpadeos", sesion(vision={"perclos": 0.05, "parpadeos_min": 24}),
@@ -92,7 +101,34 @@ def main() -> int:
         fallas += not ok
         print(f"{'OK   ' if ok else 'FALLA'}  línea base de sebas sin la sesión evaluada: {base}")
 
-    total = len(CASOS) + 2
+    # El ESP32 manda una lectura por segundo: se juntan (mediana) y no reinician la espera del cálculo.
+    from coordinador_provisional import Coordinador
+
+    class CliFalso:
+        def __init__(self):
+            self.mensajes = []
+
+        def publicar(self, tema, datos, retener=False):
+            self.mensajes.append((tema, datos))
+
+        def suscribir(self, *a, **k):
+            pass
+
+    cli = CliFalso()
+    coord = Coordinador(cli)
+    coord._al_sesion("apto/control/sesion", {"persona": "sebas", "tarea": "caminata espacial", "sesion": "s9"})
+    for pulso in (72, 74, 140, 73):  # una lectura suelta mala (140) no debe pesar
+        coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": pulso})
+    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s9", "kss": 3, "horas_sueno": 8})
+    s = coord.sesiones[("sebas", "s9")]
+    s["timer"].cancel()
+    coord._publicar("sebas", "s9")
+    ev = next(d for t, d in cli.mensajes if t == "apto/sebas/evaluacion")
+    ok = len(s["esp32"]) == 4 and ev["color"] == "verde" and "esp32" in ev["senales"]
+    fallas += not ok
+    print(f"{'OK   ' if ok else 'FALLA'}  ESP32: 4 lecturas juntadas (mediana), sin recalcular por cada una -> {ev['color']} {ev['senales']}")
+
+    total = len(CASOS) + 3
     print(f"\n{total - fallas} de {total} pasaron.")
     return 1 if fallas else 0
 
