@@ -101,7 +101,7 @@ class ClienteMQTT:
         self.conectado = True
         print(f"[{self.nombre}] Conectado a MQTT {self.host}:{self.port}")
         client.publish(tema_modulo(self.nombre), self._presencia(True), qos=1, retain=True)
-        for patron, _ in self._handlers:  # re-suscribir tras reconexión
+        for patron, *_ in self._handlers:  # re-suscribir tras reconexión
             client.subscribe(patron, qos=1)
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties):
@@ -115,10 +115,13 @@ class ClienteMQTT:
         except (json.JSONDecodeError, UnicodeDecodeError):
             print(f"[{self.nombre}] Mensaje no JSON en {msg.topic}; se ignora.")
             return
-        for patron, funcion in self._handlers:
+        for patron, funcion, con_retain in self._handlers:
             if mqtt.topic_matches_sub(patron, msg.topic):
                 try:
-                    funcion(msg.topic, datos)
+                    if con_retain:
+                        funcion(msg.topic, datos, msg.retain)
+                    else:
+                        funcion(msg.topic, datos)
                 except Exception as e:  # un error en un handler no debe tumbar el módulo
                     print(f"[{self.nombre}] Error procesando {msg.topic}: {e}")
 
@@ -133,8 +136,10 @@ class ClienteMQTT:
         info = self._c.publish(tema_mqtt, json.dumps(datos, ensure_ascii=False), qos=1, retain=retener)
         return info.rc == mqtt.MQTT_ERR_SUCCESS
 
-    def suscribir(self, patron: str, funcion: Callable[[str, dict], None]):
-        self._handlers.append((patron, funcion))
+    def suscribir(self, patron: str, funcion: Callable[..., None], con_retain: bool = False):
+        """funcion(tema, datos). Con con_retain=True: funcion(tema, datos, retenido), donde retenido es True
+        si el mensaje es uno guardado en el broker (retain) que llega al suscribirse."""
+        self._handlers.append((patron, funcion, con_retain))
         if self.conectado:
             self._c.subscribe(patron, qos=1)
 

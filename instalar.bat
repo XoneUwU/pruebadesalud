@@ -19,7 +19,7 @@ echo Usando: %PYEXE%
 .venv\Scripts\python -m pip install --upgrade pip
 
 echo [2/5] Instalando librerias...
-.venv\Scripts\pip install -r voz\requirements.txt -r copiloto\requirements.txt || (echo Fallo la instalacion de librerias & pause & exit /b 1)
+.venv\Scripts\pip install -r voz\requirements.txt -r copiloto\requirements.txt -r registrador\requirements.txt || (echo Fallo la instalacion de librerias & pause & exit /b 1)
 
 echo [3/5] Instalando Piper (voz natural). Si falla, se usara la voz de Windows...
 .venv\Scripts\pip install piper-tts || echo AVISO: Piper no se instalo; el copiloto usara la voz de Windows.

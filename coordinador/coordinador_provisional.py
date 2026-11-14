@@ -212,6 +212,8 @@ class Coordinador:
             print(f"[coordinador] Sesión {d['sesion']}: {d['persona']}, {d.get('tarea') or '-'}")
 
     def _al_dato(self, tema_mqtt: str, d: dict):
+        if d.get("reproducido"):  # registrador/reproducir.py ya trae la evaluación original: no se recalcula
+            return
         persona, tipo = persona_de_tema(tema_mqtt), tema_mqtt.rsplit("/", 1)[-1]
         sesion = d.get("sesion") or self.sesion_actual.get(persona) or ""
         if not persona or persona == "control" or not sesion:

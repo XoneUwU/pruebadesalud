@@ -23,6 +23,10 @@ echo Iniciando broker MQTT...
 start "Broker MQTT" "%MOSQ%" -c %CONF% -v
 timeout /t 2 >nul
 
+rem ---- MongoDB (solo en esta laptop, 127.0.0.1) y registrador de todo apto/# ----
+start "MongoDB" cmd /k %PY% registrador\mongo_local.py
+start "Registrador" cmd /k %PY% registrador\registrador.py
+
 rem ---- Modulos de Bri ----
 start "Voz" cmd /k %PY% voz\voz_fatiga.py --servicio
 start "Copiloto" cmd /k %PY% copiloto\copiloto.py

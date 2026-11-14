@@ -16,6 +16,7 @@ apto-hoy/
 │   └── protocolos.md     fichas que el copiloto usa para responder
 ├── paneles/              paneles web: estación, tripulación y Tierra (servidor.py, sin internet)
 ├── coordinador/          coordinador_provisional.py, hasta que esté el de Danilo
+├── registrador/          guarda todo apto/# en MongoDB, exporta a CSV y reproduce sesiones
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
 ├── mosquitto/            configuración del broker (evento y desarrollo)
 ├── firmware/  vision/    ← carpetas del resto del equipo
@@ -24,7 +25,9 @@ apto-hoy/
 
 ## 1. Instalar (laptop de Bri, una vez)
 
-1. Instalar **Python 3.11 o 3.12** (marcar «Add to PATH»; no usar versiones más nuevas), **Ollama** (ollama.com) y **Mosquitto** (mosquitto.org).
+1. Instalar **Python 3.11 o 3.12** (marcar «Add to PATH»; no usar versiones más nuevas), **Ollama** (ollama.com),
+   **Mosquitto** (mosquitto.org) y **MongoDB Community Server** (mongodb.com; el registrador lo arranca solo, no
+   hace falta su servicio de Windows).
 2. Doble clic en `instalar.bat`. Descarga librerías, la voz en español de Piper, `qwen2.5:7b` y Whisper.
 
 ## 2. Probar hoy, paso a paso
@@ -42,7 +45,8 @@ Abrir una terminal en la carpeta del proyecto (`.venv\Scripts\activate` primero)
 | Copiloto por voz | `python copiloto\copiloto.py` y Enter vacío | Te escucha, transcribe y responde |
 | Paneles web | `python paneles\servidor.py` y abrir http://localhost:8080 | Estación, tripulación y Tierra (ver la sección 5) |
 | Coordinador provisional | `python coordinador\coordinador_provisional.py` | Calcula el semáforo al terminar el cuestionario de la estación (sección 6) |
-| Todo junto | `iniciar.bat dev` | Una ventana por módulo: broker, voz, copiloto, coordinador provisional y paneles |
+| Registrador | `python registrador\mongo_local.py` y `python registrador\registrador.py` | Guarda cada mensaje en MongoDB (sección 7) |
+| Todo junto | `iniciar.bat dev` | Una ventana por módulo: broker, MongoDB, registrador, voz, copiloto, coordinador provisional y paneles |
 
 Opciones útiles del copiloto: `--sin-llm` (sin Ollama, responde con las fichas), `--sin-voz` (solo texto),
 `--sin-auto` (no lee cada evaluación nueva). Muestra cuánto tarda Whisper y el modelo: la meta es menos de 5 s.
@@ -61,8 +65,8 @@ Ollama (`ollama pull qwen2.5:3b` y `OLLAMA_MODEL=qwen2.5:3b`).
    New-NetFirewallRule -DisplayName "Apto hoy" -Direction Inbound -Protocol TCP -LocalPort 1883,9001,8080 -Action Allow -Profile Private
    ```
 4. Si el servicio de Mosquitto de Windows está activo, detenerlo: `net stop mosquitto` (como administrador).
-5. `iniciar.bat` arranca el broker, la voz (`--servicio`), el copiloto, el coordinador provisional y el
-   servidor de los paneles, cada uno en su ventana.
+5. `iniciar.bat` arranca el broker, MongoDB y el registrador, la voz (`--servicio`), el copiloto, el
+   coordinador provisional y el servidor de los paneles, cada uno en su ventana.
 6. En la laptop de Bri: http://localhost:8080/estacion.html. En el proyector y las otras laptops (misma red):
    http://IP-de-Bri:8080/tripulacion.html y http://IP-de-Bri:8080/tierra.html.
 
@@ -141,7 +145,33 @@ puntos; **amarillo** si alguna tiene puntos; **verde** si ninguna. Los motivos s
    correr los dos a la vez: publicarían dos resultados distintos para la misma sesión.
 4. `coordinador_provisional.py` y `pruebas_coordinador.py` pueden quedar como referencia.
 
-## 7. Reglas para sumar un módulo (todo el equipo)
+## 7. Registrador (MongoDB)
+
+Guarda cada mensaje de `apto/#` para validar el sistema después y como respaldo de la demo.
+
+- **MongoDB solo en esta laptop**: `registrador\mongo_local.py` arranca el `mongod` ya instalado como un
+  programa normal (sin servicio ni administrador), escuchando **solo en 127.0.0.1**, con los datos en
+  `datos\mongo`. Si el puerto de `MONGO_URI` ya está ocupado, no arranca otro y avisa. `config.env`:
+  `MONGO_URI=mongodb://localhost:27017` y `MONGO_DB=apto_hoy` (y `MONGOD_EXE` si `mongod` está en otra carpeta).
+- **`registrador.py`** guarda en la colección `mensajes`
+  `{recibido (fecha), tema, persona, tipo, simulado, reproducido, datos: <el JSON original>}`, con índices por
+  `(persona, tipo, recibido)` y por `tipo`. En `apto/control/...` el tipo es `control/sesion`, `control/modulos`,
+  etc., y la persona sale del mensaje si la trae. Los mensajes retenidos que el broker entrega al conectarse no se
+  guardan otra vez.
+- **Si MongoDB no responde, no se pierde nada**: los mensajes van a `datos\pendientes_mongo.jsonl` y se suben solos
+  cuando Mongo vuelve (cada línea lleva su `_id`, así un reintento nunca duplica).
+- **`exportar.py`**: un CSV por tipo en `datos\exportes` (`--tipo`, `--persona`, `--desde`, `--hasta`,
+  `--solo-reales` sin simulados ni reproducidos, `--excel` con `;` y coma decimal).
+- **`reproducir.py`**: vuelve a publicar una sesión respetando los tiempos (`--velocidad`, `--max-espera`), con
+  `"reproducido": true`, `ts` de ahora y `ts_original`. `--sesiones` lista las sesiones guardadas de una persona.
+  Reproduce los datos, la evaluación y el semáforo (con retain), el copiloto y la sesión; **no** reproduce órdenes
+  ni preguntas, que harían grabar o responder de verdad a los módulos. El coordinador ignora lo reproducido.
+- Alternativa con Docker (si Docker Desktop está abierto):
+  `docker run -d --name apto-mongo -p 127.0.0.1:27017:27017 -v apto-mongo:/data/db mongo:8`. El `127.0.0.1:`
+  es lo que impide que se abra a la red. En la laptop de Bri no se usa porque la máquina virtual de Docker ocupa
+  unos 2 GB de RAM que necesitan Ollama y Whisper.
+
+## 8. Reglas para sumar un módulo (todo el equipo)
 
 1. Cada módulo vive en su carpeta, con `requirements.txt` y un README con el comando para correrlo.
 2. Usen `comun/mqtt_cliente.py`; nunca escriban la IP ni claves en el código (van en `config.env`). Así el
