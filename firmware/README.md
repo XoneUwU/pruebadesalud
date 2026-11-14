@@ -1,7 +1,7 @@
 # Firmware del ESP32 (`firmware\apto_esp32\`)
 
 Lee el pulso, la variabilidad del pulso (HRV, RMSSD de 30 s) y el oxígeno en sangre (SpO2) con el MAX30102, el
-movimiento con el MPU6050, y muestra el semáforo en un LED RGB, en la pantalla OLED y con 3 pitidos si es rojo.
+movimiento con el MPU6050, y muestra el semáforo en 3 LED (amarillo, verde, rojo), en la pantalla OLED y con 3 pitidos si es rojo.
 
 | Tema MQTT | Qué |
 |---|---|
@@ -23,9 +23,9 @@ Placa: **ESP32 Dev Module** (a confirmar con la placa de Danilo). Pines en `conf
 | MAX30102 (0x57) | VIN · GND · SDA · SCL | 3V3 · GND · GPIO 21 · GPIO 22 |
 | MPU6050 (0x68) | VCC · GND · SDA · SCL · AD0 | 3V3 · GND · GPIO 21 · GPIO 22 · GND (dirección 0x68) |
 | OLED SSD1306 128x64 (0x3C) | VCC · GND · SDA · SCL | 3V3 · GND · GPIO 21 · GPIO 22 |
-| LED RGB | R · G · B (cada uno con una resistencia de 220 Ω) | GPIO 25 · GPIO 26 · GPIO 27 |
-| LED RGB | común | GND si es de **cátodo común** (por defecto); 3V3 si es de **ánodo común** y `LED_ANODO_COMUN 1` |
-| Zumbador activo | + · − | 5V (VIN) · colector de un NPN (2N2222 o BC547) |
+| LED amarillo · verde · rojo | ánodo (pata larga), cada uno con una resistencia de 220 Ω | GPIO 25 · GPIO 26 · GPIO 27 |
+| LED amarillo · verde · rojo | cátodo (pata corta) | GND |
+| Zumbador (activo o pasivo) | + · − | 5V (VIN) · colector de un NPN (2N2222 o BC547) |
 | Transistor NPN | base · emisor | GPIO 4 con una resistencia de 1 kΩ · GND (HIGH en GPIO 4 = suena) |
 
 Los tres módulos I2C van en paralelo en el mismo bus (SDA 21, SCL 22). Aliméntenlos con **3V3**, no con 5V.
@@ -72,7 +72,7 @@ El MPU6050 se lee directo por I2C: no necesita librería.
 Con `WIFI_SSID ""` en `secrets.h` el ESP32 no usa Wi-Fi ni MQTT y hace una medición guiada él solo:
 
 1. OLED «Coloca tu dedo». Al poner el dedo: cuenta 3-2-1 (pitido corto en cada número).
-2. Mide `MEDICION_S` (30 s, la ventana de la HRV) con cuenta regresiva, pulso en vivo y LED **azul**. Si se retira
+2. Mide `MEDICION_S` (30 s, la ventana de la HRV) con cuenta regresiva, pulso en vivo y **los tres LED encendidos**. Si se retira
    el dedo: «Dedo retirado: repite».
 3. Resultado (mediana del pulso con calidad ≥ 0,5; mismas reglas que el coordinador sin línea base):
 
@@ -81,7 +81,7 @@ Con `WIFI_SSID ""` en `secrets.h` el ESP32 no usa Wi-Fi ni MQTT y hace una medic
 | VERDE | pulso 50–99 | verde | 1 pitido corto |
 | AMARILLO | pulso 100–119 («Pulso en reposo alto») o < 50 («Pulso bajo: repite») | amarillo | 1 pitido |
 | ROJO | pulso ≥ 120 | rojo | 3 pitidos |
-| REPITE | menos de 10 s de señal buena | magenta parpadeando | 2 pitidos largos |
+| REPITE | menos de 10 s de señal buena | los tres parpadeando | 2 pitidos largos |
 
 El SpO2 < 92 solo agrega «Oxigeno bajo: repite» en la OLED, sin cambiar el color. La HRV se muestra pero no se
 juzga sin línea base. Para otra medición: retirar el dedo y volver a ponerlo. Probar los colores sin sensor:
@@ -91,8 +91,11 @@ Los latidos los detecta el propio firmware (`detectarLatido`): `checkForBeat` de
 con más de 1000 cuentas de pico a pico y este sensor da 3000–13000. Para capturar la señal cruda (IR y rojo a
 100 muestras/s por el monitor serie): `-DDEPURAR_IR=1`.
 
+El zumbador suena con un tono de 2 kHz (`TONO_ZUMBADOR_HZ` en `config.h`): así suena tanto un zumbador pasivo
+como uno activo. Con `0`, HIGH fijo (solo activo).
+
 Monitor serie a 115200: dice qué sensores encontró y, cada 5 s, las lecturas y el estado de Wi-Fi y MQTT.
-**LED azul** = sin conexión al broker. `MQTT ... estado -2`: no llega a la IP (revisen la IP, la red y el
+**Los tres LED encendidos** = sin conexión al broker. `MQTT ... estado -2`: no llega a la IP (revisen la IP, la red y el
 firewall, puerto 1883); `estado 5`: usuario o clave incorrectos.
 
 Ajustes en `config.h`: `UMBRAL_DEDO` (si no detecta el dedo o lo detecta sin dedo), `BRILLO_LED_SENSOR` (si la
