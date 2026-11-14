@@ -1,9 +1,19 @@
-# ¿Está apto hoy? — Sistema (parte de IA)
+# Prueba de salud — ¿Está apto hoy?
 
 NASA Space Apps Challenge 2026 · Reto «Create Health Monitoring Software for Astronauts on Space Missions».
 
-Esta carpeta es la base del repositorio común. Ya incluye los módulos de **Bri** (voz y copiloto), los
-paneles web, la conexión MQTT que usan todos, la configuración de Mosquitto, un simulador y los scripts de Windows.
+Repositorio común del equipo: todos los módulos (ver «Equipo»), la conexión MQTT que usan todos, la configuración
+de Mosquitto, un simulador y los scripts de Windows.
+
+## Equipo
+
+| Integrante | Módulo |
+|---|---|
+| **Bri** | Voz (fatiga en la voz) y copiloto por voz; la laptop de la estación (broker e integración) |
+| **Danilo** | Coordinador (calcula el semáforo); mientras tanto corre el coordinador provisional |
+| **Sebas** | Paneles (estación, tripulación y Tierra) y prueba de reacción (PVT) |
+| **Erick** | Visión (cámara: pulso sin contacto, parpadeos, PERCLOS y bostezos) |
+| **Adrian** | ESP32 (firmware: pulso, HRV, SpO2, movimiento y semáforo) |
 
 ```
 apto-hoy/
@@ -59,8 +69,9 @@ Ollama (`ollama pull qwen2.5:3b` y `OLLAMA_MODEL=qwen2.5:3b`).
 ## 3. Modo evento (con usuarios)
 
 1. `mosquitto\crear_usuarios.bat` → crea `sistema` (publica y lee) y `equipo` (solo lee).
-2. En `config.env`: `MQTT_HOST` = IP de la laptop de Bri, `MQTT_USER=sistema` y su clave, y
-   `MQTT_USER_LECTURA=equipo` y su clave (los usan los paneles abiertos desde otras laptops).
+2. En **`config.local.env`** (no se sube a Git; reemplaza a `config.env`): `MQTT_HOST` = IP de la laptop de Bri,
+   `MQTT_USER=sistema` y `MQTT_PASS=` su clave, y `MQTT_USER_LECTURA=equipo` y `MQTT_PASS_LECTURA=` su clave (los
+   usan los paneles abiertos desde otras laptops). **Nunca pongan claves en `config.env`**, que sí se sube.
 3. Firewall, en PowerShell como administrador:
    ```
    Set-NetConnectionProfile -InterfaceAlias "Wi-Fi" -NetworkCategory Private
@@ -237,7 +248,8 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
 ## 9. Reglas para sumar un módulo (todo el equipo)
 
 1. Cada módulo vive en su carpeta, con `requirements.txt` y un README con el comando para correrlo.
-2. Usen `comun/mqtt_cliente.py`; nunca escriban la IP ni claves en el código (van en `config.env`). Así el
+2. Usen `comun/mqtt_cliente.py`; nunca escriban la IP ni claves en el código (las opciones van en `config.env`; las
+   claves y los valores de cada laptop, en `config.local.env`, que no se sube a Git). Así el
    módulo avisa solo si está abierto (`ClienteMQTT("vision")` → `apto/control/modulos/vision`).
 3. En casa: Mosquitto propio con `mosquitto\mosquitto-dev.conf` y `MQTT_HOST=localhost`.
 4. Prueben con `herramientas\simulador.py` y `herramientas\escuchar.py` sin esperar a los demás.

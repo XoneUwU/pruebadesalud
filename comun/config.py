@@ -1,9 +1,15 @@
-"""Lee config.env (en la raíz del proyecto) y permite sobrescribir con variables de entorno."""
+"""Lee config.env (en la raíz del proyecto), luego config.local.env (si existe) y deja sobrescribir con variables
+de entorno.
+
+config.env va en Git con valores de ejemplo y SIN claves. Las claves (MQTT_PASS, MQTT_PASS_LECTURA...) y los valores
+de cada laptop (la URL de DroidCam en CAMARA, la IP del broker...) van en config.local.env, que no se sube a Git.
+"""
 import os
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 _ARCHIVO = RAIZ / "config.env"
+_ARCHIVO_LOCAL = RAIZ / "config.local.env"  # no se sube a Git: claves y valores de esta laptop
 
 
 def _leer_archivo(ruta: Path) -> dict:
@@ -19,7 +25,7 @@ def _leer_archivo(ruta: Path) -> dict:
     return valores
 
 
-_VALORES = _leer_archivo(_ARCHIVO)
+_VALORES = {**_leer_archivo(_ARCHIVO), **_leer_archivo(_ARCHIVO_LOCAL)}
 
 
 def get(clave: str, defecto: str = "") -> str:
