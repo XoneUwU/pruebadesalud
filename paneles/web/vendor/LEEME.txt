@@ -6,3 +6,20 @@ SHA-256: 75873D04A6400BBBAC093B3602CAF06F44ED92EE032925E1F4F21C03EBA05A4E
 
 Para actualizar: npm pack mqtt@<versión>, copiar package/dist/mqtt.min.js aquí y cambiar la versión
 y el SHA-256 de este archivo y de paneles/requirements.txt.
+
+phosphor/: íconos Phosphor de @phosphor-icons/web 2.1.1 (licencia MIT, ver phosphor/LICENSE.txt).
+Solo los estilos regular y fill, con su fuente woff2: en regular.css y fill.css se quitaron las otras
+fuentes (woff, ttf, svg) de la regla @font-face; el resto del CSS queda igual.
+
+Origen:  npm pack @phosphor-icons/web@2.1.1  (src/regular y src/fill)
+SHA-256: Phosphor.woff2       C2EA45EA05FF5C7DF1936770C104725F2A68F43FD343F35F3DA23A30B27DE32A
+         Phosphor-Fill.woff2  660BD6045C0E0D9756CDDB8BA2ECE3AAD855DF7D4A170EF23F7B1C0BF511C430
+
+inter/: fuente Inter (SIL Open Font License 1.1, ver inter/LICENSE.txt), pesos 400, 500, 600 y 700,
+subconjunto latino. La carga nocturne.css con @font-face.
+
+Origen:  npm pack @fontsource/inter@5.1.0  (files/inter-latin-*-normal.woff2)
+SHA-256: 400  DD05E326CF8EAC3B55ACECF29C842ED73E6E6DD06491CF47F7E8800680AB3E33
+         500  B0E7558F4710A1E255B93E3DEFE3AEBB19F3BB41C150F685A74D3B1A1C79E87
+         600  62553D159189834AF73C9A6264704BE5B2BEE9A08DA66A14768D8E5C6FFD2CDB
+         700  AAC638F7503CEBB084EC494CF00F75F7D8260D50C2F4E7820BCCABBA09626A3A

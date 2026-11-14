@@ -2,11 +2,13 @@
 
   python paneles/pruebas_paneles.py
 
-- El servidor sirve las páginas, /config.js (con las credenciales según desde dónde se pida) y
-  vendor/mqtt.min.js, y no deja leer archivos fuera de paneles/web (como config.env).
+- El servidor sirve las páginas, /config.js (con las credenciales según desde dónde se pida),
+  vendor/mqtt.min.js, los íconos y la fuente, y no deja leer archivos fuera de paneles/web (como config.env).
+- /historial.json, /historial.csv y /sesion.json responden aunque no estén pymongo ni MongoDB, y
+  historial.filas_de() arma una fila por evaluación (sin MongoDB: con documentos de ejemplo).
 - Nada se carga desde internet: ni scripts, ni estilos, ni fuentes.
-- El JavaScript no tiene errores de sintaxis (node --check) y logica.js da la misma recomendación
-  que resumen_tripulacion() del copiloto. Si no está Node, esas pruebas se saltan.
+- El JavaScript no tiene errores de sintaxis (node --check), logica.js da la misma recomendación
+  que resumen_tripulacion() del copiloto y plantilla.js escapa los textos. Si no está Node, esas pruebas se saltan.
 Muestra OK o FALLA por cada caso y termina con código 1 si alguno falla.
 """
 import json
@@ -27,6 +29,7 @@ WEB = AQUI / "web"
 sys.path.insert(0, str(AQUI))
 sys.path.insert(0, str(RAIZ / "copiloto"))
 
+import historial  # noqa: E402
 import servidor  # noqa: E402
 
 fallas = 0
@@ -62,6 +65,18 @@ def probar_servidor():
             codigo, tipo, cuerpo = pedir(base, ruta)
             revisar(codigo == 200 and tipo.startswith("text/html") and b"</html>" in cuerpo,
                     f"GET {ruta} -> {codigo} {tipo}")
+        for ruta, esperado in (("/nocturne.css", "text/css"), ("/app.css", "text/css"), ("/vendor/phosphor/regular.css", "text/css"),
+                               ("/vendor/phosphor/Phosphor-Fill.woff2", "font/woff2"),
+                               ("/vendor/inter/inter-latin-500-normal.woff2", "font/woff2")):
+            codigo, tipo, cuerpo = pedir(base, ruta)
+            revisar(codigo == 200 and tipo.startswith(esperado) and len(cuerpo) > 1000, f"GET {ruta} -> {codigo} {tipo}")
+        for ruta, esperado in (("/historial.json?dias=7", "application/json"), ("/sesion.json?sesion=x", "application/json"),
+                               ("/historial.csv?persona=bri", "text/csv")):
+            codigo, tipo, cuerpo = pedir(base, ruta)
+            ok = codigo == 200 and tipo.startswith(esperado)
+            if ok and esperado == "application/json":
+                ok = "disponible" in json.loads(cuerpo.decode("utf-8"))
+            revisar(ok, f"GET {ruta} -> {codigo} {tipo} (responde aunque no esté MongoDB)")
 
         codigo, tipo, cuerpo = pedir(base, "/config.js")
         texto = cuerpo.decode("utf-8")
@@ -74,6 +89,9 @@ def probar_servidor():
         revisar(list(frases)[:1] == ["estandar"] and "trabalenguas" in frases and len(frases) >= 3
                 and all(f.get("texto") for f in frases.values()),
                 f"config.js trae las frases de voz para elegir: {list(frases)}")
+        revisar(all(k in datos for k in ("camara", "vision_segundos", "ollama_model", "mongo_db", "mongo_host"))
+                and "mongodb" not in str(datos.get("mongo_host")),
+                "config.js trae lo que muestra Configuración (cámara, visión, modelos, MongoDB sin la URI)")
         revisar(len(datos.get("tripulacion", [])) >= 1 and datos.get("pvt_segundos", 0) > 0
                 and "retraso_tierra_s" in datos and "caminata" in datos.get("frase_voz", ""),
                 f"config.js trae tripulación {datos.get('tripulacion')}, PVT {datos.get('pvt_segundos')} s, "
@@ -129,9 +147,10 @@ def probar_sin_internet():
             hallado = patron.search(texto)
             revisar(not hallado, f"{ruta.relative_to(AQUI)}: sin recursos externos",
                     f"encontrado: {hallado.group(0) if hallado else ''}")
-    scripts = re.findall(r"""<script[^>]*src=["']([^"']+)""", (WEB / "estacion.html").read_text(encoding="utf-8"))
-    revisar(scripts == ["config.js", "vendor/mqtt.min.js", "logica.js", "comun.js", "estacion.js"],
-            f"estacion.html carga solo scripts locales: {scripts}")
+    esperados = ["config.js", "vendor/mqtt.min.js", "logica.js", "comun.js", "plantilla.js", "logo.js", "fondo.js", "estacion.js"]
+    for pagina in ("estacion.html", "tripulacion.html"):
+        scripts = re.findall(r"""<script[^>]*src=["']([^"']+)""", (WEB / pagina).read_text(encoding="utf-8"))
+        revisar(scripts == esperados, f"{pagina} carga solo scripts locales: {scripts}")
 
 
 def probar_javascript():
@@ -177,6 +196,14 @@ process.stdin.on("end", () => {
   }));
 });
 """
+    plantilla = r"""
+const P = require(process.argv[1]);
+console.log(String(P.h`<p title="${'a"b'}">${"<img src=x onerror=1>"}${[P.h`<i>${1}</i>`, null, false]}</p>`));
+"""
+    r = subprocess.run([node, "-e", plantilla, str(WEB / "plantilla.js")], capture_output=True, text=True, encoding="utf-8")
+    revisar(r.stdout.strip() == '<p title="a&quot;b">&lt;img src=x onerror=1&gt;<i>1</i></p>',
+            f"plantilla.js escapa textos y atributos: {r.stdout.strip() or r.stderr.strip()[:200]}")
+
     r = subprocess.run([node, "-e", programa, str(WEB / "logica.js")], input=json.dumps({"escenarios": escenarios, "tareas": tareas}),
                        capture_output=True, text=True, encoding="utf-8")
     if r.returncode != 0:
@@ -198,8 +225,43 @@ process.stdin.on("end", () => {
     revisar(js["simbolos"] == [9, 9, 90], f"DSST: 9 símbolos distintos y 90 s: {js['simbolos']}")
 
 
+def probar_historial():
+    print("\n--- historial (sin MongoDB) ---")
+    from datetime import datetime, timedelta, timezone
+    t0 = datetime(2026, 11, 13, 12, 0, tzinfo=timezone.utc)
+
+    def doc(seg, tipo, datos, persona="bri"):
+        return {"recibido": t0 + timedelta(seconds=seg), "tipo": tipo, "persona": persona, "datos": datos}
+
+    s1, s2 = "20261113-120000-bri", "20261113-130000-erick"
+    docs = [
+        doc(0, "control/sesion", {"sesion": s1, "tarea": "caminata espacial"}),
+        *[doc(1 + i, "esp32", {"sesion": s1, "dedo": True, "calidad": 0.8, "pulso_lpm": p}) for i, p in enumerate((60, 70, 80))],
+        doc(4, "esp32", {"sesion": s1, "dedo": False, "calidad": 0.9, "pulso_lpm": 150}),  # sin dedo: no cuenta
+        doc(10, "pvt", {"sesion": s1, "rt_mediana_ms": 312}),
+        doc(20, "vision", {"sesion": s1, "perclos": 8}),  # en porcentaje
+        doc(30, "cuestionario", {"sesion": s1, "kss": 6, "horas_sueno": 5.5}),
+        doc(31, "evaluacion", {"sesion": s1, "color": "verde", "puntaje": 1.0, "motivos": []}),
+        doc(40, "evaluacion", {"sesion": s1, "color": "amarillo", "puntaje": 0.75, "motivos": ["Menos de 6 horas de sueño"],
+                               "provisional": True}),  # el coordinador recalculó: vale esta
+        doc(100, "cuestionario", {"sesion": s2, "kss": 8}, "erick"),  # sesión sin evaluación: no es fila
+        doc(200, "evaluacion", {"color": "rojo"}, "erick"),  # sin sesión: no es fila
+    ]
+    filas = historial.filas_de(docs)
+    f = filas[0] if filas else {}
+    revisar(len(filas) == 1 and f["id"] == s1 and f["color"] == "amarillo" and f["puntaje"] == 0.75 and f["provisional"],
+            f"una fila por sesión con evaluación, con la última evaluación: {[(x['id'], x['color']) for x in filas]}")
+    revisar(f.get("pulso_lpm") == 70 and f.get("pvt_mediana") == 312 and f.get("kss") == 6 and f.get("horas_sueno") == 5.5
+            and f.get("perclos") == 0.08 and f.get("tarea") == "caminata espacial",
+            f"pulso = mediana con dedo, PVT, KSS, sueño, PERCLOS en fracción y tarea de la sesión: {f}")
+    csv_texto = historial.a_csv(filas)
+    revisar(csv_texto.startswith("fecha,persona,sesion") and s1 in csv_texto and "Menos de 6 horas de sueño" in csv_texto,
+            "a_csv: encabezado, sesión y motivos")
+
+
 def main() -> int:
     probar_servidor()
+    probar_historial()
     probar_credenciales()
     probar_sin_internet()
     probar_javascript()

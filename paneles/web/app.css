@@ -1,0 +1,36 @@
+/* Estación Becspace: lo propio de la app sobre nocturne.css (base, animaciones, estados hover y preferencias).
+ * El resto del estilo va en línea en las plantillas de estacion.js, tal cual el diseño de Claude Design. */
+body{margin:0;background:var(--color-bg);transition:background-color .4s,color .4s;color:var(--color-text);font-family:var(--font-body);font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:var(--color-accent-300)}a:hover{color:var(--color-accent-200)}
+button{font:inherit;color:inherit}
+.ph,.ph-fill{line-height:1}
+code,kbd{font-family:ui-monospace,Menlo,monospace}
+[hidden]{display:none !important}
+@keyframes pulso{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes barrido{from{transform:translateY(-100%)}to{transform:translateY(100%)}}
+@keyframes brillo{0%{background-position:-200px 0}100%{background-position:200px 0}}
+
+/* Estados hover del diseño (style-hover): van con !important porque el estilo base está en línea. */
+.hv-nav:hover,.hv-tab:hover{background:color-mix(in srgb, var(--color-text) 6%, transparent) !important}
+.hv-crew:hover{background:color-mix(in srgb, var(--color-surface) 80%, var(--color-neutral-700)) !important;transform:translateX(3px)}
+.hv-acc:hover{box-shadow:inset 0 0 0 1px var(--color-accent) !important}
+.hv-acc6:hover{box-shadow:inset 0 0 0 1px var(--color-accent-600) !important}
+.hv-sube:hover{transform:translateY(-2px)}
+.hv-icono:hover{transform:translate(-50%,-50%) scale(1.3) !important;z-index:2}
+
+/* Tooltip del sistema de diseño (con el mouse o con el foco del teclado). */
+.con-tip [role="tooltip"]{display:none}
+.con-tip:hover [role="tooltip"],.con-tip:focus-within [role="tooltip"]{display:block}
+
+/* Barra de prueba PVT y teclas DSST: sin selección ni zoom por doble toque. */
+.zona-prueba{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.zona-prueba:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.tecla-dsst:active,.tecla-dsst.pulsada{background:var(--color-accent-800) !important}
+
+/* Preferencias de Configuración. */
+html[data-proyector="1"] #app{zoom:1.25}
+html[data-quieto="1"] *,html[data-quieto="1"] *::before,html[data-quieto="1"] *::after{animation:none !important;transition:none !important}
+html[data-contraste="1"]{--color-neutral-300:#e4e7f5 !important;--color-neutral-400:#cfd3e5 !important;--color-neutral-500:#b2b6ca !important;--card-edge:rgba(200,210,255,0.45) !important;--color-divider:rgba(220,225,255,0.4) !important}
+html[data-contraste="1"][data-tema="claro"]{--color-neutral-300:#2f3240 !important;--color-neutral-400:#3a3d4c !important;--color-neutral-500:#454857 !important;--card-edge:rgba(40,40,90,0.4) !important;--color-divider:rgba(28,30,43,0.4) !important}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}}

@@ -1,4 +1,4 @@
-/* Conexión al broker por WebSocket, indicador de conexión y utilidades de pantalla (las 3 páginas).
+/* Conexión al broker por WebSocket, indicador de conexión y utilidades de pantalla (todas las páginas).
  * Necesita, antes que este archivo: config.js (window.APTO), vendor/mqtt.min.js y logica.js. */
 (function () {
   "use strict";
@@ -44,10 +44,12 @@
   }
 
   /** Conecta al broker en el mismo host desde el que se abrió la página.
-   *  alMensaje(tema, datos, retenido) recibe cada mensaje JSON de los temas indicados. */
-  function conectar(pagina, temas, alMensaje) {
+   *  alMensaje(tema, datos, retenido) recibe cada mensaje JSON de los temas indicados.
+   *  alEstado(estado, texto), opcional: "conectando", "ok", "reconectando" o "error", para pintarlo a mano. */
+  function conectar(pagina, temas, alMensaje, alEstado) {
     const indicador = document.getElementById("conexion");
     const poner = (estado, texto) => {
+      if (alEstado) alEstado(estado, texto);
       if (!indicador) return;
       indicador.dataset.estado = estado;
       indicador.querySelector(".texto").textContent = texto;

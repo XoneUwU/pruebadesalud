@@ -7,7 +7,9 @@
 Las páginas se conectan al broker por WebSocket (MQTT_WS_PORT, 9001) en el mismo host desde el que se
 abrieron. /config.js lleva las credenciales: si la página se abre en esta misma laptop (localhost), las
 de MQTT_USER, que puede publicar; si se abre desde otra laptop, las de solo lectura (MQTT_USER_LECTURA).
-Solo usa la biblioteca estándar. Si cambian config.env, reinicien el servidor.
+/historial.json, /historial.csv y /sesion.json leen el MongoDB del registrador (ver historial.py); si falta
+pymongo o MongoDB, responden {"disponible": false} y el resto sigue igual. Si cambian config.env, reinicien
+el servidor.
 """
 import argparse
 import ast
@@ -16,11 +18,15 @@ import socket
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 from comun import config  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import historial  # noqa: E402
 
 WEB = Path(__file__).resolve().parent / "web"
 PUERTO = 8080
@@ -55,6 +61,14 @@ def frases_voz() -> dict:
     return frases
 
 
+def host_mongo() -> str:
+    """Solo el host de MONGO_URI, sin usuario ni clave (para mostrarlo en Configuración)."""
+    try:
+        return urlsplit(config.get("MONGO_URI", "mongodb://localhost:27017")).hostname or ""
+    except ValueError:
+        return ""
+
+
 def configuracion(local: bool) -> dict:
     """Lo que reciben las páginas en window.APTO."""
     usuario, clave = ("MQTT_USER", "MQTT_PASS") if local else ("MQTT_USER_LECTURA", "MQTT_PASS_LECTURA")
@@ -68,6 +82,15 @@ def configuracion(local: bool) -> dict:
         "retraso_tierra_s": config.get_int("RETRASO_TIERRA_S", 20),
         "frase_voz": frase_voz(),
         "frases_voz": frases_voz(),
+        # Para Configuración (solo se muestran; se cambian en config.local.env).
+        "mqtt_host": config.get("MQTT_HOST", "localhost"),
+        "mqtt_puerto": config.get_int("MQTT_PORT", 1883),
+        "camara": config.get("CAMARA", "0"),
+        "vision_segundos": config.get_int("VISION_SEGUNDOS", 60),
+        "ollama_model": config.get("OLLAMA_MODEL"),
+        "whisper_model": config.get("WHISPER_MODEL"),
+        "mongo_host": host_mongo(),
+        "mongo_db": config.get("MONGO_DB", "apto_hoy"),
     }
 
 
@@ -82,21 +105,45 @@ class Manejador(SimpleHTTPRequestHandler):
         **SimpleHTTPRequestHandler.extensions_map,
         ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".md": "text/plain; charset=utf-8",
+        ".woff2": "font/woff2",
     }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB), **kwargs)
 
+    def responder(self, cuerpo: bytes, tipo: str, extra: dict | None = None):
+        self.send_response(200)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(cuerpo)))
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(cuerpo)
+
     def do_GET(self):
         ruta = self.path.split("?", 1)[0].split("#", 1)[0]
+        q = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
         if ruta == "/config.js":
-            cuerpo = config_js(es_local(self.client_address[0]))
-            self.send_response(200)
-            self.send_header("Content-Type", "text/javascript; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(cuerpo)))
-            self.end_headers()
-            self.wfile.write(cuerpo)
+            self.responder(config_js(es_local(self.client_address[0])), "text/javascript; charset=utf-8")
+            return
+        if ruta in ("/historial.json", "/historial.csv", "/sesion.json"):
+            try:
+                dias = max(0, int(q.get("dias") or 0))
+            except ValueError:
+                dias = 0
+            persona = "".join(c for c in q.get("persona", "").lower() if c.isalnum())
+            if ruta == "/sesion.json":
+                datos = historial.sesion(q.get("sesion", "")[:80])
+            else:
+                datos = historial.historial(dias, persona)
+            if ruta == "/historial.csv":
+                texto = historial.a_csv(datos.get("filas", [])) if datos.get("disponible") else f"# {datos.get('motivo')}\r\n"
+                nombre = f"historial-{persona or 'tripulacion'}-{dias or 'todo'}.csv"
+                self.responder(texto.encode("utf-8-sig"), "text/csv; charset=utf-8",
+                               {"Content-Disposition": f'attachment; filename="{nombre}"'})
+            else:
+                self.responder(json.dumps(datos, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
             return
         if ruta == "/":
             self.path = "/index.html"
@@ -132,6 +179,7 @@ def main():
     ip = ip_en_la_red()
     if args.host == "0.0.0.0" and ip:
         print(f"[paneles] Desde otra laptop: http://{ip}:{args.puerto}/tripulacion.html (solo lectura)")
+    print(f"[paneles] Estación: http://localhost:{args.puerto}/estacion.html")
     print("[paneles] Ctrl+C para salir.")
     try:
         servidor.serve_forever()

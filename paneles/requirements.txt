@@ -1,2 +1,4 @@
-# Sin dependencias: servidor.py usa solo la biblioteca estándar de Python.
-# La biblioteca MQTT del navegador está en web/vendor/mqtt.min.js (mqtt.js 5.16.1), sin internet.
+# servidor.py usa solo la biblioteca estándar de Python.
+# Opcional: pymongo>=4.6 para el Historial (/historial.json); es el mismo de registrador/requirements.txt.
+# En el navegador, sin internet: web/vendor/mqtt.min.js (mqtt.js 5.16.1), web/vendor/phosphor (íconos 2.1.1)
+# y web/vendor/inter (fuente Inter). Origen y SHA-256 en web/vendor/LEEME.txt.
