@@ -24,6 +24,7 @@ apto-hoy/
 ├── copiloto/             copiloto por voz: Whisper + Ollama + fichas + Piper (Bri)
 │   └── protocolos.md     fichas que el copiloto usa para responder
 ├── paneles/              paneles web: estación Becspace, tripulación y Tierra (servidor.py, sin internet)
+├── houston/              Tierra (Docker): suscrito a Mosquitto, su propio MongoDB y su servidor web MVC (solo lee)
 ├── coordinador/          coordinador_provisional.py, hasta que esté el de Danilo
 ├── registrador/          guarda todo apto/# en MongoDB, exporta a CSV y reproduce sesiones
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
@@ -375,6 +376,15 @@ Para probar los colores sin sensor hay que compilar en modo simulado con un puls
 ```
 arduino-cli compile --fqbn esp32:esp32:esp32 --build-property "compiler.cpp.extra_flags=-DMODO_SIMULADO=1 -DPULSO_FORZADO=130" firmware\apto_esp32
 ```
+
+## Houston (Tierra)
+
+Todo lo anterior está en la nave. `houston/` es el control de misión en Tierra y corre en Docker
+(`cd houston` y `docker compose up -d --build`): `receptor.py` se suscribe a Mosquitto (`apto/#`, solo lectura) y
+guarda en su propio MongoDB lo que baja, con el retraso de la comunicación (`HOUSTON_RETRASO_S`, por defecto
+`RETRASO_TIERRA_S`), y `servidor.py` (MVC: `modelo.py`, `controlador.py` y `web/`) lo muestra en
+http://localhost:8090. La IP de Mosquitto va en `houston/.env` (`HOUSTON_MQTT_HOST`). No guarda órdenes ni estados de
+los módulos. Detalle en `houston/README.md`.
 
 ## 10. Reglas para sumar un módulo (todo el equipo)
 

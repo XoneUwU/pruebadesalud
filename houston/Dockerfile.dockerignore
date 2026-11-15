@@ -1,0 +1,7 @@
+# Solo entra a la imagen lo que Houston necesita (nunca datos/, .venv/ ni config.local.env con claves).
+*
+!config.env
+!comun/
+!registrador/almacen.py
+!houston/
+**/__pycache__
