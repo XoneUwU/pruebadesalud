@@ -104,6 +104,9 @@ seed = 9; stat = document.createElement("canvas"); stat.width = W * dpr; stat.he
   }
 
   function medir() {
+    // Con la ventana en 0 × 0 (pestaña recién abierta u oculta) los cálculos dan Infinity y el canvas lanza una
+    // excepción que corta el arranque de la estación: se espera al siguiente cuadro.
+    if (!window.innerWidth || !window.innerHeight) { stat = null; requestAnimationFrame(medir); return; }
     W = window.innerWidth; H = window.innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const R = Math.max(W * 0.9, (0.25 * W * W) / (0.2 * H)); E = { cx: W * 0.52, cy: H * 0.905 + R, R };
     A = { cx: W * 0.47, cy: H * 0.95, rx: W * 0.36, ry: H * 0.62 };
@@ -120,6 +123,7 @@ seed = 9; stat = document.createElement("canvas"); stat.width = W * dpr; stat.he
   function dibujar(t) {
     const quieto = op.quieto();
     if (!quieto && t - lastT < (L ? 50 : 32)) { raf = requestAnimationFrame(dibujar); return; }
+    if (!stat || !stat.width || !stat.height) { raf = requestAnimationFrame(dibujar); return; }
     lastT = t; const T = quieto ? 0 : t / 1000;
     ctx.drawImage(stat, 0, 0, W, H);
       if (L) {
@@ -159,7 +163,7 @@ seed = 9; stat = document.createElement("canvas"); stat.width = W * dpr; stat.he
         if (dq > 0.9 && dq <= 1) { const pd = lq < 0.75 ? (dq - 0.9) / 0.1 : 1 + (lq - 0.75) * 4; ctx.beginPath(); ctx.ellipse(lx, lhy + 1, 10 + pd * 28, 2 + pd * 5, 0, 0, 7); ctx.fillStyle = "rgba(120,135,170," + Math.max(0, 0.35 - pd * 0.18) * la + ")"; ctx.fill(); }
         // shooting star (navy)
         const ss = 14, sq2 = quieto ? 2 : (T % ss) / 1.1; if (sq2 < 1) { const x0 = W * 0.65, y0 = H * 0.05; const x = x0 - sq2 * W * 0.25, y = y0 + sq2 * H * 0.12; const g = ctx.createLinearGradient(x, y, x + W * 0.06, y - H * 0.03); g.addColorStop(0, "rgba(" + NAVY + "," + (1 - sq2) * 0.7 + ")"); g.addColorStop(1, "rgba(" + NAVY + ",0)"); ctx.strokeStyle = g; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + W * 0.06, y - H * 0.03); ctx.stroke(); }
-        if (L.moon) { ctx.drawImage(L.moon, 0, L.by, W, L.bh);
+        if (L.moon && L.moon.width && L.moon.height && L.bh > 0) { ctx.drawImage(L.moon, 0, L.by, W, L.bh);
           const glint = quieto ? 0.5 : (T * 0.03) % 1.4 - 0.2; const gg = ctx.createLinearGradient((glint - 0.15) * W, 0, (glint + 0.15) * W, 0); gg.addColorStop(0, "rgba(255,255,255,0)"); gg.addColorStop(0.5, "rgba(255,255,255,0.14)"); gg.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = gg; ctx.fillRect(Math.max(0, (glint - 0.15) * W), L.top, 0.3 * W, H - L.top); }
         raf = quieto ? null : requestAnimationFrame(dibujar); return;
       }

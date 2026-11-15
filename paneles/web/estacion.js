@@ -2,8 +2,9 @@
  *
  *  Panel           evaluaciones de apto/+/evaluacion (retenidas), recomendación de logica.js, módulos activos,
  *                  aviso de SpO2 y últimas respuestas del copiloto
- *  Evaluación      inicio, dispositivo (ESP32), cámara (orden al módulo de visión), voz (orden al módulo de voz),
- *                  reacción PVT-B, símbolos DSST (opcional), cuestionario de Karolinska y espera del coordinador
+ *  Evaluación      inicio, dispositivo (ESP32), voz (orden al módulo de voz), reacción PVT-B con la cámara al
+ *                  costado (orden al módulo de visión, sin ventana), símbolos DSST (opcional), cuestionario de
+ *                  Karolinska y espera del coordinador (trayectoria del cohete)
  *  Pruebas         cámara y micrófono de este navegador (getUserMedia), sin guardar imagen ni audio
  *  Resultados      semáforo, motivos, aviso de SpO2, copiloto (pregunta escrita o por voz) e indicadores
  *  Historial       /historial.json de servidor.py (MongoDB del registrador)
@@ -48,7 +49,7 @@
     ["dashboard", "Panel", "ph-squares-four", "Tripulación", "Panel de la misión"],
     ["evaluacion", "Evaluación", "ph-scan", "Estación", "Evaluación en curso"],
     ["pruebas", "Pruebas", "ph-faders", "Cámara y micrófono", "Pruebas de dispositivos"],
-    ["resultados", "Resultados", "ph-clipboard-text", "Resultado", "Resultado de la evaluación"],
+    ["resultados", "Resultados", "ph-clipboard-text", "Evaluación de hoy", "Resultado de la evaluación"],
     ["historial", "Historial", "ph-chart-line-up", "Registrador", "Historial de monitoreo"],
     ["config", "Configuración", "ph-gear-six", "Sistema", "Configuración"],
     ["sistema", "Sistema de diseño", "ph-swatches", "Nocturne + Apto", "Sistema de diseño"],
@@ -692,6 +693,7 @@
     S.anal = { t0: Date.now(), comparando: false, vencida: false, listo: false };
     despues(1200, () => { S.anal.comparando = true; });
     despues(PISTA_ANALIZANDO_MS, () => { S.anal.vencida = true; });
+    cadaTanto(250, () => {});  // repinta la trayectoria del cohete mientras se espera al coordinador
     const ev = S.evaluaciones[S.persona];
     if (ev && ev.sesion === S.sesion) alLlegarEvaluacion();
   }
@@ -1466,66 +1468,169 @@ ${S.modal ? vistaModal() : ""}`;
     ${botonera(primario, { extra })}`;
   }
 
+  /** Aviso compacto para el panel lateral de la cámara. */
+  const alertaMini = (st, icono, tituloTxt, texto) => h`<div role="alert" style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:var(--radius-md);background:${st.bg}">
+      <i class="ph ${icono}" style="font-size:15px;color:${st.fg};flex:none"></i>
+      <span style="display:flex;flex-direction:column;gap:1px"><b style="font-weight:500;font-size:12px;color:${st.fg}">${tituloTxt}</b><span style="font-size:11px;color:var(--color-neutral-200)">${texto}</span></span></div>`;
+
+  /** Panel lateral de la cámara durante la prueba de reacción (pvtPreparar pide la medición sin ventana). */
+  function panelCamara(P, seg) {
+    const abierto = activo("vision");
+    const conCam = P.fase !== "intro" && Boolean(S.camConPvt);
+    const d = conCam ? S.vision : null;
+    const e = conCam ? S.estadoVision : "";
+    const error = e === "error" && !d;
+    const lentes = e === "lentes" && !d;
+    const mid = conCam && !d && !error && (P.fase === "preparando" || P.fase === "activa");
+    const textoLentes = S.visionMensaje || "Se ven lentes: quítatelos para continuar con la medición.";
+    const avisos = d && Array.isArray(d.avisos) ? d.avisos : [];
+    const avisoLuz = avisos.find((a) => /luz|brill|reflej/i.test(a));
+    const cara = d ? num(d.cara_detectada_pct) : null;
+    // Segundos que le quedan a la cámara: mide lo mismo que la prueba, así que sigue el reloj de la PVT.
+    const remoto = num(S.visionRestantes);
+    const sinCam = P.fase !== "intro" && !conCam;  // la prueba arrancó sin el módulo de visión: no hay cuenta que mostrar
+    const quedan = sinCam ? null : d || P.fase === "fin" || error ? 0
+      : P.fase === "activa" ? Math.max(0, Math.ceil((pvt.duracionMs - (performance.now() - pvt.inicio)) / 1000))
+        : e === "midiendo" && remoto !== null ? remoto : seg;
+    const pct = quedan === null ? 0 : Math.max(0, Math.min(100, ((seg - quedan) / seg) * 100));
+    const chips = [{ icon: "ph-webcam", label: `CÁMARA ${CFG.camara != null && CFG.camara !== "" ? String(CFG.camara).replace(/^https?:\/\/([^/:]+).*$/, "droidcam $1") : "0"}`, fg: abierto ? ST.verde.fg : ST.rojo.fg }];
+    if (cara !== null) chips.push({ icon: cara >= 80 ? "ph-check-circle" : "ph-warning-circle", label: `ROSTRO ${Math.round(cara)} %`, fg: cara >= 80 ? ST.verde.fg : ST.amarillo.fg });
+    if (d) chips.push(avisoLuz ? { icon: "ph-warning-circle", label: "REVISAR LUZ", fg: ST.amarillo.fg } : { icon: "ph-sun", label: "LUZ OK", fg: ST.verde.fg });
+    if (lentes) chips.push({ icon: "ph-eyeglasses", label: "QUÍTATE LOS LENTES", fg: ST.amarillo.fg });
+    else if (mid) chips.push({ icon: "ph-record", label: "MIDIENDO", fg: "var(--color-accent-300)" });
+    const [estado, sub] = !abierto && !d ? ["Módulo sin abrir", "La prueba sigue sin la cámara"]
+      : !PUEDE ? ["Solo lectura", "Esta laptop no puede pedir la medición"]
+        : P.fase === "intro" ? ["Lista", `Mide ${textoDuracion(seg)} junto con la prueba`]
+          : lentes ? ["Se ven lentes", "Quítatelos para empezar"]
+            : error ? ["Error", S.visionMotivo || "La cámara no pudo medir"]
+              : d ? ["Medición lista", "Datos enviados al coordinador"]
+                : P.fase === "preparando" ? ["Preparando", "Esperando al módulo de visión"]
+                  : P.fase === "activa" ? [conCam ? "Midiendo" : "Sin cámara", conCam ? "Mira la pantalla de frente" : "La prueba sigue sin ella"]
+                    : conCam ? ["Esperando datos", "Llegan al terminar la medición"] : ["Sin cámara", "Se midió sin la cámara"];
+    const ventanaTexto = !abierto && !d ? "El módulo de visión no está abierto." : lentes ? textoLentes
+      : mid ? "Sin ventana: el módulo de visión mide en segundo plano mientras haces la prueba."
+        : d ? "Medición terminada." : "Al empezar la prueba, el módulo de visión mide tu rostro sin abrir ventana.";
+    const cards = [
+      { label: "Parpadeos", valor: d ? fmt(d.parpadeos_min, 1) : "–", tipo: TIPOS.medido },
+      { label: "PERCLOS", valor: d ? fmt(num(d.perclos) > 1 ? num(d.perclos) / 100 : d.perclos) : "–", tipo: TIPOS.estimado },
+      { label: "Bostezos", valor: d ? entero(d.bostezos) : "–", tipo: TIPOS.medido },
+      { label: "Tapados", valor: d && d.bostezos_tapados != null ? entero(d.bostezos_tapados) : "–", tipo: TIPOS.medido },
+    ];
+    const ear = d ? num(d.ear_abierto) : null;
+    const oval = cara !== null && cara < 80 ? ST.amarillo.fg : mid ? "var(--color-accent)" : "var(--color-neutral-600)";
+    return h`<aside aria-label="Cámara" style="display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge);min-width:0">
+      <div style="display:flex;align-items:center;gap:8px">
+        <i class="ph ph-webcam" style="font-size:15px;color:var(--color-accent)"></i><span style="font-size:13px;font-weight:500;margin-right:auto">Cámara</span>
+        <span style="${MONO};font-size:12px;font-variant-numeric:tabular-nums;color:var(--color-neutral-300)">${quedan === null ? "–" : `${quedan} s`}</span>
+      </div>
+      <div style="height:3px;border-radius:2px;background:var(--color-neutral-800);overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--color-accent);transition:width .25s linear"></div></div>
+      <div style="position:relative;aspect-ratio:4/3;border-radius:var(--radius-md);overflow:hidden;background:radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--color-surface) 70%, var(--color-bg)), color-mix(in srgb, var(--color-bg) 60%, var(--ink)));box-shadow:var(--shadow-sm)">
+        <div style="position:absolute;inset:0;background-image:linear-gradient(color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px),linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px);background-size:24px 24px"></div>
+        ${esquinas(8, 14)}
+        <div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%);border-radius:50%;border:1.5px dashed ${oval}"></div>
+        ${S.vista === "web" ? h`<div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%)">
+            ${LANDMARKS.map(([x, y]) => h`<span style="position:absolute;left:${x}%;top:${y}%;width:4px;height:4px;margin:-2px;border-radius:50%;background:var(--color-accent-300);opacity:.85"></span>`)}
+          </div>
+          <span style="position:absolute;left:50%;bottom:10px;transform:translateX(-50%);padding:3px 8px;border-radius:4px;background:color-mix(in srgb, var(--color-bg) 80%, transparent);font-size:10px;color:var(--color-neutral-200);white-space:nowrap">Vista previa simulada · la transmisión web aún no existe</span>`
+        : h`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center">
+            <i class="ph ph-app-window" style="font-size:24px;color:var(--color-accent-400)"></i>
+            <span style="font-size:12px;max-width:30ch;color:var(--color-neutral-100)">${ventanaTexto}</span>
+            <span style="font-size:10px;color:var(--color-neutral-400);${MONO}">${abierto ? `vision.py --servicio · cámara ${CFG.camara ?? 0}` : COMANDO.vision}</span>
+          </div>`}
+        ${mid ? h`<div style="position:absolute;left:0;right:0;top:0;height:100%;background:linear-gradient(to bottom, transparent 85%, color-mix(in srgb, var(--color-accent) 14%, transparent));animation:barrido 3s linear infinite;pointer-events:none"></div>` : ""}
+        <div style="position:absolute;left:8px;right:8px;top:8px;display:flex;gap:4px;flex-wrap:wrap;padding:0 22px">
+          ${chips.map((c) => h`<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 6px;border-radius:4px;background:color-mix(in srgb, var(--color-bg) 82%, transparent);color:${c.fg};${MONO};font-size:9.5px"><i class="ph-fill ${c.icon}"></i>${c.label}</span>`)}
+        </div>
+      </div>
+      <span style="font-size:11px;color:var(--color-neutral-400)" aria-live="polite">${estado} · ${sub}</span>
+      ${segOpciones("vista", "Vista de la cámara", [["ventana", "Ventana", S.vista === "ventana"], ["web", "Web · pendiente", S.vista === "web"]], "vista", "font-size:11px;align-self:flex-start")}
+      ${lentes ? h`<div class="aviso-camara">${alertaMini(ST.amarillo, "ph-eyeglasses", "Se ven lentes", textoLentes)}</div>` : ""}
+      ${error ? alertaMini(ST.rojo, "ph-x-circle", "La cámara no pudo medir", `${S.visionMotivo || "Sin motivo"}. La evaluación sigue sin ella.`) : ""}
+      ${avisos.map((a) => alertaMini(ST.amarillo, "ph-warning", "Aviso de calidad", a))}
+      <div style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-bg) 40%, var(--color-surface))">
+        <div style="display:flex;align-items:center;gap:6px"><i class="ph ph-eye" style="font-size:13px;color:var(--color-accent)"></i><span style="font-size:11px">EAR</span><span style="margin-left:auto;${MONO};font-size:11px;font-variant-numeric:tabular-nums" title="EAR de ojo abierto (mediana de los primeros 5 s)">${ear !== null ? fmt(ear) : "–"}</span></div>
+        <svg viewBox="0 0 400 90" style="width:100%;height:auto;display:block" role="img" aria-label="EAR de ojo abierto y umbral de parpadeo"><line x1="0" y1="54" x2="400" y2="54" stroke="var(--color-neutral-700)" stroke-dasharray="3 4" stroke-width="1"></line>${ear !== null ? h`<line x1="0" y1="${Math.round(88 - ear * 230)}" x2="400" y2="${Math.round(88 - ear * 230)}" stroke="var(--color-accent)" stroke-width="2"></line>` : ""}</svg>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
+        ${cards.map((v) => h`<div style="display:flex;flex-direction:column;gap:1px;padding:7px 9px;border-radius:var(--radius-sm);background:color-mix(in srgb, var(--color-bg) 40%, var(--color-surface))">
+            <span style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--color-neutral-300)">${v.label}<i class="ph ${v.tipo.icon}" title="${v.tipo.label}" style="margin-left:auto;font-size:11px;color:${v.tipo.fg}"></i></span>
+            <span style="${MONO};font-size:15px;font-variant-numeric:tabular-nums">${v.valor}</span>
+          </div>`)}
+      </div>
+      ${d && d.simulado ? h`<span>${tagMono("SIMULADO")}</span>` : ""}
+    </aside>`;
+  }
+
   function vPvt() {
     const P = S.pvt;
     const seg = segundosPvt();
     const dur = textoDuracion(seg) + (S.demo ? " (modo demo)" : "");
-    const prog = P.fase === "intro" ? `PVT-B · ${dur}` : P.fase === "preparando" ? "Cámara…" : P.fase === "activa" ? pvtRestante() : `${(P.res && P.res.n_estimulos) || 0} estímulos`;
-    const camara = !S.camConPvt || P.fase !== "fin" ? ""
-      : S.vision ? alerta(ST.verde, "ph-webcam", "Cámara", "Medición de la cámara recibida: parpadeos, ojos cerrados y bostezos.", "status")
-        : S.estadoVision === "error" ? alerta(ST.amarillo, "ph-webcam", "Cámara", `La cámara no pudo medir: ${S.visionMotivo || "sin motivo"}. La evaluación sigue sin ella.`, "status")
-          : alerta(ST.amarillo, "ph-webcam", "Cámara", "Esperando los datos de la cámara…", "status");
+    const durCorta = seg % 60 === 0 ? `${seg / 60} min` : `${seg} s`;
+    const prog = P.fase === "intro" ? "PVT-B" : P.fase === "preparando" ? "Cámara…" : P.fase === "activa" ? pvtRestante() : `${(P.res && P.res.n_estimulos) || 0} estímulos`;
     const msg = P.fase === "intro" ? "Toca Empezar cuando estés listo" : P.msg;
     const cont = pvt.estimuloEn !== null ? String(Math.floor(performance.now() - pvt.estimuloEn)) : P.cont;
     const r = P.res;
     const primario = P.fase === "intro" ? botonPrimario("Empezar la prueba", "pvtEmpezar", false)
       : P.fase === "fin" ? botonPrimario("Continuar", "siguiente", false) : botonPrimario("En curso…", "nada", true);
-    return h`${titulo("Prueba de reacción", `Cuando aparezca el contador, presiona la barra espaciadora o toca el recuadro lo más rápido que puedas. No te adelantes: si respondes antes, cuenta como anticipada. Dura ${dur}. Mientras tanto, la cámara mide tus ojos: mira la pantalla de frente.`, "max-width:62ch")}
-    <div class="zona-prueba" role="button" tabindex="0" aria-label="Área de la prueba de reacción" data-pointer="pvt" style="position:relative;min-height:340px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 55%, var(--ink));box-shadow:var(--shadow-sm);cursor:pointer">
-      <span style="position:absolute;top:14px;right:16px;${MONO};font-size:12px;color:var(--color-neutral-400)">${prog}</span>
-      <span id="pvt-cont" style="${MONO};font-size:clamp(64px,12vw,140px);line-height:1;font-variant-numeric:tabular-nums;color:${P.contColor || "var(--color-text)"};min-height:1em">${cont}</span>
-      <span style="font-size:17px;color:var(--color-neutral-300);text-align:center" aria-live="polite">${msg}</span>
-      <span style="position:absolute;bottom:14px;font-size:12px;color:var(--color-neutral-500)">Barra espaciadora o toca aquí</span>
+    const cols = S.w >= 1000 ? "minmax(0,2.2fr) minmax(240px,1fr)" : "minmax(0,1fr)";
+    return h`${titulo("Prueba de reacción", `Dura ${dur}. Cuando aparezca el contador, presiona la barra espaciadora o toca el recuadro lo más rápido que puedas. Si respondes antes, cuenta como anticipada. Mientras tanto, la cámara mide tu rostro al costado.`, "max-width:64ch;text-wrap:pretty")}
+    <div style="display:grid;grid-template-columns:${cols};gap:20px;align-items:start">
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="zona-prueba" role="button" tabindex="0" aria-label="Área de la prueba de reacción" data-pointer="pvt" style="position:relative;min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 55%, var(--ink));box-shadow:var(--shadow-sm), inset 0 0 0 1px var(--card-edge);cursor:pointer">
+          <span style="position:absolute;top:16px;left:18px;display:inline-flex;align-items:center;gap:6px;${MONO};font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-400)"><i class="ph ph-timer" style="font-size:15px;color:var(--color-accent)"></i>Reacción · ${durCorta}</span>
+          <span style="position:absolute;top:16px;right:18px;${MONO};font-size:13px;color:var(--color-neutral-300)">${prog}</span>
+          <span id="pvt-cont" style="${MONO};font-size:clamp(80px,13vw,170px);line-height:1;font-variant-numeric:tabular-nums;color:${P.contColor || "var(--color-text)"};min-height:1em">${cont}</span>
+          <span style="font-size:18px;color:var(--color-neutral-300);text-align:center" aria-live="polite">${msg}</span>
+          <span style="position:absolute;bottom:16px;font-size:12px;color:var(--color-neutral-500)">Barra espaciadora o toca aquí</span>
+        </div>
+        ${P.fase === "fin" && r ? h`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+            ${tarjetaDato("Reacción media", r.rt_media_ms ?? "–", "ms")}
+            ${tarjetaDato("Mediana", r.rt_mediana_ms ?? "–", "ms")}
+            ${tarjetaDato("Lapsos", r.lapsos, `${L.decimal(r.lapsos_por_min)} por minuto (355 ms o más)`)}
+            ${tarjetaDato("Anticipadas", r.anticipadas, `de ${r.n_estimulos} estímulos`)}
+          </div>` : ""}
+      </div>
+      ${panelCamara(P, seg)}
     </div>
-    ${P.fase === "fin" && r ? h`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
-        ${tarjetaDato("Reacción media", r.rt_media_ms ?? "–", "ms")}
-        ${tarjetaDato("Mediana", r.rt_mediana_ms ?? "–", "ms")}
-        ${tarjetaDato("Lapsos", r.lapsos, `${L.decimal(r.lapsos_por_min)} por minuto (355 ms o más)`)}
-        ${tarjetaDato("Anticipadas", r.anticipadas, `de ${r.n_estimulos} estímulos`)}
-      </div>` : ""}
-    ${camara}
     ${botonera(primario, { sinOmitir: P.fase === "activa" || P.fase === "preparando" })}`;
-  }
-
-  function celdaSimbolo(d, n, extra = "") {
-    return h`<div style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;${TARJ};${extra}">
-      <svg viewBox="0 0 40 40" style="width:100%;max-width:40px;aspect-ratio:1"><path d="${d}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-      <span style="${MONO};font-size:16px;color:var(--color-accent)">${n}</span></div>`;
   }
 
   function vDsst() {
     const D = S.dsst;
-    const clave = D.fase === "activa" || D.fase === "fin" ? D.clave : [...Array(9).keys()];
-    const quedan = Math.max(0, Math.ceil(L.DSST_SEGUNDOS - (performance.now() - dsst.inicio) / 1000));
-    const grid = "display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px;max-width:720px";
-    const primario = D.fase === "intro" ? botonPrimario("Empezar la prueba", "dsstEmpezar", false)
+    const activa = D.fase === "activa";
+    const clave = activa || D.fase === "fin" ? D.clave : [...Array(9).keys()];
+    const total = L.DSST_SEGUNDOS;
+    const quedan = activa ? Math.max(0, Math.ceil(total - (performance.now() - dsst.inicio) / 1000)) : D.fase === "fin" ? 0 : total;
+    const pct = ((total - quedan) / total) * 100;
+    const msg = activa ? "¿Qué número le corresponde?" : D.fase === "fin" ? "Prueba terminada" : "Toca Empezar cuando estés listo. Al empezar, la clave se mezcla: cada sesión tiene su propio orden.";
+    const grid9 = "display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:8px";
+    const primario = D.fase === "intro" ? botonPrimario("Empezar", "dsstEmpezar", false, "ph-play", true)
       : D.fase === "fin" ? botonPrimario("Continuar", "siguiente", false) : botonPrimario("En curso…", "nada", true);
-    return h`${titulo("Prueba de símbolos", "Arriba está la clave: cada símbolo tiene su número. Cuando aparezca un símbolo en el centro, toca su número lo más rápido que puedas, sin equivocarte. También puedes usar las teclas del 1 al 9. Dura 90 segundos.", "max-width:62ch")}
-    <div style="${grid}" aria-label="Clave de símbolos y números">${clave.map((s, i) => celdaSimbolo(L.SIMBOLOS_DSST[s], i + 1))}</div>
-    ${D.fase === "activa" ? h`<div class="zona-prueba" style="position:relative;max-width:720px;min-height:220px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 55%, var(--ink));box-shadow:var(--shadow-sm)">
-        <span style="position:absolute;top:14px;right:16px;${MONO};font-size:12px;color:var(--color-neutral-400)">Quedan ${quedan} s</span>
-        <svg viewBox="0 0 40 40" style="width:120px;height:120px" aria-hidden="true"><path d="${L.SIMBOLOS_DSST[D.clave[D.actual - 1]]}" fill="none" stroke="var(--color-text)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    return h`${titulo("Prueba de símbolos", `Cada símbolo de la clave tiene su número. Cuando aparezca un símbolo en el centro, toca su número en la fila de abajo o presiona la tecla 1 a 9 lo más rápido que puedas. Dura ${total} segundos.`, "max-width:66ch;text-wrap:pretty")}
+    <div style="display:flex;flex-direction:column;gap:12px;width:100%">
+      <div style="${grid9};padding:14px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)" aria-label="Clave de símbolos y números">
+        ${clave.map((s, i) => h`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px">
+            <svg viewBox="0 0 40 40" style="width:100%;max-width:52px;aspect-ratio:1"><path d="${L.SIMBOLOS_DSST[s]}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span style="${MONO};font-size:15px;color:var(--color-accent)">${i + 1}</span>
+          </div>`)}
       </div>
-      <div class="zona-prueba" style="${grid}">
-        ${clave.map((_, i) => h`<button type="button" class="tecla-dsst" data-click="dsst" data-arg="${i + 1}" style="min-height:56px;border:0;${TARJ};${MONO};font-size:22px;color:var(--color-accent);cursor:pointer">${i + 1}</button>`)}
-      </div>` : ""}
-    ${D.fase === "intro" ? h`<div style="max-width:720px">${nota("ph-info", "Al empezar, la clave se mezcla: cada sesión tiene su propio orden.")}</div>` : ""}
-    ${D.fase === "fin" && D.res ? h`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;max-width:720px">
-        ${tarjetaDato("Correctas", D.res.correctas, "en 90 s")}
+      <div class="zona-prueba" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:210px;padding:20px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge);overflow:hidden">
+        <div style="position:absolute;left:0;right:0;top:0;height:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--color-accent);transition:width .25s linear"></div></div>
+        <span style="position:absolute;top:14px;right:16px;${MONO};font-size:13px;color:var(--color-neutral-300)">${quedan} s</span>
+        ${activa ? h`<svg viewBox="0 0 40 40" style="width:120px;height:120px;color:var(--color-text)" aria-hidden="true"><path d="${L.SIMBOLOS_DSST[D.clave[D.actual - 1]]}" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>`
+          : h`<i class="ph ${D.fase === "fin" ? "ph-flag-checkered" : "ph-shapes"}" style="font-size:48px;color:var(--color-accent-400)"></i>`}
+        <span style="font-size:15px;color:var(--color-neutral-300);text-align:center;max-width:46ch" aria-live="polite">${msg}</span>
+      </div>
+      <div class="zona-prueba" style="${grid9}">
+        ${clave.map((_, i) => h`<button type="button" class="tecla-dsst" data-click="dsst" data-arg="${i + 1}" aria-label="Número ${i + 1}" ${si(!activa, "disabled")} style="height:60px;border:0;${TARJ};${MONO};font-size:24px;color:var(--color-text);cursor:${activa ? "pointer" : "default"};transition:transform .08s">${i + 1}</button>`)}
+      </div>
+    </div>
+    ${D.fase === "fin" && D.res ? h`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+        ${tarjetaDato("Correctas", D.res.correctas, `en ${total} s`)}
         ${tarjetaDato("Incorrectas", D.res.incorrectas, "errores")}
         ${tarjetaDato("Por minuto", L.decimal(D.res.por_minuto, 1), "correctas")}
       </div>` : ""}
-    ${botonera(primario, { sinOmitir: D.fase === "activa" })}`;
+    ${botonera(primario, { sinOmitir: activa })}`;
   }
 
   function vKss() {
@@ -1549,14 +1654,66 @@ ${S.modal ? vistaModal() : ""}`;
     ${botonera(botonPrimario("Ver resultado", "enviarCuestionario", S.kss === null || !PUEDE), { sinOmitir: true })}`;
   }
 
+  // Trayectoria del cohete en la pantalla de análisis: dos curvas de Bézier en un lienzo de 1000 × 190.
+  const TRAYECTO = [[[0, 150], [250, 150], [350, 60], [500, 80]], [[500, 80], [650, 100], [800, 40], [1000, 30]]];
+  const HITOS = [0.18, 0.42, 0.68, 0.94];
+  const enTrayecto = (u) => {
+    const [P, k] = u < 0.5 ? [TRAYECTO[0], u * 2] : [TRAYECTO[1], u * 2 - 1];
+    const m = 1 - k; const b = [m * m * m, 3 * m * m * k, 3 * m * k * k, k * k * k];
+    return [b.reduce((q, w, i) => q + w * P[i][0], 0), b.reduce((q, w, i) => q + w * P[i][1], 0)];
+  };
+  let estrellasAnalisis = null;
+
+  /** Avance del análisis (0 a 1) según lo que pasó de verdad: los datos ya se enviaron, se compara con la línea
+   *  base y llega el resultado del coordinador. Sin resultado, el cohete se queda antes del último hito. */
+  function avanceAnalisis(sinCoord) {
+    if (S.anal.listo) return 1;
+    const s = Math.max(0, (Date.now() - (S.anal.t0 || Date.now())) / 1000);
+    const tope = sinCoord ? 0.6 : S.anal.comparando ? 0.9 : 0.45;
+    return Math.min(tope, 0.08 + (1 - Math.exp(-s / 3)) * 0.82);
+  }
+
   function vAnalizando() {
     const sinCoord = !activo("coordinador") && !S.anal.listo;
-    const pasos = [["Juntando reacción, cuestionario y sensor", true], ["Comparando con tu línea base", S.anal.comparando], ["Esperando al coordinador", S.anal.listo]];
     const simulador = `python herramientas\\simulador.py --persona ${S.persona}`;
-    return h`<div style="display:flex;flex-direction:column;align-items:flex-start;gap:16px;padding:48px 0">
-      ${sinCoord ? h`<i class="ph ph-warning-circle" style="font-size:56px;color:${ST.amarillo.fg}"></i>` : h`<div style="width:56px;height:56px;border-radius:50%;border:3px solid var(--color-neutral-800);border-top-color:var(--color-accent);animation:${S.prefs.movimiento ? "none" : "spin 1s linear infinite"}"></div>`}
-      <h2 style="font-size:26px;margin:0">${sinCoord ? "Falta el coordinador" : S.anal.listo ? "Resultado listo" : "Analizando…"}</h2>
-      ${pasos.map(([label, ok]) => h`<span style="display:flex;align-items:center;gap:8px;font-size:14px;color:${ok ? "var(--color-text)" : "var(--color-neutral-500)"}"><i class="ph ${ok ? "ph-check" : "ph-circle-dashed"}"></i>${label}</span>`)}
+    const u = avanceAnalisis(sinCoord);
+    const pasos = ["Datos de cámara y reacción", "Voz y símbolos", "Comparación con la línea base", "Resultado del coordinador"];
+    const [rx, ry] = enTrayecto(Math.max(0.001, Math.min(0.999, u)));
+    const [rx2, ry2] = enTrayecto(Math.min(1, u + 0.01));
+    const ang = Math.atan2(ry2 - ry, rx2 - rx) * 180 / Math.PI;
+    if (!estrellasAnalisis) {
+      let sd = 3; const r = () => ((sd = (sd * 9301 + 49297) % 233280) / 233280);
+      estrellasAnalisis = Array.from({ length: 40 }, () => ({ x: r() * 100, y: r() * 100, s: (1 + r() * 1.6).toFixed(1), o: (0.2 + r() * 0.5).toFixed(2) }));
+    }
+    const pctN = Math.round(u * 100);
+    const llama = 0.9 + 0.1 * Math.sin(Date.now() / 50);
+    const nombre = L.nombre(S.persona) || "la tripulación";
+    return h`<div style="display:flex;flex-direction:column;gap:18px;padding:28px 0">
+      <div style="position:relative;height:190px;border-radius:var(--radius-lg);overflow:hidden;background:linear-gradient(180deg, var(--color-surface), color-mix(in srgb, var(--color-surface) 70%, var(--color-accent-900)));box-shadow:inset 0 0 0 1px var(--card-edge)" role="progressbar" aria-label="Progreso del análisis" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pctN}">
+        ${estrellasAnalisis.map((st) => h`<span style="position:absolute;left:${st.x}%;top:${st.y}%;width:${st.s}px;height:${st.s}px;border-radius:50%;background:var(--color-neutral-300);opacity:${st.o}"></span>`)}
+        <svg viewBox="0 0 1000 190" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%"><path d="M0 150 C 250 150, 350 60, 500 80 S 800 40, 1000 30" style="fill:none;stroke:var(--color-neutral-700);stroke-width:1.5;stroke-dasharray:4 6" vector-effect="non-scaling-stroke"></path></svg>
+        ${HITOS.map((hu) => { const [x, y] = enTrayecto(hu); const ok = u >= hu; return h`<div style="position:absolute;left:${x / 10}%;top:${(y / 190) * 100}%;transform:translate(-50%,-50%)">
+            <span style="width:14px;height:14px;border-radius:50%;display:grid;place-items:center;background:${ok ? "var(--color-accent)" : "var(--color-neutral-700)"};box-shadow:0 0 0 3px color-mix(in srgb, var(--color-surface) 80%, transparent)${ok ? ", 0 0 10px color-mix(in srgb, var(--color-accent) 70%, transparent)" : ""};transition:background-color .3s, box-shadow .3s"><i class="ph-bold ph-check" style="font-size:9px;color:var(--color-bg);opacity:${ok ? 1 : 0}"></i></span>
+          </div>`; })}
+        <div aria-hidden="true" style="position:absolute;left:${rx / 10}%;top:${(ry / 190) * 100}%;transform:translate(-50%,-50%) rotate(${ang}deg);transition:left .25s linear, top .25s linear, transform .25s linear;pointer-events:none">
+          <div style="position:absolute;right:26px;top:50%;width:${60 + u * 120}px;height:4px;margin-top:-2px;border-radius:2px;background:linear-gradient(to left, rgba(255,150,80,.9), rgba(235,105,165,.55) 40%, rgba(128,102,217,0));filter:blur(.6px)"></div>
+          <svg viewBox="-30 -14 48 28" width="48" height="28" style="display:block;overflow:visible;filter:drop-shadow(0 0 6px rgba(255,170,110,.55))">
+            <path d="M-14 0 L-26 -4 L-30 0 L-26 4 Z" fill="#ffb070" opacity="${llama.toFixed(2)}"></path>
+            <path d="M-6 -5 L-15 -12 L-12 -5 Z M-6 5 L-15 12 L-12 5 Z" fill="#8a7ed6"></path>
+            <path d="M16 0 C11 -7 2 -7 -13 -5 L-13 5 C2 7 11 7 16 0 Z" fill="#E6E9F7" stroke="#4a3f99" stroke-width="0.8"></path>
+            <circle cx="4" cy="0" r="2.4" fill="#458FFF" stroke="#1e1a3a" stroke-width="0.6"></circle>
+          </svg>
+        </div>
+        <span style="position:absolute;right:16px;top:12px;${MONO};font-size:28px;font-variant-numeric:tabular-nums;color:var(--color-text)">${pctN} %</span>
+        <span style="position:absolute;left:16px;top:14px;${MONO};font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-400)">Trayectoria de análisis</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <h2 style="font-size:26px;margin:0;display:flex;align-items:center;gap:10px">${sinCoord ? h`<i class="ph ph-warning-circle" style="color:${ST.amarillo.fg}"></i>Falta el coordinador` : S.anal.listo ? "Resultado listo" : `Analizando la evaluación de ${nombre}…`}</h2>
+        <span style="font-size:14px;color:var(--color-neutral-400)">${sinCoord ? "El cohete espera: sin el coordinador no hay resultado." : "El cohete llega a destino cuando el resultado está listo."}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px">
+        ${pasos.map((label, i) => { const ok = u >= HITOS[i]; return h`<span style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px ${ok ? "var(--color-accent-700)" : "var(--card-edge)"};font-size:13px;color:${ok ? "var(--color-text)" : "var(--color-neutral-500)"};transition:color .3s, box-shadow .3s"><i class="ph ${ok ? "ph-check" : "ph-circle-dashed"}" style="font-size:16px;color:${ok ? "var(--color-accent)" : "var(--color-neutral-500)"}"></i>${label}</span>`; })}
+      </div>
       ${sinCoord ? h`<span style="font-size:13px;color:var(--color-neutral-300);max-width:70ch" aria-live="polite">El módulo coordinador no está abierto. Ábranlo con ${cmd(COMANDO.coordinador)}. Para probar sin él: ${cmd(simulador)} y luego 1, 2 o 3.</span>`
         : S.anal.vencida && !S.anal.listo ? h`<span style="font-size:13px;color:var(--color-neutral-300);max-width:70ch" aria-live="polite">El coordinador todavía no envió el resultado. Para probar sin él: ${cmd(simulador)} y luego 1, 2 o 3.</span>` : ""}
     </div>
@@ -1687,6 +1844,11 @@ ${S.modal ? vistaModal() : ""}`;
         <svg viewBox="0 0 140 140" width="140" height="140"><circle cx="70" cy="70" r="62" fill="none" stroke="var(--color-neutral-800)" stroke-width="1"></circle><circle cx="70" cy="70" r="50" fill="${st.bg}" stroke="${st.fg}" stroke-width="2"></circle><circle cx="70" cy="70" r="62" fill="none" stroke="${st.fg}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${p * 389.6} 389.6" transform="rotate(-90 70 70)"></circle></svg>
         <i class="ph-fill ${st.icon}" style="position:absolute;inset:0;display:grid;place-items:center;font-size:44px;color:${st.fg}"></i>
       </div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:8px 12px 8px 10px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));box-shadow:inset 0 0 0 1px var(--color-accent-700)">
+        <i class="ph-fill ${icono(ev.persona)}" style="font-size:24px;color:var(--color-accent-300)"></i>
+        <span style="display:flex;flex-direction:column;line-height:1.2"><span style="${ETQ};white-space:nowrap">Tripulante evaluado</span><span style="font-size:20px;font-weight:500">${L.nombre(ev.persona)}</span></span>
+        <span style="margin-left:6px;${MONO};font-size:12px;color:var(--color-neutral-400)">${[cuando(L.tsAMs(ev.ts)), cap(ev.tarea || "")].filter(Boolean).join(" · ")}</span>
+      </div>
       <span style="${MONO};font-size:30px;font-weight:600;letter-spacing:0.08em;color:${st.fg}">${st.word}</span>
       <span style="font-size:15px;color:var(--color-neutral-200)">${st.label}</span>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -1746,7 +1908,7 @@ ${S.modal ? vistaModal() : ""}`;
         const T = TIPOS[it.tipo]; const nada = it.tipo === "no_disponible";
         const ptsTxt = it.puntos == null ? (it.aviso ? "AVISO" : "") : "+" + it.puntos + " pt";
         const calOk = num(it.calidad) !== null;
-        return h`<article class="hv-sube" style="display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:var(--radius-md);background:${nada ? "transparent" : "var(--color-surface)"};box-shadow:${nada ? "inset 0 0 0 1px var(--color-neutral-800)" : "none"};transition:transform .2s">
+        return h`<article class="hv-sube" style="display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:var(--radius-md);background:${nada ? "color-mix(in srgb, var(--color-neutral-800) 45%, var(--color-surface))" : "var(--color-surface)"};box-shadow:${nada ? "inset 0 0 0 1px var(--color-neutral-700)" : "inset 0 0 0 1px var(--card-edge)"};transition:transform .2s">
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-size:13px;font-weight:500">${it.nombre}</span>
             <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:11px;color:${T.fg}"><i class="ph ${T.icon}"></i>${T.label}</span>

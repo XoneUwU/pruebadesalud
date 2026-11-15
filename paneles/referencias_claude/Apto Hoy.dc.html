@@ -37,7 +37,7 @@ button{font:inherit;color:inherit}
 @keyframes brillo{0%{background-position:-200px 0}100%{background-position:200px 0}}
 </style>
 </helmet>
-<canvas ref="{{ bgRef }}" aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none"></canvas>
+<canvas ref="{{ bgRef }}" data-bg="1" aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none"></canvas>
 <div style="position:relative;z-index:1;display:flex;min-height:100vh;flex-direction:{{ shellDir }}">
   <nav aria-label="Navegación principal" style="flex:none;display:flex;flex-direction:{{ navDir }};gap:4px;padding:{{ navPad }};width:{{ navW }};background:var(--nav-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);position:sticky;top:0;z-index:20;overflow-x:auto;box-shadow:{{ navEdge }};height:{{ navH }}">
     <div style="display:flex;align-items:center;gap:10px;padding:10px 8px 26px;flex:none">
@@ -245,21 +245,36 @@ button{font:inherit;color:inherit}
   </sc-if>
 
   <sc-if value="{{ pCam }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:6px;margin-right:auto"><h2 style="font-size:26px;margin:0">Cámara y reacción</h2><p style="margin:0;color:var(--color-neutral-300);max-width:64ch;text-wrap:pretty">Las dos pruebas van juntas durante 1 minuto. Mira la pantalla de frente: la cámara mide parpadeos, ojos cerrados, bostezos y pulso mientras respondes a los contadores con la barra espaciadora o tocando el recuadro.</p></div>
-      <div class="seg" role="radiogroup" aria-label="Vista de la cámara">
-        <label class="seg-opt"><input type="radio" name="vista" checked="{{ vistaVentana }}" onChange="{{ setVentana }}"><i class="ph ph-app-window"></i><span>Ventana de visión</span></label>
-        <label class="seg-opt"><input type="radio" name="vista" checked="{{ vistaWeb }}" onChange="{{ setWeb }}"><i class="ph ph-browser"></i><span>Vista web · pendiente</span></label>
+    <div style="display:flex;flex-direction:column;gap:6px"><h2 style="font-size:26px;margin:0">Prueba de reacción</h2><p style="margin:0;color:var(--color-neutral-300);max-width:64ch;text-wrap:pretty">Dura 1 minuto. Cuando aparezca el contador, presiona la barra espaciadora o toca el recuadro lo más rápido que puedas. Si respondes antes, cuenta como anticipada. Mientras tanto, la cámara mide tu rostro al costado.</p></div>
+    <div style="display:grid;grid-template-columns:{{ crCols }};gap:20px;align-items:start">
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div role="button" tabindex="0" aria-label="Área de la prueba de reacción" onMouseDown="{{ pvtTap }}" style="position:relative;min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 55%, var(--ink));box-shadow:var(--shadow-sm), inset 0 0 0 1px var(--card-edge);cursor:pointer;user-select:none">
+          <span style="position:absolute;top:16px;left:18px;display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-400)"><i class="ph ph-timer" style="font-size:15px;color:var(--color-accent)"></i>Reacción · 1 min</span>
+          <span style="position:absolute;top:16px;right:18px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--color-neutral-300)">{{ pvtProg }}</span>
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:clamp(80px,13vw,170px);line-height:1;font-variant-numeric:tabular-nums;color:{{ pvtColor }};min-height:1em">{{ pvtCont }}</span>
+          <span style="font-size:18px;color:var(--color-neutral-300);text-align:center" aria-live="polite">{{ pvtMsg }}</span>
+          <span style="position:absolute;bottom:16px;font-size:12px;color:var(--color-neutral-500)">Barra espaciadora o toca aquí</span>
+        </div>
+        <sc-if value="{{ pvtFin }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+            <sc-for list="{{ pvtRes }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;gap:4px;padding:14px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)"><span style="font-size:12px;color:var(--color-neutral-300)">{{ r.label }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:28px;font-variant-numeric:tabular-nums">{{ r.valor }}</span><span style="font-size:11px;color:var(--color-neutral-400)">{{ r.unidad }}</span></div>
+            </sc-for>
+          </div>
+        </sc-if>
       </div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start">
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <div style="position:relative;aspect-ratio:4/3;border-radius:var(--radius-lg);overflow:hidden;background:radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--color-surface) 70%, var(--color-bg)), color-mix(in srgb, var(--color-bg) 60%, var(--ink)));box-shadow:var(--shadow-sm)">
-          <div style="position:absolute;inset:0;background-image:linear-gradient(color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px),linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px);background-size:40px 40px"></div>
-          <div style="position:absolute;left:14px;top:14px;width:22px;height:22px;border-left:1.5px solid var(--color-accent-500);border-top:1.5px solid var(--color-accent-500)"></div>
-          <div style="position:absolute;right:14px;top:14px;width:22px;height:22px;border-right:1.5px solid var(--color-accent-500);border-top:1.5px solid var(--color-accent-500)"></div>
-          <div style="position:absolute;left:14px;bottom:14px;width:22px;height:22px;border-left:1.5px solid var(--color-accent-500);border-bottom:1.5px solid var(--color-accent-500)"></div>
-          <div style="position:absolute;right:14px;bottom:14px;width:22px;height:22px;border-right:1.5px solid var(--color-accent-500);border-bottom:1.5px solid var(--color-accent-500)"></div>
+      <aside aria-label="Cámara" style="display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge);min-width:0">
+        <div style="display:flex;align-items:center;gap:8px">
+          <i class="ph ph-webcam" style="font-size:15px;color:var(--color-accent)"></i><span style="font-size:13px;font-weight:500;margin-right:auto">Cámara</span>
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;font-variant-numeric:tabular-nums;color:var(--color-neutral-300)">{{ camSeg }} s</span>
+        </div>
+        <div style="height:3px;border-radius:2px;background:var(--color-neutral-800);overflow:hidden"><div style="height:100%;width:{{ camPctW }};background:var(--color-accent);transition:width .25s linear"></div></div>
+        <div style="position:relative;aspect-ratio:4/3;border-radius:var(--radius-md);overflow:hidden;background:radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--color-surface) 70%, var(--color-bg)), color-mix(in srgb, var(--color-bg) 60%, var(--ink)));box-shadow:var(--shadow-sm)">
+          <div style="position:absolute;inset:0;background-image:linear-gradient(color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px),linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px);background-size:24px 24px"></div>
+          <div style="position:absolute;left:8px;top:8px;width:14px;height:14px;border-left:1.5px solid var(--color-accent-500);border-top:1.5px solid var(--color-accent-500)"></div>
+          <div style="position:absolute;right:8px;top:8px;width:14px;height:14px;border-right:1.5px solid var(--color-accent-500);border-top:1.5px solid var(--color-accent-500)"></div>
+          <div style="position:absolute;left:8px;bottom:8px;width:14px;height:14px;border-left:1.5px solid var(--color-accent-500);border-bottom:1.5px solid var(--color-accent-500)"></div>
+          <div style="position:absolute;right:8px;bottom:8px;width:14px;height:14px;border-right:1.5px solid var(--color-accent-500);border-bottom:1.5px solid var(--color-accent-500)"></div>
           <div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%);border-radius:50%;border:1.5px dashed {{ ovalColor }}"></div>
           <sc-if value="{{ vistaWeb }}" hint-placeholder-val="{{ false }}">
             <div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%)">
@@ -267,71 +282,59 @@ button{font:inherit;color:inherit}
                 <span style="position:absolute;left:{{ lm.x }};top:{{ lm.y }};width:4px;height:4px;margin:-2px;border-radius:50%;background:var(--color-accent-300);opacity:.85"></span>
               </sc-for>
             </div>
-            <span style="position:absolute;left:50%;bottom:44px;transform:translateX(-50%);padding:4px 10px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 80%, transparent);font-size:12px;color:var(--color-neutral-200);white-space:nowrap">Vista previa simulada · la transmisión web aún no existe</span>
+            <span style="position:absolute;left:50%;bottom:10px;transform:translateX(-50%);padding:3px 8px;border-radius:4px;background:color-mix(in srgb, var(--color-bg) 80%, transparent);font-size:10px;color:var(--color-neutral-200);white-space:nowrap">Vista previa simulada · la transmisión web aún no existe</span>
           </sc-if>
           <sc-if value="{{ vistaVentana }}" hint-placeholder-val="{{ true }}">
             <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center">
-              <i class="ph ph-app-window" style="font-size:36px;color:var(--color-accent-400)"></i>
-              <span style="font-size:15px;max-width:34ch;color:var(--color-neutral-100)">{{ ventanaTexto }}</span>
-              <span style="font-size:12px;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">vision.py --servicio · cámara {{ camaraSel }}</span>
+              <i class="ph ph-app-window" style="font-size:24px;color:var(--color-accent-400)"></i>
+              <span style="font-size:12px;max-width:30ch;color:var(--color-neutral-100)">{{ ventanaTexto }}</span>
+              <span style="font-size:10px;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">vision.py --servicio · cámara {{ camaraSel }}</span>
             </div>
           </sc-if>
           <sc-if value="{{ camMidiendo }}" hint-placeholder-val="{{ false }}">
             <div style="position:absolute;left:0;right:0;top:0;height:100%;background:linear-gradient(to bottom, transparent 85%, color-mix(in srgb, var(--color-accent) 14%, transparent));animation:barrido 3s linear infinite;pointer-events:none"></div>
           </sc-if>
-          <div style="position:absolute;left:14px;right:14px;top:44px;display:flex;gap:6px;flex-wrap:wrap;padding:0 30px">
+          <div style="position:absolute;left:8px;right:8px;top:8px;display:flex;gap:4px;flex-wrap:wrap;padding:0 22px">
             <sc-for list="{{ camChips }}" as="cc" hint-placeholder-count="3">
-              <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 82%, transparent);color:{{ cc.fg }};font-family:ui-monospace,Menlo,monospace;font-size:11px"><i class="ph-fill {{ cc.icon }}"></i>{{ cc.label }}</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;padding:2px 6px;border-radius:4px;background:color-mix(in srgb, var(--color-bg) 82%, transparent);color:{{ cc.fg }};font-family:ui-monospace,Menlo,monospace;font-size:9.5px"><i class="ph-fill {{ cc.icon }}"></i>{{ cc.label }}</span>
             </sc-for>
           </div>
         </div>
+        <span style="font-size:11px;color:var(--color-neutral-400)" aria-live="polite">{{ camEstado }} · {{ camSub }}</span>
+        <div class="seg" role="radiogroup" aria-label="Vista de la cámara" style="font-size:11px;align-self:flex-start">
+          <label class="seg-opt"><input type="radio" name="vista" checked="{{ vistaVentana }}" onChange="{{ setVentana }}"><span>Ventana</span></label>
+          <label class="seg-opt"><input type="radio" name="vista" checked="{{ vistaWeb }}" onChange="{{ setWeb }}"><span>Web · pendiente</span></label>
+        </div>
         <sc-for list="{{ camAvisos }}" as="av" hint-placeholder-count="0">
-          <div role="alert" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:var(--radius-md);background:{{ stAm.bg }}">
-            <i class="ph ph-warning" style="font-size:18px;color:{{ stAm.fg }};flex:none"></i>
-            <span style="display:flex;flex-direction:column;gap:2px"><b style="font-weight:500;color:{{ stAm.fg }}">{{ av.titulo }}</b><span style="font-size:13px;color:var(--color-neutral-200)">{{ av.texto }}</span></span>
+          <div role="alert" style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:var(--radius-md);background:{{ stAm.bg }}">
+            <i class="ph ph-warning" style="font-size:15px;color:{{ stAm.fg }};flex:none"></i>
+            <span style="display:flex;flex-direction:column;gap:1px"><b style="font-weight:500;font-size:12px;color:{{ stAm.fg }}">{{ av.titulo }}</b><span style="font-size:11px;color:var(--color-neutral-200)">{{ av.texto }}</span></span>
           </div>
         </sc-for>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          
-          <button class="btn btn-secondary" type="button" onClick="{{ camDetener }}" disabled="{{ camNoMidiendo }}" style="padding:9px 16px"><i class="ph ph-stop"></i>Detener las dos</button>
-          <button class="btn btn-ghost" type="button" onClick="{{ camReiniciar }}" style="padding:9px 10px"><i class="ph ph-arrow-counter-clockwise"></i>Reiniciar</button>
-          <span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--color-neutral-400)">Simular:
-            <button class="btn btn-secondary" type="button" onClick="{{ simLuz }}" style="font-size:12px;padding:4px 8px"><i class="ph ph-sun-dim"></i>Poca luz</button>
-            <button class="btn btn-secondary" type="button" onClick="{{ simCara }}" style="font-size:12px;padding:4px 8px"><i class="ph ph-user-focus"></i>Sin rostro</button>
-          </span>
+        <div style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-bg) 40%, var(--color-surface))">
+          <div style="display:flex;align-items:center;gap:6px"><i class="ph ph-eye" style="font-size:13px;color:var(--color-accent)"></i><span style="font-size:11px">EAR</span><span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11px;font-variant-numeric:tabular-nums">{{ earActual }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:9px;color:var(--color-accent-300)">DEMO</span></div>
+          <svg viewBox="0 0 400 90" style="width:100%;height:auto;display:block" role="img" aria-label="Señal EAR en el tiempo"><line x1="0" y1="54" x2="400" y2="54" stroke="var(--color-neutral-700)" stroke-dasharray="3 4" stroke-width="1"></line><polyline points="{{ earPts }}" fill="none" stroke="var(--color-accent)" stroke-width="2" stroke-linejoin="round"></polyline></svg>
         </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:14px">
-        <div style="display:flex;align-items:center;gap:16px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
-          <div style="position:relative;width:84px;height:84px;flex:none">
-            <svg viewBox="0 0 84 84" width="84" height="84" style="transform:rotate(-90deg)"><circle cx="42" cy="42" r="37" fill="none" stroke="var(--color-neutral-800)" stroke-width="4"></circle><circle cx="42" cy="42" r="37" fill="none" stroke="var(--color-accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="232.5" stroke-dashoffset="{{ camDash }}" style="transition:stroke-dashoffset .25s linear;filter:drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 60%, transparent))"></circle></svg>
-            <span style="position:absolute;inset:0;display:grid;place-items:center;font-family:ui-monospace,Menlo,monospace;font-size:24px;font-variant-numeric:tabular-nums">{{ camSeg }}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:3px" aria-live="polite">
-            <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Estado</span>
-            <span style="font-size:18px;font-weight:500">{{ camEstado }}</span>
-            <span style="font-size:13px;color:var(--color-neutral-400)">{{ camSub }}</span>
-          </div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
-          <div style="display:flex;align-items:center;gap:8px"><i class="ph ph-eye" style="font-size:16px;color:var(--color-accent)"></i><span style="font-size:13px;font-weight:500">EAR · apertura de ojos</span><span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:13px;font-variant-numeric:tabular-nums">{{ earActual }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--color-accent-300)">DEMO</span></div>
-          <svg viewBox="0 0 400 90" style="width:100%;height:auto;display:block" role="img" aria-label="Señal EAR en el tiempo">
-            <line x1="0" y1="54" x2="400" y2="54" stroke="var(--color-neutral-700)" stroke-dasharray="3 4" stroke-width="1"></line>
-            
-            <polyline points="{{ earPts }}" fill="none" stroke="var(--color-accent)" stroke-width="1.5" stroke-linejoin="round"></polyline>
-          </svg>
-          <span style="font-size:12px;color:var(--color-neutral-400)">Línea punteada: umbral de parpadeo, 60 % del ojo abierto. Cada caída bajo la línea durante 2 cuadros cuenta como parpadeo.</span>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
           <sc-for list="{{ visionCards }}" as="v" hint-placeholder-count="4">
-            <div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
-              <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-300)">{{ v.label }}<span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:10px;color:{{ v.tipoFg }}"><i class="ph {{ v.tipoIcon }}"></i>{{ v.tipo }}</span></span>
-              <span style="font-family:ui-monospace,Menlo,monospace;font-size:24px;font-variant-numeric:tabular-nums;color:{{ v.valFg }}">{{ v.valor }}</span>
-              <span style="font-size:11px;color:var(--color-neutral-400)">{{ v.unidad }}</span>
+            <div style="display:flex;flex-direction:column;gap:1px;padding:7px 9px;border-radius:var(--radius-sm);background:color-mix(in srgb, var(--color-bg) 40%, var(--color-surface))">
+              <span style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--color-neutral-300)">{{ v.label }}<i class="ph {{ v.tipoIcon }}" title="{{ v.tipo }}" style="margin-left:auto;font-size:11px;color:{{ v.tipoFg }}"></i></span>
+              <span style="font-family:ui-monospace,Menlo,monospace;font-size:15px;font-variant-numeric:tabular-nums;color:{{ v.valFg }}">{{ v.valor }}</span>
             </div>
           </sc-for>
         </div>
-      </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-ghost" type="button" onClick="{{ camReiniciar }}" style="font-size:11px;padding:3px 7px"><i class="ph ph-arrow-counter-clockwise"></i>Reiniciar</button>
+          <span style="margin-left:auto;font-size:10px;color:var(--color-neutral-500)">Simular</span>
+          <button class="btn btn-secondary" type="button" onClick="{{ simLuz }}" aria-label="Simular poca luz" title="Simular poca luz" style="font-size:11px;padding:3px 7px"><i class="ph ph-sun-dim"></i></button>
+          <button class="btn btn-secondary" type="button" onClick="{{ simCara }}" aria-label="Simular sin rostro" title="Simular sin rostro" style="font-size:11px;padding:3px 7px"><i class="ph ph-user-focus"></i></button>
+        </div>
+      </aside>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" type="button" onClick="{{ prev }}" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-secondary" type="button" onClick="{{ next }}" style="padding:9px 16px">Omitir</button>
+      <button class="btn btn-primary" type="button" onClick="{{ pvtBtnFn }}" style="padding:9px 18px">{{ pvtBtn }}<i class="ph ph-arrow-right"></i></button>
     </div>
   </sc-if>
 
@@ -359,53 +362,62 @@ button{font:inherit;color:inherit}
     </div>
   </sc-if>
 
-  <sc-if value="{{ pPvt }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;flex-direction:column;gap:4px"><h3 style="font-size:17px;font-weight:500;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-timer" style="color:var(--color-accent)"></i>Prueba de reacción · 1 minuto</h3><p style="margin:0;font-size:13px;color:var(--color-neutral-300);max-width:62ch">Cuando aparezca el contador, responde lo más rápido que puedas. Si respondes antes, cuenta como anticipada.</p></div>
-    <div role="button" tabindex="0" aria-label="Área de la prueba de reacción" onMouseDown="{{ pvtTap }}" style="position:relative;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 55%, var(--ink));box-shadow:var(--shadow-sm);cursor:pointer;user-select:none">
-      <span style="position:absolute;top:14px;right:16px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-400)">{{ pvtProg }}</span>
-      <span style="font-family:ui-monospace,Menlo,monospace;font-size:clamp(64px,12vw,140px);line-height:1;font-variant-numeric:tabular-nums;color:{{ pvtColor }};min-height:1em">{{ pvtCont }}</span>
-      <span style="font-size:17px;color:var(--color-neutral-300);text-align:center" aria-live="polite">{{ pvtMsg }}</span>
-      <span style="position:absolute;bottom:14px;font-size:12px;color:var(--color-neutral-500)">Barra espaciadora o toca aquí</span>
-    </div>
-    <sc-if value="{{ pvtFin }}" hint-placeholder-val="{{ false }}">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
-        <sc-for list="{{ pvtRes }}" as="r" hint-placeholder-count="4">
-          <div style="display:flex;flex-direction:column;gap:4px;padding:14px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)"><span style="font-size:12px;color:var(--color-neutral-300)">{{ r.label }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:28px;font-variant-numeric:tabular-nums">{{ r.valor }}</span><span style="font-size:11px;color:var(--color-neutral-400)">{{ r.unidad }}</span></div>
-        </sc-for>
-      </div>
-    </sc-if>
-    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-      <button class="btn btn-ghost" type="button" onClick="{{ prev }}" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
-      <button class="btn btn-secondary" type="button" onClick="{{ next }}" style="padding:9px 16px">Omitir</button>
-      <button class="btn btn-primary" type="button" onClick="{{ pvtBtnFn }}" style="padding:9px 18px">{{ pvtBtn }}<i class="ph ph-arrow-right"></i></button>
-    </div>
-  </sc-if>
 
   <sc-if value="{{ pDsst }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;flex-direction:column;gap:6px"><h2 style="font-size:26px;margin:0">Prueba de símbolos</h2><p style="margin:0;color:var(--color-neutral-300);max-width:62ch">Arriba está la clave: cada símbolo tiene su número. Cuando aparezca un símbolo en el centro, toca su número lo más rápido que puedas. Dura 90 segundos.</p></div>
-    <div style="display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px;max-width:720px">
-      <sc-for list="{{ simbolos }}" as="s" hint-placeholder-count="9">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
-          <svg viewBox="0 0 40 40" style="width:100%;max-width:40px;aspect-ratio:1"><path d="{{ s.d }}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-          <span style="font-family:ui-monospace,Menlo,monospace;font-size:16px;color:var(--color-accent)">{{ s.n }}</span>
-        </div>
-      </sc-for>
+    <div style="display:flex;flex-direction:column;gap:6px"><h2 style="font-size:26px;margin:0">Prueba de símbolos</h2><p style="margin:0;color:var(--color-neutral-300);max-width:66ch;text-wrap:pretty">Cada símbolo de la clave tiene su número. Cuando aparezca un símbolo en el centro, toca su número en la fila de abajo o presiona la tecla 1 a 9 lo más rápido que puedas. Dura 90 segundos.</p></div>
+    <div style="display:flex;flex-direction:column;gap:12px;width:100%">
+      <div style="display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:8px;padding:14px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)" aria-label="Clave de símbolos">
+        <sc-for list="{{ simbolos }}" as="s" hint-placeholder-count="9">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px">
+            <svg viewBox="0 0 40 40" style="width:100%;max-width:52px;aspect-ratio:1"><path d="{{ s.d }}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span style="font-family:ui-monospace,Menlo,monospace;font-size:15px;color:var(--color-accent)">{{ s.n }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:210px;padding:20px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge);overflow:hidden">
+        <div style="position:absolute;left:0;right:0;top:0;height:3px;overflow:hidden"><div style="height:100%;width:{{ dsstPct }};background:var(--color-accent);transition:width .25s linear"></div></div>
+        <span style="position:absolute;top:14px;right:16px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--color-neutral-300)">{{ dsstTiempo }}</span>
+        <sc-if value="{{ dsstActivo }}" hint-placeholder-val="{{ false }}">
+          <svg viewBox="0 0 40 40" style="width:120px;height:120px;color:var(--color-text)"><path d="{{ dsstD }}" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </sc-if>
+        <sc-if value="{{ dsstInactivo }}" hint-placeholder-val="{{ true }}">
+          <i class="ph {{ dsstIcon }}" style="font-size:48px;color:var(--color-accent-400)"></i>
+        </sc-if>
+        <span style="font-size:15px;color:var(--color-neutral-300);text-align:center" aria-live="polite">{{ dsstMsg }}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:8px">
+        <sc-for list="{{ dsstTeclas }}" as="k" hint-placeholder-count="9">
+          <button type="button" onClick="{{ k.tap }}" disabled="{{ k.dis }}" aria-label="Número {{ k.n }}" style="height:60px;border:0;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge);font-family:ui-monospace,Menlo,monospace;font-size:24px;color:var(--color-text);cursor:pointer;transition:transform .08s" style-hover="box-shadow:inset 0 0 0 1px var(--color-accent)" style-active="transform:scale(.95)">{{ k.n }}</button>
+        </sc-for>
+      </div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;padding:14px 16px;border-radius:var(--radius-md);box-shadow:inset 0 0 0 1px var(--color-neutral-800);max-width:720px"><i class="ph ph-info" style="font-size:18px;color:var(--color-neutral-400)"></i><span style="font-size:13px;color:var(--color-neutral-300)">La prueba completa vive en la estación actual. En este prototipo solo se muestra la clave.</span></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn btn-ghost" type="button" onClick="{{ prev }}" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-secondary" type="button" onClick="{{ dsstStart }}" disabled="{{ dsstActivo }}" style="padding:9px 16px"><i class="ph ph-play"></i>{{ dsstBtn }}</button>
       <button class="btn btn-primary" type="button" onClick="{{ next }}" style="padding:9px 18px">Ver resultado<i class="ph ph-arrow-right"></i></button>
     </div>
   </sc-if>
 
-
   <sc-if value="{{ pAnal }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;flex-direction:column;align-items:flex-start;gap:16px;padding:48px 0">
-      <div style="width:56px;height:56px;border-radius:50%;border:3px solid var(--color-neutral-800);border-top-color:var(--color-accent);animation:{{ spin }}"></div>
-      <h2 style="font-size:26px;margin:0">Analizando…</h2>
-      <sc-for list="{{ analPasos }}" as="ap" hint-placeholder-count="4">
-        <span style="display:flex;align-items:center;gap:8px;font-size:14px;color:{{ ap.fg }}"><i class="ph {{ ap.icon }}"></i>{{ ap.label }}</span>
-      </sc-for>
+    <div style="display:flex;flex-direction:column;gap:18px;padding:28px 0">
+      <div style="position:relative;height:190px;border-radius:var(--radius-lg);overflow:hidden;background:linear-gradient(180deg, var(--color-surface), color-mix(in srgb, var(--color-surface) 70%, var(--color-accent-900)));box-shadow:inset 0 0 0 1px var(--card-edge)" role="progressbar" aria-label="Progreso del análisis" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ analPctN }}">
+        <sc-for list="{{ analStars }}" as="st" hint-placeholder-count="0"><span style="position:absolute;left:{{ st.x }};top:{{ st.y }};width:{{ st.s }};height:{{ st.s }};border-radius:50%;background:var(--color-neutral-300);opacity:{{ st.o }}"></span></sc-for>
+        <svg viewBox="0 0 1000 190" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%"><path d="M0 150 C 250 150, 350 60, 500 80 S 800 40, 1000 30" style="fill:none;stroke:var(--color-neutral-700);stroke-width:1.5;stroke-dasharray:4 6" vector-effect="non-scaling-stroke"></path></svg>
+        <sc-for list="{{ analHitos }}" as="hi" hint-placeholder-count="4">
+          <div style="position:absolute;left:{{ hi.x }};top:{{ hi.y }};transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:6px">
+            <span style="width:14px;height:14px;border-radius:50%;display:grid;place-items:center;background:{{ hi.bg }};box-shadow:0 0 0 3px color-mix(in srgb, var(--color-surface) 80%, transparent), {{ hi.glow }};transition:background-color .3s, box-shadow .3s"><i class="ph-bold ph-check" style="font-size:9px;color:var(--color-bg);opacity:{{ hi.chk }}"></i></span>
+          </div>
+        </sc-for>
+        <div style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">{{ rocketEl }}</div>
+        <span style="position:absolute;right:16px;top:12px;font-family:ui-monospace,Menlo,monospace;font-size:28px;font-variant-numeric:tabular-nums;color:var(--color-text)">{{ analPct }}</span>
+        <span style="position:absolute;left:16px;top:14px;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-400)">Trayectoria de análisis</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px"><h2 style="font-size:26px;margin:0">Analizando la evaluación de {{ personaNombre }}…</h2><span style="font-size:14px;color:var(--color-neutral-400)">El cohete llega a destino cuando el resultado está listo.</span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px">
+        <sc-for list="{{ analPasos }}" as="ap" hint-placeholder-count="4">
+          <span style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px {{ ap.edge }};font-size:13px;color:{{ ap.fg }};transition:color .3s, box-shadow .3s"><i class="ph {{ ap.icon }}" style="font-size:16px;color:{{ ap.ic }}"></i>{{ ap.label }}</span>
+        </sc-for>
+      </div>
     </div>
   </sc-if>
 </sc-if>
@@ -417,6 +429,11 @@ button{font:inherit;color:inherit}
       <div style="position:relative;width:140px;height:140px">
         <svg viewBox="0 0 140 140" width="140" height="140"><circle cx="70" cy="70" r="62" fill="none" stroke="var(--color-neutral-800)" stroke-width="1"></circle><circle cx="70" cy="70" r="50" fill="{{ resSt.bg }}" stroke="{{ resSt.fg }}" stroke-width="2"></circle><circle cx="70" cy="70" r="62" fill="none" stroke="{{ resSt.fg }}" stroke-width="3" stroke-linecap="round" stroke-dasharray="{{ resArc }}" transform="rotate(-90 70 70)"></circle></svg>
         <i class="ph-fill {{ resSt.icon }}" style="position:absolute;inset:0;display:grid;place-items:center;font-size:44px;color:{{ resSt.fg }}"></i>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px 8px 10px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));box-shadow:inset 0 0 0 1px var(--color-accent-700)">
+        <i class="ph-fill {{ resIcon }}" style="font-size:24px;color:var(--color-accent-300)"></i>
+        <span style="display:flex;flex-direction:column;line-height:1.2"><span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Tripulante evaluado</span><span style="font-size:20px;font-weight:500">{{ personaNombre }}</span></span>
+        <span style="margin-left:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-400)">{{ resHora }}</span>
       </div>
       <span style="font-family:ui-monospace,Menlo,monospace;font-size:30px;font-weight:600;letter-spacing:0.08em;color:{{ resSt.fg }}">{{ resSt.word }}</span>
       <span style="font-size:15px;color:var(--color-neutral-200)">{{ resSt.label }}</span>
@@ -895,7 +912,7 @@ const NAV = [
   ["dashboard", "Panel", "ph-squares-four", "Tripulación", "Panel de la misión"],
   ["evaluacion", "Evaluación", "ph-scan", "Estación", "Evaluación en curso"],
   ["pruebas", "Pruebas", "ph-faders", "Cámara y micrófono", "Pruebas de dispositivos"],
-  ["resultados", "Resultados", "ph-clipboard-text", "Bri · hoy 08:12", "Resultado de la evaluación"],
+  ["resultados", "Resultados", "ph-clipboard-text", "Evaluación de hoy", "Resultado de la evaluación"],
   ["historial", "Historial", "ph-chart-line-up", "Registrador", "Historial de monitoreo"],
   ["config", "Configuración", "ph-gear-six", "Sistema", "Configuración"],
   ["sistema", "Sistema de diseño", "ph-swatches", "Nocturne + Apto", "Sistema de diseño"],
@@ -923,13 +940,14 @@ class Component extends DCLogic {
     splash: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches), splashOut: false, splashGo: false,
     crewIcons: (() => { try { return Object.assign({}, ICONOS_DEF, JSON.parse(localStorage.getItem("becspace-iconos-v2") || "{}")); } catch (e) { return { ...ICONOS_DEF }; } })(),
     pregunta: "", conv: null, camara: "0", prefs: { proyector: false, movimiento: false, alto: false }, analT: 0,
+    dFase: "intro", dT: 90, dSim: 0, dOk: 0, dErr: 0, dRts: [], dFb: null,
   };
   componentDidMount() {
     this.applyTheme(); this.startBg();
     if (this.state.splash) { setTimeout(() => this.setState({ splashGo: true }), 60); this.spT1 = setTimeout(() => this.setState({ splashOut: true }), 2300); this.spT2 = setTimeout(() => this.setState({ splash: false }), 2900); } this.fast = setInterval(() => this.fastTick(), 50);
     this.onResize = () => this.setState({ w: window.innerWidth });
     window.addEventListener("resize", this.onResize); this.onResize();
-    this.onKey = (e) => { if (e.code === "Space" && this.state.screen === "evaluacion" && this.state.paso === "camreac") { e.preventDefault(); this.pvtTap(); } };
+    this.onKey = (e) => { const st = this.state; if (st.screen !== "evaluacion") return; if (e.code === "Space" && st.paso === "camreac") { e.preventDefault(); this.pvtTap(); } if (st.paso === "simbolos" && /^[1-9]$/.test(e.key)) { e.preventDefault(); this.dsstTap(+e.key - 1); } };
     window.addEventListener("keydown", this.onKey);
     this.tick = setInterval(() => this.onTick(), 250);
     this.wait = setInterval(() => { if (window.AptoDemo && window.Logica) { clearInterval(this.wait); this.forceUpdate(); } }, 100);
@@ -956,7 +974,9 @@ class Component extends DCLogic {
     Array.from(m.children).forEach((c, i) => c.animate && c.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 460, delay: Math.min(i, 8) * 55, easing: "cubic-bezier(.2,.7,.2,1)", fill: "backwards" }));
   }
   startBg() {
-    const cv = this.bgRef.current; if (!cv) return;
+    if (this.bgStarted) return;
+    const cv = this.bgRef.current || document.querySelector("canvas[data-bg]"); if (!cv) { this.bgRetry = requestAnimationFrame(() => this.startBg()); return; }
+    this.bgStarted = true;
     const ctx = cv.getContext("2d"); let seed = 4; const rnd = (a, b) => a + ((seed = (seed * 16807) % 2147483647) / 2147483647) * (b - a);
     const dpr = Math.min(1.5, window.devicePixelRatio || 1); let W = 0, H = 0, E = null, A = null, stat = null, tw = [], dots = [], L = null;
     if (!this.moonImg) { this.moonImg = new Image(); this.moonImg.onload = () => { if (this.state.theme === "claro" && this.bgResize) this.bgResize(); }; this.moonImg.src = "assets/fondo-luna.png"; }
@@ -1017,6 +1037,7 @@ class Component extends DCLogic {
       dots = Array.from({ length: 16 }, () => ({ a: rnd(1.2, 1.8) * Math.PI, sp: rnd(0.006, 0.016), k: [1, 1.08, 1.2][Math.floor(rnd(0, 3))] }));
     };
     const size = () => {
+      if (!window.innerWidth || !window.innerHeight) { stat = null; requestAnimationFrame(size); return; }
       W = window.innerWidth; H = window.innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const R = Math.max(W * 0.9, (0.25 * W * W) / (0.2 * H)); E = { cx: W * 0.52, cy: H * 0.905 + R, R };
       A = { cx: W * 0.47, cy: H * 0.95, rx: W * 0.36, ry: H * 0.62 };
@@ -1028,6 +1049,7 @@ class Component extends DCLogic {
     const draw = (t) => {
       const still = this.reduced();
       if (document.hidden || (!still && t - lastT < (L ? 50 : 40))) { this.bgRaf = requestAnimationFrame(draw); return; }
+      if (!stat || !stat.width || !stat.height || cv.width !== Math.round(window.innerWidth * dpr) && window.innerWidth) { if (window.innerWidth && cv.width !== Math.round(window.innerWidth * dpr)) size(); if (!stat || !stat.width) { this.bgRaf = requestAnimationFrame(draw); return; } }
       lastT = t; const T = still ? 0 : t / 1000; const light = this.state.theme === "claro";
       ctx.drawImage(stat, 0, 0, W, H);
       if (L) {
@@ -1067,7 +1089,7 @@ class Component extends DCLogic {
         if (dq > 0.9 && dq <= 1) { const pd = lq < 0.75 ? (dq - 0.9) / 0.1 : 1 + (lq - 0.75) * 4; ctx.beginPath(); ctx.ellipse(lx, lhy + 1, 10 + pd * 28, 2 + pd * 5, 0, 0, 7); ctx.fillStyle = "rgba(120,135,170," + Math.max(0, 0.35 - pd * 0.18) * la + ")"; ctx.fill(); }
         // shooting star (navy)
         const ss = 14, sq2 = still ? 2 : (T % ss) / 1.1; if (sq2 < 1) { const x0 = W * 0.65, y0 = H * 0.05; const x = x0 - sq2 * W * 0.25, y = y0 + sq2 * H * 0.12; const g = ctx.createLinearGradient(x, y, x + W * 0.06, y - H * 0.03); g.addColorStop(0, "rgba(" + NAVY + "," + (1 - sq2) * 0.7 + ")"); g.addColorStop(1, "rgba(" + NAVY + ",0)"); ctx.strokeStyle = g; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + W * 0.06, y - H * 0.03); ctx.stroke(); }
-        if (L.moon) { ctx.drawImage(L.moon, 0, L.by, W, L.bh);
+        if (L.moon && L.moon.width && L.moon.height && L.bh > 0) { ctx.drawImage(L.moon, 0, L.by, W, L.bh);
           const glint = still ? 0.5 : (T * 0.03) % 1.4 - 0.2; const gg = ctx.createLinearGradient((glint - 0.15) * W, 0, (glint + 0.15) * W, 0); gg.addColorStop(0, "rgba(255,255,255,0)"); gg.addColorStop(0.5, "rgba(255,255,255,0.14)"); gg.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = gg; ctx.fillRect(Math.max(0, (glint - 0.15) * W), L.top, 0.3 * W, H - L.top); }
         this.bgRaf = still ? null : requestAnimationFrame(draw); return;
       }
@@ -1161,7 +1183,7 @@ class Component extends DCLogic {
     mr.onstop = () => { if (this.state.recUrl) URL.revokeObjectURL(this.state.recUrl); this.setState({ recFase: "listo", recUrl: URL.createObjectURL(new Blob(ch, { type: mr.mimeType })) }); };
     mr.start(); this.setState({ recFase: "grabando" }); setTimeout(() => mr.state !== "inactive" && mr.stop(), 3000);
   }
-  componentWillUnmount() { cancelAnimationFrame(this.bgRaf); this.bgDraw = null; clearInterval(this.fast); window.removeEventListener("resize", this.bgResize); this.stopCam(); this.stopMic(); clearInterval(this.tick); clearInterval(this.wait); clearTimeout(this.pvtTo); clearInterval(this.pvtIv); window.removeEventListener("resize", this.onResize); window.removeEventListener("keydown", this.onKey); }
+  componentWillUnmount() { cancelAnimationFrame(this.bgRetry); cancelAnimationFrame(this.bgRaf); this.bgDraw = null; clearInterval(this.fast); window.removeEventListener("resize", this.bgResize); this.stopCam(); this.stopMic(); clearInterval(this.tick); clearInterval(this.wait); clearTimeout(this.pvtTo); clearInterval(this.pvtIv); window.removeEventListener("resize", this.onResize); window.removeEventListener("keydown", this.onKey); }
   onTick() {
     const s = this.state;
     if (s.screen !== "evaluacion") return;
@@ -1182,10 +1204,18 @@ class Component extends DCLogic {
       this.setState(t >= 12 ? { vozFase: "analizando", vozT: 12 } : { vozT: t });
       if (t >= 12) setTimeout(() => this.setState({ vozFase: "listo" }), 1200);
     }
+    if (s.paso === "simbolos" && s.dFase === "activa") { const t = Math.max(0, s.dT - 0.25); this.setState(t <= 0 ? { dT: 0, dFase: "fin" } : { dT: t }); }
     if (s.paso === "analizando") {
       const t = s.analT + 0.25;
-      if (t >= 3) this.setState({ screen: "resultados", paso: "inicio", analT: 0 }); else this.setState({ analT: t });
+      if (t >= 4.5) this.setState({ screen: "resultados", paso: "inicio", analT: 0 }); else this.setState({ analT: t });
     }
+  }
+  dsstNuevo() { let n; do { n = Math.floor(Math.random() * 9); } while (n === this.state.dSim); this.dT0 = performance.now(); return n; }
+  dsstTap(i) {
+    const s = this.state; if (s.dFase !== "activa") return;
+    const ok = i === s.dSim; const rt = Math.round(performance.now() - this.dT0);
+    this.setState({ dOk: s.dOk + (ok ? 1 : 0), dErr: s.dErr + (ok ? 0 : 1), dRts: ok ? s.dRts.concat([rt]) : s.dRts, dFb: { ok, k: i, t: performance.now() }, dSim: ok ? this.dsstNuevo() : s.dSim });
+    clearTimeout(this.dFbTo); this.dFbTo = setTimeout(() => this.setState({ dFb: null }), 220);
   }
   pasosList() { return ["inicio", "dispositivo", "camreac", "voz", "simbolos", "resultado"]; }
   go(screen) { this.setState({ screen }); window.scrollTo(0, 0); }
@@ -1294,7 +1324,7 @@ class Component extends DCLogic {
       landmarks: s.aviso === "cara" ? [] : LANDMARKS.map(([x, y]) => ({ x: x + "%", y: y + "%" })),
       ovalColor: s.aviso === "cara" ? ST.amarillo.fg : mid ? "var(--color-accent)" : "var(--color-neutral-600)",
       ventanaTexto: mid ? "Tu rostro se ve en la ventana del módulo de visión. Mírala de frente." : s.camFase === "listo" ? "Medición terminada. La ventana de visión ya se cerró." : "Al iniciar, el módulo de visión abre su ventana con tu rostro.",
-      camDash: String(232.5 * (s.camT / 60)), camSeg: String(Math.ceil(s.camT)),
+      camDash: String(232.5 * (s.camT / 60)), camPctW: ((60 - s.camT) / 60 * 100) + "%", crCols: s.w >= 1000 ? "minmax(0,2.2fr) minmax(240px,1fr)" : "minmax(0,1fr)", camSeg: String(Math.ceil(s.camT)),
       camEstado: { lista: "Listo para medir", midiendo: s.aviso ? "Midiendo con avisos" : "Midiendo", listo: "Medición lista", error: "Error" }[s.camFase],
       camSub: { lista: "Cámara " + s.camara + " encontrada · 30 fps", midiendo: "Quedan " + Math.ceil(s.camT) + " s · el módulo publica cada 5 s", listo: "Datos enviados al coordinador", error: "" }[s.camFase],
       camIniciar: () => this.setState({ camFase: "midiendo", camT: s.camFase === "listo" ? 60 : s.camT, ear: s.camFase === "listo" ? [] : s.ear }),
@@ -1349,13 +1379,43 @@ class Component extends DCLogic {
       kssVacio: s.kss == null, horas: fmt(s.horas, 1),
       horasMenos: () => this.setState({ horas: Math.max(0, s.horas - 0.5) }), horasMas: () => this.setState({ horas: Math.min(16, s.horas + 0.5) }),
       spin: s.prefs.movimiento ? "none" : "spin 1s linear infinite",
-      analPasos: [["Juntando cámara, reacción, símbolos y sensor", 0.6], ["Comparando con tu línea base", 1.4], ["Esperando al coordinador", 2.2]].map(([label, t]) => ({ label, icon: s.analT >= t ? "ph-check" : "ph-circle-dashed", fg: s.analT >= t ? "var(--color-text)" : "var(--color-neutral-500)" })),
+      analPasos: [["Datos de cámara y reacción", 0.18], ["Voz y símbolos", 0.42], ["Comparación con la línea base", 0.68], ["Resultado del coordinador", 0.94]].map(([label, u]) => ({ label, edge: s.analT / 4.2 >= u ? "var(--color-accent-700)" : "var(--card-edge)", ic: s.analT / 4.2 >= u ? "var(--color-accent)" : "var(--color-neutral-500)", icon: s.analT / 4.2 >= u ? "ph-check" : "ph-circle-dashed", fg: s.analT / 4.2 >= u ? "var(--color-text)" : "var(--color-neutral-500)" })),
     });
     // resultados
+    const dAct = s.dFase === "activa"; const dMed = s.dRts.length ? s.dRts.slice().sort((a, b) => a - b)[Math.floor(s.dRts.length / 2)] : null;
+    Object.assign(base, {
+      dsstActivo: dAct, dsstInactivo: !dAct, dsstD: L.SIMBOLOS_DSST[s.dSim], dsstScale: s.dFb ? "0.9" : "1",
+      dsstFg: s.dFb ? (s.dFb.ok ? ST.verde.fg : ST.rojo.fg) : "var(--color-text)",
+      dsstIcon: s.dFase === "fin" ? "ph-flag-checkered" : "ph-shapes",
+      dsstMsg: dAct ? "¿Qué número le corresponde?" : s.dFase === "fin" ? "Prueba terminada" : "Toca Empezar cuando estés listo",
+      dsstTiempo: Math.ceil(s.dT) + " s", dsstCuenta: s.dOk + " aciertos", dsstPct: ((90 - s.dT) / 90 * 100) + "%",
+      dsstTeclas: Array.from({ length: 9 }, (_, i) => ({ n: i + 1, dis: !dAct, tap: () => this.dsstTap(i),
+        bg: s.dFb && s.dFb.k === i ? (s.dFb.ok ? ST.verde.bg : ST.rojo.bg) : "var(--color-surface)" })),
+      dsstStats: [{ label: "Aciertos", valor: String(s.dOk) }, { label: "Errores", valor: String(s.dErr) }, { label: "Mediana", valor: dMed ? dMed + " ms" : "–" }],
+      dsstBtn: s.dFase === "fin" ? "Repetir" : "Empezar",
+      dsstStart: () => this.setState({ dFase: "activa", dT: 90, dOk: 0, dErr: 0, dRts: [], dFb: null, dSim: this.dsstNuevo() }),
+    });
+    // cohete de análisis
+    const ap = Math.min(1, s.analT / 4.2); const ease = ap < 0.5 ? 2 * ap * ap : 1 - Math.pow(-2 * ap + 2, 2) / 2;
+    const bz = (u) => { const P = [[0, 150], [250, 150], [350, 60], [500, 80]], Q = [[500, 80], [650, 100], [800, 40], [1000, 30]]; const [A, k] = u < 0.5 ? [P, u * 2] : [Q, u * 2 - 1]; const m = 1 - k; const b = [m * m * m, 3 * m * m * k, 3 * m * k * k, k * k * k]; return [b.reduce((q, w, i) => q + w * A[i][0], 0), b.reduce((q, w, i) => q + w * A[i][1], 0)]; };
+    const [rx, ry] = bz(Math.max(0.001, Math.min(0.999, ease))); const [rx2, ry2] = bz(Math.min(1, ease + 0.01));
+    const rang = Math.atan2((ry2 - ry) * 1, (rx2 - rx) * 1) * 180 / Math.PI;
+    const hitos = [0.18, 0.42, 0.68, 0.94];
+    base.analHitos = hitos.map((u) => { const [x, y] = bz(u); const done = ease >= u; return { x: x / 10 + "%", y: y / 190 * 100 + "%", bg: done ? "var(--color-accent)" : "var(--color-neutral-700)", glow: done ? "0 0 10px color-mix(in srgb, var(--color-accent) 70%, transparent)" : "none", chk: done ? "1" : "0" }; });
+    if (!this.analStarsC) { let sd = 3; const r = () => ((sd = (sd * 9301 + 49297) % 233280) / 233280); this.analStarsC = Array.from({ length: 40 }, () => ({ x: r() * 100 + "%", y: r() * 100 + "%", s: (1 + r() * 1.6).toFixed(1) + "px", o: (0.2 + r() * 0.5).toFixed(2) })); }
+    base.analStars = this.analStarsC;
+    base.analPct = Math.round(ease * 100) + " %"; base.analPctN = String(Math.round(ease * 100));
+    base.rocketEl = React.createElement("div", { style: { position: "absolute", left: rx / 10 + "%", top: ry / 190 * 100 + "%", transform: "translate(-50%,-50%) rotate(" + rang + "deg)", transition: "left .25s linear, top .25s linear, transform .25s linear" } },
+      React.createElement("div", { style: { position: "absolute", right: "26px", top: "50%", width: (60 + ease * 120) + "px", height: "4px", marginTop: "-2px", borderRadius: "2px", background: "linear-gradient(to left, rgba(255,150,80,.9), rgba(235,105,165,.55) 40%, rgba(128,102,217,0))", filter: "blur(.6px)" } }),
+      React.createElement("svg", { viewBox: "-30 -14 48 28", width: 48, height: 28, style: { display: "block", overflow: "visible", filter: "drop-shadow(0 0 6px rgba(255,170,110,.55))" } },
+        React.createElement("path", { d: "M-14 0 L-26 -4 L-30 0 L-26 4 Z", fill: "#ffb070", opacity: 0.9 + 0.1 * Math.sin(s.analT * 20) }),
+        React.createElement("path", { d: "M-6 -5 L-15 -12 L-12 -5 Z M-6 5 L-15 12 L-12 5 Z", fill: "#8a7ed6" }),
+        React.createElement("path", { d: "M16 0 C11 -7 2 -7 -13 -5 L-13 5 C2 7 11 7 16 0 Z", fill: "#E6E9F7", stroke: "#4a3f99", strokeWidth: 0.8 }),
+        React.createElement("circle", { cx: 4, cy: 0, r: 2.4, fill: "#458FFF", stroke: "#1e1a3a", strokeWidth: 0.6 })));
     const ev = evs[s.persona] || evs.bri; const det = D.DETALLE;
     const resSt = ST[ev.color];
     Object.assign(base, {
-      resSt, resPuntaje: ev.puntaje, resSesion: det.sesion, resAccion: ev.accion, resMotivos: ev.motivos.length ? ev.motivos : ["Sin motivos de alerta"],
+      resSt, resIcon: ic(s.persona), resHora: "hoy " + ev.ts.slice(11, 16) + " · " + cap(ev.tarea), resPuntaje: ev.puntaje, resSesion: det.sesion, resAccion: ev.accion, resMotivos: ev.motivos.length ? ev.motivos : ["Sin motivos de alerta"],
       resArc: (Math.min(ev.puntaje, 6) / 6 * 389.6) + " 389.6", resSpan: s.w >= 1100 ? 2 : 1,
       tiposLeyenda: Object.values(TIPOS),
       indicadores: det.indicadores.map((it) => {
@@ -1363,7 +1423,7 @@ class Component extends DCLogic {
         return { ...it, tipoLabel: T.label, tipoIcon: T.icon, tipoFg: T.fg, valorShow: nd ? "No disponible" : it.valor, valFg: nd ? "var(--color-neutral-500)" : it.aviso ? ST.amarillo.fg : "var(--color-text)",
           pts: it.puntos == null ? (it.aviso ? "AVISO" : "") : "+" + it.puntos + " pt", ptsFg: it.aviso ? ST.amarillo.fg : it.puntos ? ST.amarillo.fg : "var(--color-neutral-500)",
           hasCal: it.calidad != null, calPct: Math.round((it.calidad || 0) * 100) + "%", calTxt: fmt(it.calidad), calFg: (it.calidad || 0) < 0.5 ? ST.amarillo.fg : "var(--color-accent)",
-          bg: nd ? "transparent" : "var(--color-surface)", ring: nd ? "inset 0 0 0 1px var(--color-neutral-800)" : "none" };
+          bg: nd ? "color-mix(in srgb, var(--color-neutral-800) 45%, var(--color-surface))" : "var(--color-surface)", ring: nd ? "inset 0 0 0 1px var(--color-neutral-700)" : "inset 0 0 0 1px var(--card-edge)" };
       }),
       conversacion: (s.conv || det.conversacion).map((c) => ({ ...c, meta: "becspace ai · " + c.modo })),
       pregunta: s.pregunta, setPregunta: (e) => this.setState({ pregunta: e.target.value }),
