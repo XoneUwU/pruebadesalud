@@ -24,6 +24,7 @@ apto-hoy/
 ├── copiloto/             copiloto por voz: Whisper + Ollama + fichas + Piper (Bri)
 │   └── protocolos.md     fichas que el copiloto usa para responder
 ├── paneles/              paneles web: estación Becspace, tripulación y Tierra (servidor.py, sin internet)
+├── houston/              Tierra (Docker): suscrito a Mosquitto, su propio MongoDB y su servidor web MVC (solo lee)
 ├── coordinador/          coordinador_provisional.py, hasta que esté el de Danilo
 ├── registrador/          guarda todo apto/# en MongoDB, exporta a CSV y reproduce sesiones
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
@@ -102,7 +103,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/{persona}/vision` | Visión (Eric) | Coordinador | `perclos` (fracción de 0 a 1 con los ojos cerrados; acepta también porcentaje), `parpadeos_min`, `bostezos` y `bostezos_min` (incluyen los tapados con la mano), `bostezos_tapados`, `lentes` (true si se midió con lentes puestos: los ojos no cuentan), `ear_abierto`, `cabeza_inclinada_pct`, `cara_detectada_pct`, `fps`, `duracion_s`, `avisos`, `linea_base` y la `sesion` de la orden. El coordinador provisional usa los parpadeos solo contra la línea base. El pulso por cámara (rPPG) se quitó: el pulso es solo el del ESP32. El módulo usa `ClienteMQTT("vision")` para que la estación lo vea activo. |
 | `apto/{persona}/voz` | Voz (Bri) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | PVT-B en el navegador: `rt_media_ms`, `rt_mediana_ms`, `lapsos` (355 ms o más, o sin respuesta en 30 s), `anticipadas` (antes del estímulo o en menos de 100 ms), `lapsos_por_min` y `anticipadas_por_min` (para comparar 3 min con 1 min), `n_estimulos`, `duracion_s`, `linea_base`, `modo_demo` (true = 1 minuto) |
-| `apto/{persona}/dsst` | Panel (Sebas) | Coordinador | Prueba de símbolos (DSST, 90 s, opcional): `correctas`, `incorrectas`, `por_minuto` (correctas por minuto), `duracion_s`, `linea_base` || `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | `kss` (escala de somnolencia de Karolinska, 1 a 9), `kss_texto`, `horas_sueno` (de 0 a 16, de media en media hora), `linea_base` |
+| `apto/{persona}/dsst` | Panel (Sebas) | Coordinador | Prueba de símbolos (DSST, 90 s; 40 s en modo demo; opcional): `correctas`, `incorrectas`, `por_minuto` (correctas por minuto), `duracion_s`, `linea_base`, `modo_demo` || `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | `kss` (escala de somnolencia de Karolinska, 1 a 9), `kss_texto`, `horas_sueno` (de 0 a 16, de media en media hora), `linea_base` |
 | `apto/{persona}/evaluacion` | Coordinador (Danilo; por ahora el provisional) | Paneles, copiloto | `color`, `puntaje`, `motivos`, `accion`, `pesos` y `sesion` (la de la estación, para que la estación lo reconozca). El provisional agrega `"provisional": true`, `senales` (puntos por fuente) y `aviso_spo2` (true si el SpO2 del ESP32 estuvo bajo 30 s seguidos: **no cambia el color**; va con el motivo «Oxígeno más bajo de lo habitual: repetir la medición»). **Publicar con retain.** Los `motivos` se escriben como frases neutras, sin sujeto («Menos horas de sueño de lo habitual», no «Durmió menos»), porque el copiloto los lee después de «tu resultado… Motivos:». |
 | `apto/{persona}/semaforo` | Coordinador | ESP32 | Solo `color`. **Con retain.** |
 | `apto/{persona}/copiloto` | Copiloto (Bri) | Paneles | `pregunta`, `respuesta`, `fichas`, `modo` |
@@ -136,8 +137,9 @@ barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siet
 - **Credenciales**: si la página se abre en la misma laptop (localhost), `/config.js` lleva `MQTT_USER` y
   `MQTT_PASS` (puede publicar). Desde otra laptop lleva `MQTT_USER_LECTURA` y `MQTT_PASS_LECTURA` (solo lee).
   Por eso la estación solo funciona en la laptop de Bri. En desarrollo todos quedan vacíos.
-- **Opciones** en `config.env`: `PVT_SEGUNDOS` (60, lo mismo que mide la cámara; 180 = PVT-B de 3 minutos; la casilla «Modo demo» de la estación
-  la baja a 1 minuto y lo anota como `modo_demo: true`), `RETRASO_TIERRA_S` (2,6 s: ida y vuelta a la Luna; acepta decimales), `MQTT_WS_PORT` (9001) y
+- **Opciones** en `config.env`: `PVT_SEGUNDOS` (60 = 1 minuto, lo mismo que mide la cámara, que va junto a la reacción; 180 = PVT-B de 3 minutos; la
+  casilla «Modo demo» de la estación baja la reacción y la cámara a 40 s y los símbolos de 90 a 40 s, y lo anota como
+  `modo_demo: true`), `RETRASO_TIERRA_S` (2,6 s: ida y vuelta a la Luna; acepta decimales), `MQTT_WS_PORT` (9001) y
   `TRIPULACION` (los botones de la estación y las tarjetas). Si se cambian, hay que reiniciar `servidor.py`.
 - **Examen de voz con variaciones (opcional)**: en el paso de voz se elige la frase: la estándar (por defecto) o
   variaciones de menos a más difícil hasta un trabalenguas. Cada frase tiene su **propia línea base** (una
@@ -414,6 +416,15 @@ Para probar los colores sin sensor hay que compilar en modo simulado con un puls
 ```
 arduino-cli compile --fqbn esp32:esp32:esp32 --build-property "compiler.cpp.extra_flags=-DMODO_SIMULADO=1 -DPULSO_FORZADO=130" firmware\apto_esp32
 ```
+
+## Houston (Tierra)
+
+Todo lo anterior está en la nave. `houston/` es el control de misión en Tierra y corre en Docker
+(`cd houston` y `docker compose up -d --build`): `receptor.py` se suscribe a Mosquitto (`apto/#`, solo lectura) y
+guarda en su propio MongoDB lo que baja, con el retraso de la comunicación (`HOUSTON_RETRASO_S`, por defecto
+`RETRASO_TIERRA_S`), y `servidor.py` (MVC: `modelo.py`, `controlador.py` y `web/`) lo muestra en
+http://localhost:8090. La IP de Mosquitto va en `houston/.env` (`HOUSTON_MQTT_HOST`). No guarda órdenes ni estados de
+los módulos. Detalle en `houston/README.md`.
 
 ## 10. Reglas para sumar un módulo (todo el equipo)
 

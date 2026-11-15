@@ -492,8 +492,8 @@ class Copiloto:
                     modo = "tripulacion"
                 elif not ev and pregunta_sobre_resultado(pregunta):
                     texto = ("Todavía no tengo una evaluación tuya. Para saber si estás apta o apto, haz una "
-                             "evaluación de unos 5 minutos: el sensor en el dedo, un minuto frente a la cámara, "
-                             "la frase en voz alta y la prueba de reacción de 3 minutos.")
+                             "evaluación de unos 4 minutos: el sensor en el dedo, la frase en voz alta, la prueba de "
+                             "reacción de 1 minuto frente a la cámara y el cuestionario.")
                     modo = "sin evaluacion"
                 elif ev and pregunta_sobre_resultado(pregunta):
                     texto, modo = self._respuesta_resultado(pregunta, ev, persona, fichas, usar_llm)

@@ -123,7 +123,7 @@
     tareaSesion: "", tareaElegida: "",
     // evaluación
     paso: "inicio", persona: "", tarea: "", lineaBase: false, demo: false, conDsst: false, sesion: "", inicio: 0,
-    esp32: null, esp32Llegada: 0, esp32Tarde: false, ppg: [], latido: 0,
+    esp32: null, esp32Llegada: 0, esp32Tarde: false, ppg: [], latido: 0, musculo: [],
     vision: null, estadoVision: "", visionRestantes: null, visionMotivo: "", visionMensaje: "", camFase: "lista", camInicio: 0, camT: SEGUNDOS_CAMARA, vista: "ventana",
     fraseVoz: "estandar", vozFase: "inicio", vozMsg: "", vozInicio: 0, vozPct: 0, voz: null,
     pvt: { fase: "intro", msg: "", cont: "", contColor: "", res: null },
@@ -268,7 +268,13 @@
       const i = S.pendientes.findIndex((p) => p.persona === persona && p.pregunta === datos.pregunta);
       if (i >= 0) S.pendientes.splice(i, 1);
     } else if (S.sesion && persona === S.persona && esDeEstaSesion(datos, retenido)) {
-      if (tipo === "esp32") { S.esp32 = datos; S.esp32Llegada = Date.now(); }
+      if (tipo === "esp32") {
+        S.esp32 = datos; S.esp32Llegada = Date.now();
+        if (datos.fase === "musculo") {  // un punto por segundo de la prueba del músculo, para las barras del panel
+          S.musculo.push({ orden: datos.musculo_orden || "", rms: num(datos.musculo_rms_mv), electrodos: datos.electrodos === true });
+          if (S.musculo.length > 60) S.musculo.shift();
+        }
+      }
       else if (tipo === "vision") { S.vision = datos; if (S.camFase === "midiendo") S.camFase = "listo"; }
       else if (tipo === "voz") { S.voz = datos; if (S.paso === "voz" && S.vozFase !== "inicio") terminarVoz(); }
     }
@@ -361,6 +367,7 @@
     const llegada = Date.now();
     S.esp32Tarde = false;
     S.ppg = [];
+    S.musculo = [];
     cadaTanto(1000, () => { S.esp32Tarde = Date.now() - llegada >= AVISO_ESP32_MS; });
     let fase = 0;
     cadaTanto(50, () => {  // onda ilustrativa al ritmo del pulso medido (el ESP32 manda un resumen por segundo)
@@ -489,10 +496,11 @@
   // Reacción (PVT-B) -------------------------------------------
   const pvt = { activo: false, inicio: 0, duracionMs: 0, estimuloEn: null, rts: [], anticipadas: 0, sinRespuesta: 0, n: 0, espera: null, sinResp: null, raf: null, reloj: null, borrar: null };
 
-  function segundosPvt() {
-    if (S.demo) return L.PVT.DEMO_S;
-    const s = Number(CFG.pvt_segundos);
-    return Number.isFinite(s) && s > 0 ? s : 180;
+  function segundosPvt() {  // la cámara mide durante la reacción: este es también su tiempo
+    return S.demo ? L.PVT.DEMO_S : segundosPvtConfig();
+  }
+  function segundosDsst() {
+    return S.demo ? L.DSST_DEMO_S : L.DSST_SEGUNDOS;
   }
   function textoDuracion(s) {
     return s % 60 === 0 ? `${s / 60} ${s === 60 ? "minuto" : "minutos"}` : `${s} segundos`;
@@ -652,7 +660,7 @@
     if (document.activeElement) document.activeElement.blur();
     dsstSiguiente();
     dsst.reloj = setInterval(pedirPintar, 250);
-    dsst.fin = setTimeout(dsstTerminar, L.DSST_SEGUNDOS * 1000);
+    dsst.fin = setTimeout(dsstTerminar, segundosDsst() * 1000);
     pedirPintar();
   }
 
@@ -676,7 +684,7 @@
     const duracionMs = performance.now() - dsst.inicio;
     dsstDetener();
     const r = L.resumenDsst(dsst.correctas, dsst.incorrectas, duracionMs);
-    publicar(`apto/${S.persona}/dsst`, { ...r, linea_base: S.lineaBase });
+    publicar(`apto/${S.persona}/dsst`, { ...r, linea_base: S.lineaBase, modo_demo: S.demo });
     S.dsst = { ...S.dsst, fase: "fin", res: r };
     pedirPintar();
   }
@@ -1226,8 +1234,8 @@ ${S.modal ? vistaModal() : ""}`;
     ];
     const opciones = [
       ["lineaBase", "Medición de línea base", "Márcala si hoy descansaste bien: esta medición servirá para comparar las siguientes."],
-      ["demo", "Modo demo (1 min)", "La prueba de reacción dura 1 minuto en vez de 3. Queda anotado en el resultado."],
-      ["conDsst", "Prueba de símbolos (90 s)", "Además de la de reacción: emparejar símbolos con números lo más rápido posible."],
+      ["demo", `Modo demo (${L.PVT.DEMO_S} s)`, `La reacción (con la cámara) dura ${textoDuracion(L.PVT.DEMO_S)} en vez de ${textoDuracion(segundosPvtConfig())}, y los símbolos ${textoDuracion(L.DSST_DEMO_S)} en vez de ${textoDuracion(L.DSST_SEGUNDOS)}. Queda anotado en el resultado.`],
+      ["conDsst", `Prueba de símbolos (${segundosDsst()} s)`, "Además de la de reacción: emparejar símbolos con números lo más rápido posible."],
     ];
     const crew = CFG.tripulacion || [];
     return h`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:24px;align-items:start">
@@ -1281,10 +1289,7 @@ ${S.modal ? vistaModal() : ""}`;
       { label: "SpO₂", icon: "ph-drop", valor: d && num(spo2) !== null ? L.decimal(spo2, 0) : "–", unidad: "% de oxígeno en sangre" },
       { label: "Movimiento", icon: "ph-hand", valor: d ? fmt(d.movimiento) : "–", unidad: d && num(d.movimiento) !== null ? (d.movimiento > 0.05 ? "g · en movimiento" : "g · quieto") : "g" },
     ];
-    if (d && "electrodos" in d) {  // AD8232 (prototipo): mV a la salida del AD8232, del último segundo
-      tarjetas.push({ label: "Músculo", icon: "ph-hand-fist", valor: d.electrodos ? entero(d.musculo_rms_mv) : "–",
-        unidad: !d.electrodos ? "sin electrodos" : d.musculo_simulado ? "mV RMS · valores fingidos" : "mV RMS · AD8232 (prototipo)" });
-    }
+    const enMusculo = Boolean(d && d.fase === "musculo");
     const n = S.ppg.length;
     const px = (i) => ((160 - n + i) * 600) / 159;
     const py = (v) => Math.round((110 - v * 88) * 10) / 10;
@@ -1292,7 +1297,7 @@ ${S.modal ? vistaModal() : ""}`;
     const cab = n ? { x: px(n - 1), y: py(S.ppg[n - 1]) } : { x: -10, y: -10 };
     const late = performance.now() - S.latido < 170;
     const iconoEstado = { ok: ["ph-check-circle", ST.verde.fg], aviso: ["ph-warning-circle", ST.amarillo.fg], espera: ["ph-circle-notch", "var(--color-accent-300)"] }[tipoEstado];
-    return h`${titulo("Dispositivo", "Colócate el sensor en el dedo y quédate sin moverte.")}
+    return h`${titulo("Dispositivo", enMusculo ? "Retira el dedo y sigue las órdenes de la prueba del músculo." : "Colócate el sensor en el dedo y quédate sin moverte.")}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px">
       ${tarjetas.map((t) => h`<div style="display:flex;flex-direction:column;gap:6px;padding:16px;${TARJ}">
           <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-300)"><i class="ph ${t.icon}" style="font-size:16px;color:var(--color-accent)"></i>${t.label}<span style="margin-left:auto;${MONO};font-size:10px;color:var(--color-accent-300)">${tag}</span></span>
@@ -1300,7 +1305,7 @@ ${S.modal ? vistaModal() : ""}`;
           <span style="font-size:12px;color:var(--color-neutral-400)">${t.unidad}</span>
         </div>`)}
     </div>
-    <div style="display:flex;flex-direction:column;gap:8px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm)">
+    <div style="display:${enMusculo ? "none" : "flex"};flex-direction:column;gap:8px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm)">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <i class="ph-fill ph-heart" style="font-size:17px;color:var(--st-rojo);transform:scale(${late ? "1.3" : "1"});transition:transform .12s ease-out"></i>
         <span style="font-size:13px;font-weight:500">Pulso en tiempo real</span>
@@ -1317,8 +1322,102 @@ ${S.modal ? vistaModal() : ""}`;
       </div>
       <span style="font-size:12px;color:var(--color-neutral-400)">Onda ilustrativa al ritmo del pulso medido: el ESP32 envía un resumen por segundo (pulso, HRV de 30 s, SpO₂), no la señal cruda. Cuadrícula de 1 segundo.</span>
     </div>
+    ${vMusculo(d)}
     <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--color-neutral-200)" aria-live="polite"><i class="ph-fill ${iconoEstado[0]}" style="color:${iconoEstado[1]};font-size:18px"></i>${textoEstado}${d && d.simulado ? h` ${tagMono("SIMULADO")}` : ""}</div>
     ${botonera(botonPrimario("Continuar", "siguiente", !d || (d.fase ? !d.medicion_lista : d.dedo === false)))}`;
+  }
+
+  // Prueba del músculo (AD8232), después del pulso: la misma secuencia que la OLED (firmware/apto_esp32/musculo.h).
+  // La placa manda la orden en curso y los segundos que le quedan a toda la prueba; de ahí salen los de cada orden.
+  const ORDENES_MUSCULO = [["preparate", 5], ["aprieta", 5], ["espera", 2], ["descansa", 6], ["espera", 2], ["aprieta", 5], ["espera", 2], ["descansa", 8]];
+  const TOTAL_MUSCULO_S = ORDENES_MUSCULO.reduce((s, o) => s + o[1], 0);
+  const TEXTO_ORDEN = {
+    preparate: ["PREPÁRATE", "Brazo quieto y suelto sobre la mesa"],
+    aprieta: ["APRIETA", "El puño fuerte, sin mover el brazo"],
+    espera: ["ESPERA", "Suelta y espera la próxima orden"],
+    descansa: ["DESCANSA", "Brazo suelto, sin apretar"],
+  };
+
+  function ordenMusculo(quedanTotal) {  // índice de la orden en curso y segundos que le quedan
+    const t = Math.max(0, TOTAL_MUSCULO_S - (num(quedanTotal) ?? TOTAL_MUSCULO_S));
+    let acum = 0;
+    for (let i = 0; i < ORDENES_MUSCULO.length; i++) {
+      acum += ORDENES_MUSCULO[i][1];
+      if (t < acum) return { i, quedan: acum - t };
+    }
+    return { i: ORDENES_MUSCULO.length - 1, quedan: 0 };
+  }
+
+  function resumenMusculo(hist) {  // promedio al apretar y en reposo (sin el primer segundo de cada orden: reacción)
+    const media = (o) => {
+      const v = hist.filter((p, k) => p.orden === o && p.rms !== null && k > 0 && hist[k - 1].orden === o).map((p) => p.rms);
+      return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
+    };
+    const aprieta = media("aprieta"), descansa = media("descansa");
+    return { aprieta, descansa, veces: aprieta !== null && descansa ? aprieta / descansa : null };
+  }
+
+  function vMusculo(d) {
+    if (!d || !("electrodos" in d)) return "";  // placa sin el AD8232 en el firmware
+    const enCurso = d.fase === "musculo";
+    const hist = S.musculo;
+    const fingido = Boolean(d.musculo_simulado);
+    const etiqueta = fingido ? "FINGIDO" : "PROTOTIPO";
+    const chipElectrodos = d.electrodos
+      ? h`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:${ST.verde.fg}"><i class="ph-fill ph-check-circle"></i>Electrodos puestos</span>`
+      : h`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:${ST.amarillo.fg}"><i class="ph-fill ph-warning-circle"></i>Sin electrodos</span>`;
+    const cabecera = h`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <i class="ph ph-hand-fist" style="font-size:17px;color:var(--color-accent)"></i>
+        <span style="font-size:13px;font-weight:500">Activación muscular</span>
+        <span style="font-size:12px;color:var(--color-neutral-400)">AD8232 · electrodos en el antebrazo</span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:10px">${chipElectrodos}<span style="${MONO};font-size:10px;color:var(--color-accent-300)" title="${fingido ? "MUSCULO_FINGIDO en el firmware: los valores no son medidos" : "Prototipo con un chip de ECG: no es una electromiografía"}">${etiqueta}</span></span>
+      </div>`;
+    const caja = (contenido) => h`<div style="display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm)">${cabecera}${contenido}</div>`;
+
+    // barras: un segundo de la prueba cada una; las de APRIETA en el color de acento
+    const escala = Math.max(100, ...hist.map((p) => p.rms || 0));
+    const ancho = 600 / TOTAL_MUSCULO_S;
+    const barras = h`<svg viewBox="0 0 600 80" style="width:100%;height:auto;display:block" role="img" aria-label="Activación de cada segundo de la prueba del músculo; las barras de apretar van en color">
+        <line x1="0" y1="79.5" x2="600" y2="79.5" style="stroke:var(--color-divider);stroke-width:1"></line>
+        ${hist.slice(-TOTAL_MUSCULO_S).map((p, k) => {
+          const alto = p.rms === null ? 0 : Math.max(2, (p.rms / escala) * 74);
+          return h`<rect x="${(k * ancho + 1.5).toFixed(1)}" y="${(79 - alto).toFixed(1)}" width="${(ancho - 3).toFixed(1)}" height="${alto.toFixed(1)}" rx="2" style="fill:${p.orden === "aprieta" ? "var(--color-accent)" : "var(--color-neutral-600)"}"></rect>`;
+        })}
+      </svg>`;
+
+    if (enCurso) {
+      const { i, quedan } = ordenMusculo(d.quedan_s);
+      const clave = d.musculo_orden || ORDENES_MUSCULO[i][0];
+      const [palabra, ayuda] = TEXTO_ORDEN[clave] || ["SIGUE LA PLACA", "Sigue las órdenes de la pantalla del ESP32"];
+      const fuerte = clave === "aprieta";
+      const pasos = h`<div style="display:flex;gap:4px" aria-hidden="true">${ORDENES_MUSCULO.map(([o, s], k) => h`<span style="flex:${s};height:6px;border-radius:3px;background:${k < i ? "var(--color-neutral-500)" : k === i ? (o === "aprieta" ? "var(--color-accent)" : "var(--color-neutral-300)") : o === "aprieta" ? "color-mix(in srgb, var(--color-accent) 30%, transparent)" : "var(--color-neutral-800)"}"></span>`)}</div>`;
+      return caja(h`
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap" aria-live="assertive">
+          <span style="${MONO};font-size:64px;line-height:1;font-variant-numeric:tabular-nums;min-width:2ch;text-align:right;color:${fuerte ? "var(--color-accent)" : "var(--color-text)"}">${quedan}</span>
+          <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+            <span style="font-size:34px;font-weight:700;letter-spacing:.04em;line-height:1.1;color:${fuerte ? "var(--color-accent)" : "var(--color-text)"}">${palabra}</span>
+            <span style="font-size:14px;color:var(--color-neutral-300)">${ayuda}</span>
+          </div>
+          <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-400);text-align:right">Prueba del músculo<br>quedan ${entero(d.quedan_s)} s de ${TOTAL_MUSCULO_S}</span>
+        </div>
+        ${pasos}
+        ${!d.electrodos ? h`<span style="font-size:13px;color:${ST.amarillo.fg}">Pega los electrodos: RA y LA sobre el músculo del antebrazo, RL en el hueso del codo. Si no hay electrodos en los primeros 4 s, la placa salta esta prueba.</span>` : ""}
+        ${barras}
+        <span style="font-size:12px;color:var(--color-neutral-400)">Cada barra es un segundo; en color, los de apretar. Mientras aprietas deberían subir.${fingido ? " Valores fingidos por ahora (MUSCULO_FINGIDO en el firmware)." : " mV RMS a la salida del AD8232."}</span>`);
+    }
+
+    const r = resumenMusculo(hist);
+    if (hist.length && r.aprieta !== null) {  // terminó la prueba: resumen
+      const dato = (label, valor, unidad) => h`<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:var(--color-neutral-400)">${label}</span><span style="${MONO};font-size:28px;font-variant-numeric:tabular-nums">${valor}<span style="font-size:12px;color:var(--color-neutral-400)"> ${unidad}</span></span></div>`;
+      return caja(h`
+        <div style="display:flex;gap:28px;flex-wrap:wrap">
+          ${dato("Al apretar", entero(r.aprieta), "mV")}${dato("En reposo", entero(r.descansa), "mV")}${dato("Activación", r.veces !== null ? L.decimal(r.veces, 1) : "–", "veces el reposo")}
+        </div>
+        ${barras}
+        <span style="font-size:12px;color:var(--color-neutral-400)">Prueba del músculo terminada. Informativo: no suma al semáforo.${fingido ? " Valores fingidos por ahora (MUSCULO_FINGIDO en el firmware)." : ""}</span>`);
+    }
+
+    return caja(h`<span style="font-size:13px;color:var(--color-neutral-300)">Después de los 30 s del pulso viene la prueba del músculo (${TOTAL_MUSCULO_S} s): retira el dedo, deja el brazo sobre la mesa y sigue las órdenes, aquí y en la pantalla de la placa. ${d.electrodos ? "" : "Pega antes los electrodos en el antebrazo."}</span>`);
   }
 
   function vCamara() {
@@ -1599,7 +1698,7 @@ ${S.modal ? vistaModal() : ""}`;
     const D = S.dsst;
     const activa = D.fase === "activa";
     const clave = activa || D.fase === "fin" ? D.clave : [...Array(9).keys()];
-    const total = L.DSST_SEGUNDOS;
+    const total = segundosDsst();
     const quedan = activa ? Math.max(0, Math.ceil(total - (performance.now() - dsst.inicio) / 1000)) : D.fase === "fin" ? 0 : total;
     const pct = ((total - quedan) / total) * 100;
     const msg = activa ? "¿Qué número le corresponde?" : D.fase === "fin" ? "Prueba terminada" : "Toca Empezar cuando estés listo. Al empezar, la clave se mezcla: cada sesión tiene su propio orden.";
@@ -1778,7 +1877,7 @@ ${S.modal ? vistaModal() : ""}`;
     } else out.push(nd("Reacción PVT-B", "Estación", "Se omitió o no llegó a esta pantalla."));
     if (d.dsst) {
       out.push({ tipo: "medido", nombre: "Símbolos DSST", fuente: "Estación", valor: fmt(d.dsst.por_minuto, 1), unidad: "correctas por min", puntos: null,
-        nota: `${d.dsst.correctas ?? 0} correctas y ${d.dsst.incorrectas ?? 0} errores en 90 s.` });
+        nota: `${d.dsst.correctas ?? 0} correctas y ${d.dsst.incorrectas ?? 0} errores en ${num(d.dsst.duracion_s) !== null ? Math.round(d.dsst.duracion_s) : L.DSST_SEGUNDOS} s${d.dsst.modo_demo ? " (modo demo)" : ""}.` });
     }
     const vi = d.vision;
     if (vi) {
@@ -2145,7 +2244,8 @@ ${S.modal ? vistaModal() : ""}`;
       ["Tripulación", (CFG.tripulacion || []).join(", ") || "–"],
       ["Visión", `MediaPipe FaceLandmarker · ${SEGUNDOS_CAMARA} s`],
       ["Becspace AI", `${CFG.ollama_model || "–"} · Whisper ${CFG.whisper_model || "–"}`],
-      ["PVT", `${segundosPvtConfig()} s (demo ${L.PVT.DEMO_S} s)`],
+      ["PVT", `${segundosPvtConfig()} s con la cámara (demo ${L.PVT.DEMO_S} s)`],
+      ["Símbolos", `${L.DSST_SEGUNDOS} s (demo ${L.DSST_DEMO_S} s)`],
       ["Base de datos", `MongoDB ${CFG.mongo_host || "127.0.0.1"} · ${CFG.mongo_db || "apto_hoy"}`],
       ["Tierra", `retraso simulado de ${CFG.retraso_tierra_s ?? 2.6} s · tierra.html`],
     ];
@@ -2220,9 +2320,9 @@ ${S.modal ? vistaModal() : ""}`;
     </section>
   </div>`;
   }
-  function segundosPvtConfig() {
+  function segundosPvtConfig() {  // PVT_SEGUNDOS de config.env (60 = 1 minuto)
     const s = Number(CFG.pvt_segundos);
-    return Number.isFinite(s) && s > 0 ? s : 180;
+    return Number.isFinite(s) && s > 0 ? s : 60;
   }
 
   // ================================================================== vista: Sistema de diseño
@@ -2313,8 +2413,8 @@ ${S.modal ? vistaModal() : ""}`;
       ${etq("Formularios y progreso")}
       <div class="field"><label for="dsn">Nombre</label><input id="dsn" class="input" data-libre placeholder="bri"></div>
       <div style="display:flex;gap:14px;flex-wrap:wrap">
-        <label class="radio"><input type="radio" name="dsr" checked><span class="dot"></span>3 minutos</label>
-        <label class="radio"><input type="radio" name="dsr"><span class="dot"></span>1 minuto (demo)</label>
+        <label class="radio"><input type="radio" name="dsr" checked><span class="dot"></span>1 minuto</label>
+        <label class="radio"><input type="radio" name="dsr"><span class="dot"></span>40 segundos (demo)</label>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--color-neutral-300)"><span>Adquiriendo datos</span><span style="${MONO}">62 %</span></div>

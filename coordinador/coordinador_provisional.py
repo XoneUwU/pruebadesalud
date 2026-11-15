@@ -131,7 +131,7 @@ def _indicadores(tipo: str, m: dict, base: list[dict]) -> list[tuple[int, str]]:
             r.append((_escala(rt, 350, 450), "Reacción lenta en la prueba PVT"))
         lpm, lpm_b = por_minuto(m, "lapsos"), _promedio(por_minuto(b, "lapsos") for b in base)
         n_lapsos = _num(m.get("lapsos"))
-        if n_lapsos is not None and n_lapsos < 2:  # un lapso suelto no marca (en 1 min de modo demo sería "1 por minuto")
+        if n_lapsos is not None and n_lapsos < 2:  # un lapso suelto no marca (en 40 s de modo demo sería "1,5 por minuto")
             r.append((0, "Varios lapsos de atención en la prueba PVT"))
         elif lpm is not None and lpm_b is not None:
             r.append((_escala(lpm - lpm_b, 1, 2), "Más lapsos de atención de lo habitual en la prueba PVT"))

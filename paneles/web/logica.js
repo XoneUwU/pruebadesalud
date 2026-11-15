@@ -7,11 +7,14 @@
   const ORDEN_COLOR = { verde: 0, amarillo: 1, rojo: 2 };
   const TAREAS_CON_EL = ["mantenimiento", "experimento", "acoplamiento", "control"];
 
-  // PVT-B (3 minutos): lapso = 355 ms o más; anticipada = antes del estímulo o en menos de 100 ms.
-  const PVT = { LAPSO_MS: 355, ANTICIPADA_MS: 100, ISI_MIN_MS: 1000, ISI_MAX_MS: 4000, SIN_RESPUESTA_MS: 30000, DEMO_S: 60 };
+  // PVT (reacción; la cámara mide al mismo tiempo): PVT_SEGUNDOS de config.env (60 = 1 minuto; 180 = la PVT-B de
+  // 3 minutos) y DEMO_S en modo demo. Lapso = 355 ms o más; anticipada = antes del estímulo o en menos de 100 ms.
+  const PVT = { LAPSO_MS: 355, ANTICIPADA_MS: 100, ISI_MIN_MS: 1000, ISI_MAX_MS: 4000, SIN_RESPUESTA_MS: 30000, DEMO_S: 40 };
 
-  // Prueba de símbolos (DSST): 90 s. Nueve símbolos propios en un cuadro de 40 x 40 (trazos SVG, sin fuentes).
+  // Prueba de símbolos (DSST): 90 s, o DSST_DEMO_S en modo demo. Nueve símbolos propios en un cuadro de 40 x 40
+  // (trazos SVG, sin fuentes).
   const DSST_SEGUNDOS = 90;
+  const DSST_DEMO_S = 40;
   const SIMBOLOS_DSST = [
     "M20 6 L34 32 H6 Z",                                          // triángulo
     "M8 8 H32 V32 H8 Z M8 32 L32 8",                              // cuadrado con diagonal
@@ -133,7 +136,7 @@
       rt_mediana_ms: mediana === null ? null : Math.round(mediana),
       lapsos,
       anticipadas,
-      // por minuto: así se comparan la prueba de 3 min y la de 1 min (modo demo)
+      // por minuto: así se comparan pruebas de distinta duración (1 minuto, o 40 s en modo demo)
       lapsos_por_min: minutos > 0 ? Math.round((lapsos / minutos) * 100) / 100 : null,
       anticipadas_por_min: minutos > 0 ? Math.round((anticipadas / minutos) * 100) / 100 : null,
       n_estimulos: nEstimulos,
@@ -181,7 +184,7 @@
   }
 
   const Logica = {
-    ORDEN_COLOR, PVT, KSS, DSST_SEGUNDOS, SIMBOLOS_DSST, normalizar, nombre, lista, conArticulo, puntaje, ordenar,
+    ORDEN_COLOR, PVT, KSS, DSST_SEGUNDOS, DSST_DEMO_S, SIMBOLOS_DSST, normalizar, nombre, lista, conArticulo, puntaje, ordenar,
     recomendacion, clasificarRespuesta, resumenPvt, resumenDsst, tsAMs, hora, ahoraIso, decimal,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = Logica;
