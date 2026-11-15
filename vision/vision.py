@@ -1,15 +1,14 @@
-"""Análisis por cámara: pulso sin contacto (rPPG), parpadeos y PERCLOS.
+"""Análisis por cámara: parpadeos, PERCLOS y bostezos.
 
-Mira la cara con MediaPipe (FaceLandmarker de Tasks), estima el pulso con el método POS sobre la frente y las
-mejillas, mide los ojos con el EAR y publica el resultado en MQTT: apto/{persona}/vision
+Mira la cara con MediaPipe (FaceLandmarker de Tasks), mide los ojos con el EAR y la boca con el MAR, y publica el
+resultado en MQTT: apto/{persona}/vision. El pulso lo mide el sensor del ESP32: el pulso por cámara (rPPG) se
+quitó porque con la luz de la estación no llegaba a la calidad mínima.
 
 Modos:
   python vision/vision.py --listar                        lista las cámaras
   python vision/vision.py --ver                           vista previa en vivo, sin medir (q o Esc para salir)
   python vision/vision.py --persona bri                   una medición (VISION_SEGUNDOS, con ventana)
   python vision/vision.py --persona bri --linea-base      igual, marcada como línea base
-  python vision/vision.py --referencia 72                 guarda el pulso medido con otro aparato junto al último
-                                                          estimado, en datos/vision/validacion.csv
   python vision/vision.py --servicio                      espera órdenes por MQTT (apto/control/orden_vision)
 
 Orden por MQTT (la envía la estación):
@@ -23,12 +22,6 @@ Cámara: CAMARA en config.env (índice 0, 1… o la URL de DroidCam, como http:/
 CAMARA=http://127.0.0.1:4747/video; antes de cada medición se rehace «adb forward» hacia el celular.
 
 MÉTODOS
-  Pulso (rPPG): promedio RGB de la frente y las dos mejillas en cada cuadro, con su hora. Se vuelve a muestrear a
-  30 Hz, se aplica POS (Wang y otros, 2017; ventanas de 1,6 s), se quita la tendencia y se busca el pico del
-  espectro (ventana de Hann) solo entre 0,7 y 3 Hz (42 a 180 lpm): ese es el filtro de banda. Calidad: relación
-  señal/ruido del pico (de Haan y Jeanne, 2013: potencia a ±0,1 Hz del pico y de su armónico contra el resto de
-  la banda), llevada a 0..1 con calidad = (SNR dB + 3) / 12. Con calidad menor que CALIDAD_MIN no se publica el
-  número: se avisa.
   Ojos: EAR = (|p2-p6| + |p3-p5|) / (2 |p1-p4|), con 6 puntos por ojo. Para parpadeos y PERCLOS cuenta el ojo
   MÁS abierto de los dos: un parpadeo o un cierre son con los dos ojos, y cerrar uno solo (un guiño) no cuenta.
   Para los bostezos se usa el promedio de los dos (al bostezar se achican ambos).
@@ -68,7 +61,6 @@ MÉTODOS
   está delante) y las condiciones solo pueden pasar de «no» a «sí»: una decisión tomada no cambia y el contador
   en vivo nunca baja. Cuando la mano se va, la consola explica qué se midió y qué faltó (y en --ver también la ventana), para
   ajustar BOSTEZO_OJOS_FRAC, BOSTEZO_OJOS_S, BOSTEZO_MANDIBULA y BOSTEZO_OJOS_MUY_FRAC en config.env.
-  Con la mano en la cara esos cuadros no cuentan para el pulso (la mano tapa las mejillas).
   Lentes: MediaPipe no trae un clasificador de lentes. Con la malla se ubica el puente de la nariz entre los ojos
   (puntos 168 y 6), por donde cruza la montura; se endereza la imagen con la línea de los ojos y se mide el borde
   horizontal más marcado ahí (Sobel vertical), dividido por la textura típica de la piel (mejillas y frente):
@@ -77,12 +69,11 @@ MÉTODOS
   la medición empieza sola cuando ya no se ven. Si a los LENTES_ESPERA_S siguen puestos, se mide igual con
   "lentes": true y los ojos no cuentan para el semáforo. Lentes sin montura o de montura muy fina pueden no
   detectarse; el umbral se ajusta mirando el puntaje en --ver.
-  Avisos: poca luz, demasiada luz, cara no detectada más del 20 % del tiempo, menos de 15 cuadros por segundo y
-  pulso poco confiable.
+  Avisos: poca luz o demasiada luz (brillo de la frente y las mejillas), cara no detectada más del 20 % del tiempo
+  y menos de 15 cuadros por segundo.
 Es una sugerencia para apoyar la decisión, no un diagnóstico.
 """
 import argparse
-import csv
 import json
 import os
 import sys
@@ -105,7 +96,6 @@ from comun.mqtt_cliente import ClienteMQTT, tema  # noqa: E402
 
 CARPETA_DATOS = config.RAIZ / "datos" / "vision"
 HISTORIAL = CARPETA_DATOS / "historial.jsonl"
-VALIDACION = CARPETA_DATOS / "validacion.csv"
 MODELO = config.RAIZ / "modelos" / "face_landmarker.task"
 URL_MODELO = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/"
               "face_landmarker.task")
@@ -118,14 +108,8 @@ def _real(clave: str, defecto: float) -> float:
         return defecto
 
 
-# --- pulso
-FS = 30.0                 # Hz, frecuencia a la que se vuelve a muestrear
-BANDA = (0.7, 3.0)        # Hz = 42 a 180 lpm
-VENTANA_POS_S = 1.6
-CALIDAD_MIN = 0.5         # por debajo, no se publica el número del pulso
-MIN_SEGUNDOS_PULSO = 6.0
-VIVO_SEGUNDOS = 10.0      # ventana del pulso en vivo de la vista previa
 # --- ojos
+FS = 30.0                 # cuadros por segundo supuestos si no se puede calcular la duración de un cuadro
 CALIBRACION_S = 5.0
 PARPADEO_FRAC = 0.60
 CERRADO_FRAC = 0.30
@@ -633,7 +617,8 @@ class RevisionLentes:
 
 
 def regiones(pts: np.ndarray, ancho: int, alto: int) -> list[tuple[int, int, int, int]]:
-    """Frente y dos mejillas como rectángulos (x0, y0, x1, y1), a partir de puntos de la malla en píxeles.
+    """Frente y dos mejillas como rectángulos (x0, y0, x1, y1), a partir de puntos de la malla en píxeles: ahí se
+    mide la luz de la cara.
 
     La escala es la distancia entre los rabillos externos de los ojos (puntos 33 y 263)."""
     escala = float(np.linalg.norm(pts[33] - pts[263]))
@@ -668,65 +653,6 @@ def color_piel(cuadro_bgr: np.ndarray, cajas) -> tuple[np.ndarray, float, float]
     brillo = float(rgb @ np.array([0.299, 0.587, 0.114]))
     saturado = float((px.max(axis=1) >= 250).mean())
     return rgb, brillo, saturado
-
-
-def remuestrear(t: np.ndarray, rgb: np.ndarray, fs: float = FS) -> np.ndarray:
-    """Muestras con horas irregulares (y huecos) -> muestras cada 1/fs s, por interpolación lineal."""
-    validas = np.all(np.isfinite(rgb), axis=1)
-    t, rgb = t[validas], rgb[validas]
-    if len(t) < 2:
-        return np.empty((0, 3))
-    rejilla = np.arange(t[0], t[-1], 1 / fs)
-    return np.column_stack([np.interp(rejilla, t, rgb[:, c]) for c in range(3)])
-
-
-def pos(rgb: np.ndarray, fs: float = FS) -> np.ndarray:
-    """Método POS (Plane-Orthogonal-to-Skin, Wang y otros, 2017): RGB (N x 3) -> señal de pulso (N)."""
-    n = len(rgb)
-    largo = int(round(VENTANA_POS_S * fs))
-    h = np.zeros(n)
-    proy = np.array([[0.0, 1.0, -1.0], [-2.0, 1.0, 1.0]])
-    for i in range(0, n - largo + 1):
-        c = rgb[i:i + largo].T
-        media = c.mean(axis=1, keepdims=True)
-        if np.any(media <= 0):
-            continue
-        s = proy @ (c / media)
-        d1 = s[1].std()
-        hh = s[0] + (s[0].std() / d1 if d1 > 0 else 0.0) * s[1]
-        h[i:i + largo] += hh - hh.mean()
-    return h
-
-
-def pulso_espectral(h: np.ndarray, fs: float = FS) -> tuple[float, float]:
-    """Pico del espectro entre 0,7 y 3 Hz -> (lpm, SNR en dB)."""
-    n = len(h)
-    k = np.arange(n)
-    x = h - np.polyval(np.polyfit(k, h, 1), k)  # sin tendencia
-    x = x * np.hanning(n)
-    nfft = max(8192, 1 << int(np.ceil(np.log2(n * 8))))
-    p = np.abs(np.fft.rfft(x, nfft)) ** 2
-    f = np.fft.rfftfreq(nfft, 1 / fs)
-    banda = (f >= BANDA[0]) & (f <= BANDA[1])
-    f0 = float(f[banda][np.argmax(p[banda])])
-    senal = (np.abs(f - f0) <= 0.1) | (np.abs(f - 2 * f0) <= 0.2)
-    ps, pr = p[banda & senal].sum(), p[banda & ~senal].sum()
-    snr = 10 * np.log10(ps / pr) if pr > 0 else 30.0
-    return f0 * 60, float(snr)
-
-
-def calidad_de_snr(snr_db: float) -> float:
-    return float(np.clip((snr_db + 3) / 12, 0, 1))
-
-
-def estimar_pulso(t: np.ndarray, rgb: np.ndarray) -> dict | None:
-    """{lpm, snr_db, calidad, confiable} o None si hay menos de MIN_SEGUNDOS_PULSO de datos."""
-    u = remuestrear(np.asarray(t, float), np.asarray(rgb, float))
-    if len(u) < MIN_SEGUNDOS_PULSO * FS:
-        return None
-    lpm, snr = pulso_espectral(pos(u))
-    calidad = calidad_de_snr(snr)
-    return {"lpm": round(lpm, 1), "snr_db": round(snr, 2), "calidad": round(calidad, 2), "confiable": calidad >= CALIDAD_MIN}
 
 
 def cabeza_inclinada(t: np.ndarray, inclinacion) -> np.ndarray:
@@ -780,7 +706,7 @@ class Registro:
     """Lo que se juntó cuadro a cuadro durante una medición."""
 
     def __init__(self):
-        self.t, self.rgb, self.ear, self.mar, self.brillo, self.saturado = [], [], [], [], [], []
+        self.t, self.ear, self.mar, self.brillo, self.saturado = [], [], [], [], []
         self.inclinacion, self.mano, self.mandibula, self.lentes = [], [], [], []
         self.ear_der, self.ear_izq = [], []  # cada ojo por separado (para no contar un guiño como parpadeo)
         self.con_lentes = False   # se midió con lentes porque no se los quitaron a tiempo
@@ -794,7 +720,6 @@ class Registro:
         self.mano.append(mano)
         self.lentes.append(np.nan if lentes is None else lentes)
         if pts is None:
-            self.rgb.append([np.nan] * 3)
             self.ear.append(np.nan)
             self.ear_der.append(np.nan)
             self.ear_izq.append(np.nan)
@@ -810,10 +735,7 @@ class Registro:
         self.mandibula.append(mandibula(pts, z))
         self.inclinacion.append(inclinacion)
         piel = color_piel(cuadro_bgr, regiones(pts, cuadro_bgr.shape[1], cuadro_bgr.shape[0]))
-        if piel is None or mano == 1:  # con la mano en la boca, las mejillas pueden ser la mano: no cuenta para el pulso
-            self.rgb.append([np.nan] * 3)
-        else:
-            self.rgb.append(list(piel[0]))
+        if piel is not None and mano != 1:  # con la mano en la boca, las mejillas pueden ser la mano: no cuenta
             self.brillo.append(piel[1])
             self.saturado.append(piel[2])
 
@@ -823,19 +745,11 @@ class Registro:
             return ear_parpadeo(self.ear_der, self.ear_izq)
         return np.asarray(self.ear, float)
 
-    def pulso_reciente(self, segundos: float = VIVO_SEGUNDOS) -> dict | None:
-        if not self.t:
-            return None
-        t = np.asarray(self.t)
-        desde = np.searchsorted(t, t[-1] - segundos)
-        return estimar_pulso(t[desde:], np.asarray(self.rgb)[desde:])
-
     def resultado(self) -> dict:
         t = np.asarray(self.t, float)
         duracion = float(t[-1] - t[0]) if len(t) > 1 else 0.0
         cara_pct = float(np.isfinite(np.asarray(self.ear, float)).mean() * 100) if len(t) else 0.0
         fps = (len(t) - 1) / duracion if duracion > 0 else 0.0
-        pulso = estimar_pulso(t, np.asarray(self.rgb, float)) if len(t) else None
         n = len(t)
         manos = self.mano if len(self.mano) == n and not self.sin_manos else None
         mand = self.mandibula if len(self.mandibula) == n else None
@@ -864,14 +778,7 @@ class Registro:
                           "para el semáforo.")
         if self.sin_manos:
             avisos.append("No se pudo usar la detección de manos: los bostezos tapados con la mano no se cuentan.")
-        if pulso is None:
-            avisos.append("No hubo datos suficientes para el pulso.")
-        elif not pulso["confiable"]:
-            avisos.append(f"El pulso por cámara no es confiable (calidad {pulso['calidad']:.2f}): no se da el número.")
         return {
-            "pulso_rppg_lpm": pulso["lpm"] if pulso and pulso["confiable"] else None,
-            "calidad_rppg": pulso["calidad"] if pulso else None,
-            "snr_rppg_db": pulso["snr_db"] if pulso else None,
             "parpadeos_min": ojos["parpadeos_min"] if ojos else None,
             "parpadeos": ojos["parpadeos"] if ojos else None,
             "perclos": ojos["perclos"] if ojos else None,
@@ -886,7 +793,6 @@ class Registro:
             "duracion_s": round(duracion, 1),
             "brillo_piel": round(brillo, 1) if brillo is not None else None,
             "avisos": avisos,
-            "_pulso_crudo_lpm": pulso["lpm"] if pulso else None,  # solo para el historial y la validación
         }
 
 
@@ -1139,7 +1045,7 @@ class Manos:
 
 # ================================================================ vista previa
 def dibujar(cuadro, pts, conexiones, info: dict):
-    """Malla, regiones del pulso, ojos y un panel con el pulso, el EAR y el tiempo (texto sin tildes: OpenCV)."""
+    """Malla, zonas de luz, ojos y un panel con la cara, el EAR y el tiempo (texto sin tildes: OpenCV)."""
     import cv2
     capa = cuadro.copy()
     if pts is not None:
@@ -1168,15 +1074,7 @@ def dibujar(cuadro, pts, conexiones, info: dict):
         texto = f"LENTES {decision}   puntaje {puntaje:.1f} (umbral {LENTES_UMBRAL:g})"
         (tw, _), _ = cv2.getTextSize(texto, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
         cv2.putText(cuadro, texto, (w - tw - 14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.5, gris, 1, cv2.LINE_AA)
-    p = info.get("pulso")
-    if pts is None:
-        texto, color = "NO SE VE LA CARA", amarillo
-    elif p is None:
-        texto, color = "PULSO  calculando...", blanco
-    elif not p["confiable"]:
-        texto, color = f"PULSO  senal debil (calidad {p['calidad']:.2f})", amarillo
-    else:
-        texto, color = f"PULSO  {p['lpm']:.0f} lpm  (calidad {p['calidad']:.2f})", verde
+    texto, color = ("NO SE VE LA CARA", amarillo) if pts is None else ("CARA DETECTADA", verde)
     cv2.putText(cuadro, texto, (14, 60), cv2.FONT_HERSHEY_DUPLEX, 0.85, color, 1, cv2.LINE_AA)
     e = info.get("ear")
     ojos = f"EAR  {e:.2f}" if e is not None and np.isfinite(e) else "EAR  -"
@@ -1283,7 +1181,7 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
         inicio = t0               # desde aquí cuentan los `segundos`; se mueve al terminar la revisión de lentes
         fase = "revisando" if revisar_lentes and segundos is not None else "midiendo"
         revision, espera_desde = RevisionLentes(), 0.0
-        ultimo_aviso, vivo, ultimo_vivo, parpadeos, bostezos = -5.0, None, 0.0, None, None
+        ultimo_aviso, ultimo_vivo, parpadeos, bostezos = -5.0, 0.0, None, None
         n, manos_vistas, zona, zona_t = 0, [], None, -9.0
         explicados, ultimo_episodio = set(), None  # manos en la boca ya explicadas en la consola
         bocas_explicadas: set = set()               # aperturas de boca a la vista ya explicadas (explicar_bostezos)
@@ -1333,8 +1231,8 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
                     ultimo_aviso = t
                     al_avanzar(quedan)
             if ventana:
-                if midiendo and t - ultimo_vivo >= 1.0:  # el pulso, los parpadeos y los bostezos, una vez por segundo
-                    ultimo_vivo, vivo = t, registro.pulso_reciente()
+                if midiendo and t - ultimo_vivo >= 1.0:  # los parpadeos y los bostezos, una vez por segundo
+                    ultimo_vivo = t
                     tr = np.asarray(registro.t)
                     if t > CALIBRACION_S:  # también en --ver
                         ojos = analizar_ojos(tr, registro.ears_parpadeo(), registro.inclinacion)
@@ -1358,7 +1256,7 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
                 elif fase == "revisando":
                     mensaje = ["PREPARANDO...", "Mira a la camara"]
                 mar_ahora = mar(pts) if pts is not None else float("nan")
-                info = {"pulso": vivo if midiendo else None, "ear": ear_cara(pts) if pts is not None else None,
+                info = {"ear": ear_cara(pts) if pts is not None else None,
                         "parpadeos": parpadeos, "quedan": quedan, "bostezos": bostezos,
                         "boca_abierta": np.isfinite(mar_ahora) and mar_ahora >= BOSTEZO_MAR, "mano": mano == 1,
                         "manos": manos_vistas, "conexiones_mano": manos.conexiones if manos else None,
@@ -1396,56 +1294,26 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
 
 
 # ================================================================ flujo completo
-def guardar_historial(mensaje: dict, crudo):
+def guardar_historial(mensaje: dict):
     CARPETA_DATOS.mkdir(parents=True, exist_ok=True)
     with open(HISTORIAL, "a", encoding="utf-8") as f:
-        f.write(json.dumps({**mensaje, "pulso_crudo_lpm": crudo}, ensure_ascii=False) + "\n")
-
-
-def guardar_validacion(medicion: dict, referencia: float):
-    """Una fila de datos/vision/validacion.csv: el pulso estimado junto al medido con otro aparato."""
-    crudo = medicion.get("pulso_crudo_lpm")
-    fila = {
-        "fecha": medicion.get("ts") or datetime.now().replace(microsecond=0).isoformat(),
-        "persona": medicion.get("persona"), "sesion": medicion.get("sesion"),
-        "pulso_referencia_lpm": referencia, "pulso_rppg_lpm": medicion.get("pulso_rppg_lpm"),
-        "pulso_crudo_lpm": crudo, "error_lpm": round(crudo - referencia, 1) if crudo is not None else None,
-        "calidad_rppg": medicion.get("calidad_rppg"), "snr_rppg_db": medicion.get("snr_rppg_db"),
-        "fps": medicion.get("fps"), "cara_detectada_pct": medicion.get("cara_detectada_pct"),
-        "duracion_s": medicion.get("duracion_s"), "avisos": " | ".join(medicion.get("avisos") or []),
-    }
-    nuevo = not VALIDACION.exists()
-    CARPETA_DATOS.mkdir(parents=True, exist_ok=True)
-    with open(VALIDACION, "a", encoding="utf-8-sig" if nuevo else "utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(fila))
-        if nuevo:
-            w.writeheader()
-        w.writerow(fila)
-    print(f"Validación guardada en {VALIDACION}: estimado {crudo} lpm, referencia {referencia} lpm, "
-          f"error {fila['error_lpm']} lpm (calidad {fila['calidad_rppg']}).")
+        f.write(json.dumps(mensaje, ensure_ascii=False) + "\n")
 
 
 def guardar_trazas(registro: Registro, sesion: str):
-    """Series numéricas de la medición (sin imágenes): hora, RGB de la piel, EAR, MAR, mano en la boca, mandíbula y
+    """Series numéricas de la medición (sin imágenes): hora, EAR, MAR, mano en la boca, mandíbula y
     puntaje de lentes por cuadro, para validar y ajustar los umbrales después. datos/vision/trazas/{sesion}.npz"""
     carpeta = CARPETA_DATOS / "trazas"
     carpeta.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(carpeta / f"{sesion}.npz", t=np.asarray(registro.t), rgb=np.asarray(registro.rgb, float),
+    np.savez_compressed(carpeta / f"{sesion}.npz", t=np.asarray(registro.t),
                         ear=np.asarray(registro.ear, float), ear_der=np.asarray(registro.ear_der, float),
                         ear_izq=np.asarray(registro.ear_izq, float), mar=np.asarray(registro.mar, float),
                         inclinacion=np.asarray(registro.inclinacion, float), mano=np.asarray(registro.mano, float),
                         mandibula=np.asarray(registro.mandibula, float), lentes=np.asarray(registro.lentes, float))
 
 
-def ultima_medicion() -> dict | None:
-    if not HISTORIAL.exists():
-        return None
-    lineas = [x for x in HISTORIAL.read_text(encoding="utf-8").splitlines() if x.strip()]
-    return json.loads(lineas[-1]) if lineas else None
-
-
 def evaluar(persona: str, segundos: float, linea_base: bool, cli: ClienteMQTT | None, sesion: str = "",
-            ventana: bool = True, referencia: float | None = None, camara: str | None = None) -> dict | None:
+            ventana: bool = True, camara: str | None = None) -> dict | None:
     marca = datetime.now().strftime("%Y%m%d-%H%M%S")
     sesion = sesion or marca
 
@@ -1466,18 +1334,14 @@ def evaluar(persona: str, segundos: float, linea_base: bool, cli: ClienteMQTT | 
         print(f"[vision] ERROR: {e}")
         estado(estado="error", motivo=str(e))
         return None
-    crudo = r.pop("_pulso_crudo_lpm")
     mensaje = {"persona": persona, "sesion": sesion, "linea_base": linea_base, **r,
                "ts": datetime.now().replace(microsecond=0).isoformat()}
-    guardar_historial(mensaje, crudo)
+    guardar_historial(mensaje)
     guardar_trazas(registro, sesion)
     print(json.dumps(mensaje, indent=2, ensure_ascii=False))
-    print(f"[vision] Pulso estimado (aunque sea dudoso): {crudo} lpm")
     if cli:
         cli.publicar(tema(persona, "vision"), mensaje)
     estado(estado="listo")
-    if referencia is not None:
-        guardar_validacion({**mensaje, "pulso_crudo_lpm": crudo}, referencia)
     return mensaje
 
 
@@ -1500,13 +1364,12 @@ def modo_servicio(cli: ClienteMQTT, camara: str | None = None):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Pulso sin contacto, parpadeos y PERCLOS por cámara")
+    ap = argparse.ArgumentParser(description="Parpadeos, PERCLOS y bostezos por cámara")
     ap.add_argument("--listar", action="store_true", help="lista las cámaras")
     ap.add_argument("--ver", action="store_true", help="vista previa en vivo, sin medir")
     ap.add_argument("--persona", help="hace una medición de esta persona")
     ap.add_argument("--segundos", type=float, default=config.get_int("VISION_SEGUNDOS", 60))
     ap.add_argument("--linea-base", action="store_true", help="marca esta medición como línea base")
-    ap.add_argument("--referencia", type=float, help="pulso medido con otro aparato (lpm), para la validación")
     ap.add_argument("--servicio", action="store_true", help="espera órdenes por MQTT")
     ap.add_argument("--camara", help="índice o URL (por defecto CAMARA de config.env)")
     ap.add_argument("--sin-ventana", action="store_true", help="mide sin abrir la ventana")
@@ -1532,13 +1395,6 @@ def main():
             guardar_trazas(registro, nombre)
             print(f"[vision] Series de la vista previa (sin imágenes): {CARPETA_DATOS / 'trazas' / (nombre + '.npz')}")
         return
-    if args.referencia is not None and not args.persona:
-        ultima = ultima_medicion()
-        if not ultima:
-            print("No hay mediciones en datos/vision/historial.jsonl. Midan primero con --persona.")
-            return
-        guardar_validacion(ultima, args.referencia)
-        return
     if not (args.servicio or args.persona):
         ap.print_help()
         return
@@ -1554,7 +1410,7 @@ def main():
         modo_servicio(cli, args.camara)
     else:
         evaluar(args.persona.lower(), args.segundos, args.linea_base, cli, ventana=not args.sin_ventana,
-                referencia=args.referencia, camara=args.camara)
+                camara=args.camara)
         if cli:
             time.sleep(0.5)  # dar tiempo a que salga el mensaje
             cli.cerrar()

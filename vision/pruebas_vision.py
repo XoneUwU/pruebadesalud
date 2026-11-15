@@ -2,8 +2,6 @@
 
   python vision/pruebas_vision.py
 
-- Un pulso de 72 lpm metido en el RGB de la piel (con horas irregulares, cambios de luz, ruido y huecos sin cara)
-  tiene que dar 72 ± 3 lpm; también 55 y 110. Solo ruido tiene que dar calidad baja (sin número).
 - Un EAR con parpadeos conocidos tiene que contarlos bien (los de 1 cuadro no cuentan) y dar el PERCLOS esperado.
 - Bostezos tapados con la mano: boca abierta y ojos entrecerrados antes de la mano, o mandíbula que baja con la mano
   encima; la tos, la mano quieta y la mano en el mentón al hablar no cuentan; uno visto y tapado cuenta una vez.
@@ -11,7 +9,7 @@
   falso positivo real) no son bostezos; tres bostezos simulados, cada señal por separado, tapados y vistos y
   tapados sí, una vez; los parpadeos no cambian, el contador en vivo no baja y la cara perdida no cuenta.
 - Lentes: el puente de la montura sube el puntaje (también con la cabeza ladeada); piel lisa o una sombra suave no.
-- Avisos de luz, cara, fps y pulso; regiones de la cara; la ventana se dibuja sin errores.
+- Avisos de luz, cara y fps (ya no hay pulso por cámara); regiones de la cara; la ventana se dibuja sin errores.
 Muestra OK o FALLA por cada caso y termina con código 1 si alguno falla.
 """
 import sys
@@ -42,21 +40,6 @@ def horas(segundos=60.0, fps=30.0, semilla=0):
     dt = np.clip(1 / fps + rng.normal(0, 0.004, int(segundos * fps * 1.1)), 0.02, None)
     t = np.cumsum(dt)
     return t[t <= segundos]
-
-
-def piel(lpm, segundos=60.0, semilla=0, amplitud=0.004, ruido=0.5):
-    """RGB de la piel con un pulso de `lpm` (firma del volumen sanguíneo), cambios de luz, ruido y huecos."""
-    rng = np.random.default_rng(semilla + 1)
-    t = horas(segundos, semilla=semilla)
-    f = lpm / 60
-    pulso = np.sin(2 * np.pi * f * t) + 0.3 * np.sin(2 * np.pi * 2 * f * t + 0.6)
-    luz = 1 + 0.06 * np.sin(2 * np.pi * 0.07 * t) + 0.02 * np.sin(2 * np.pi * 0.4 * t + 1)
-    firma = np.array([0.33, 0.77, 0.53])
-    rgb = np.array([180.0, 125.0, 100.0]) * luz[:, None] * (1 + amplitud * firma * pulso[:, None])
-    rgb += rng.normal(0, ruido, rgb.shape)
-    for inicio in (300, 1100):  # dos huecos de ~1 s sin cara
-        rgb[inicio:inicio + 30] = np.nan
-    return t, rgb
 
 
 # ---------------------------------------------------------------- bostezos: regresión de falsos positivos
@@ -114,7 +97,7 @@ def parpadear(t, ears, horas):
 
 def registro_de(t, mares, ears, manos, mand):
     reg = v.Registro()
-    reg.t, reg.rgb, reg.mar = list(t), [[np.nan] * 3] * len(t), list(mares)
+    reg.t, reg.mar = list(t), list(mares)
     reg.ear, reg.ear_der, reg.ear_izq = list(ears), list(ears), list(ears)
     reg.mano, reg.mandibula = list(manos), list(mand)
     return reg
@@ -293,27 +276,7 @@ def regresion_bostezos():
 
 
 def main() -> int:
-    print("--- pulso (rPPG, POS) ---")
-    # Ruido fuerte (0,5 niveles por cuadro, unas 10 veces más que el del promedio de una región real): la
-    # frecuencia tiene que salir bien aunque la calidad sea baja.
-    for lpm, semilla in ((72, 1), (55, 2), (110, 3)):
-        t, rgb = piel(lpm, semilla=semilla)
-        r = v.estimar_pulso(t, rgb)
-        revisar(r is not None and abs(r["lpm"] - lpm) <= 3,
-                f"con mucho ruido: pulso de {lpm} lpm -> {r['lpm'] if r else None} lpm "
-                f"(calidad {r['calidad'] if r else None}, SNR {r['snr_db'] if r else None} dB)")
-    # Ruido realista: además, la calidad alcanza para dar el número.
-    t, rgb = piel(72, semilla=6, ruido=0.12)
-    r = v.estimar_pulso(t, rgb)
-    revisar(r is not None and abs(r["lpm"] - 72) <= 3 and r["confiable"],
-            f"con ruido realista: 72 lpm -> {r['lpm'] if r else None} lpm, calidad {r['calidad'] if r else None} "
-            f"(SNR {r['snr_db'] if r else None} dB): se da el número")
-    t, rgb = piel(72, semilla=4, amplitud=0.0, ruido=1.5)  # solo ruido y luz
-    r = v.estimar_pulso(t, rgb)
-    revisar(r is not None and not r["confiable"], f"solo ruido -> calidad {r['calidad'] if r else None}: sin número")
-    revisar(v.estimar_pulso(*piel(72, segundos=4)) is None, "menos de 6 s de datos -> no estima")
-
-    print("\n--- ojos (EAR) ---")
+    print("--- ojos (EAR) ---")
     p1, p4 = np.array([0.0, 0.0]), np.array([10.0, 0.0])
     ojo = np.array([p1, [3, -3], [7, -3], p4, [7, 3], [3, 3]], float)
     revisar(abs(v.ear(ojo) - 0.6) < 1e-9, f"EAR de un ojo de geometría conocida = {v.ear(ojo):.3f} (esperado 0,600)")
@@ -359,7 +322,7 @@ def main() -> int:
     for i in (450, 1050, 1650):              # 3 parpadeos de verdad: los dos ojos
         der[i:i + 4], izq[i:i + 4] = 0.06, 0.06
     reg = v.Registro()
-    reg.t, reg.rgb = list(t3), [[np.nan] * 3] * len(t3)
+    reg.t = list(t3)
     reg.ear_der, reg.ear_izq = list(der), list(izq)
     reg.ear, reg.mar = list((der + izq) / 2), [0.05] * len(t3)
     res = reg.resultado()
@@ -388,7 +351,6 @@ def main() -> int:
     revisar(abs(v.mar(pts) - 26 / 60) < 1e-9, f"MAR de una boca de geometría conocida = {v.mar(pts):.3f} (esperado 0,433)")
     reg = v.Registro()  # al bostezar se achican los ojos: no tiene que contar como parpadeo
     reg.t = list(t)
-    reg.rgb = [[np.nan] * 3] * len(t)
     reg.mar = list(mares)
     ears_b = 0.30 + rng.normal(0, 0.005, len(t))
     for inicio in (30.0, 45.0):
@@ -523,7 +485,7 @@ def main() -> int:
             f"girar la cabeza 30° o inclinarla 20°: la mandíbula plana cambia {cambios[0][0]:+.0%} y {cambios[1][0]:+.0%} "
             f"(parecería un bostezo o lo taparía); en 3D, {cambios[0][1]:+.1%} y {cambios[1][1]:+.1%}")
     reg = v.Registro()
-    reg.t, reg.rgb, reg.mar, reg.ear = list(t), [[np.nan] * 3] * len(t), list(mares), list(ears_m)
+    reg.t, reg.mar, reg.ear = list(t), list(mares), list(ears_m)
     reg.mano, reg.mandibula = list(manos), list(mand)
     res = reg.resultado()
     revisar(res["bostezos"] == 7 and res["bostezos_tapados"] == 6 and res["parpadeos"] == 1,
@@ -534,16 +496,15 @@ def main() -> int:
 
     print("\n--- avisos ---")
     reg = v.Registro()
-    t, rgb = piel(72, semilla=5, amplitud=0.0, ruido=1.5)
-    t10 = t[::3]  # ~10 cuadros por segundo
-    reg.t, reg.rgb = list(t10), [list(x) for x in rgb[::3]]
+    t10 = horas(60.0, semilla=5)[::3]  # ~10 cuadros por segundo
+    reg.t = list(t10)
     reg.ear = [np.nan if i % 3 == 0 else 0.3 for i in range(len(t10))]  # ~33 % sin cara
     reg.brillo, reg.saturado = [40.0] * len(t10), [0.0] * len(t10)
     res = reg.resultado()
     textos = " ".join(res["avisos"])
-    revisar(all(x in textos for x in ("Poca luz", "No se vio la cara", "cuadros por segundo", "no es confiable"))
-            and res["pulso_rppg_lpm"] is None,
-            f"poca luz, cara perdida, pocos fps y pulso dudoso: {len(res['avisos'])} avisos, sin número de pulso")
+    revisar(all(x in textos for x in ("Poca luz", "No se vio la cara", "cuadros por segundo"))
+            and "pulso" not in textos.lower() and not any("rppg" in k or "pulso" in k for k in res),
+            f"poca luz, cara perdida y pocos fps: {len(res['avisos'])} avisos; sin pulso por cámara en el resultado")
     reg.brillo, reg.saturado = [230.0] * len(t10), [0.2] * len(t10)
     revisar("Demasiada luz" in " ".join(reg.resultado()["avisos"]), "demasiada luz o reflejos")
 
@@ -645,14 +606,14 @@ def main() -> int:
     conexiones = np.array([(c.start, c.end) for c in mpv.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION])
     cuadro = np.full((480, 640, 3), 90, np.uint8)
     try:
-        info = {"pulso": {"lpm": 72.0, "calidad": 0.8, "confiable": True}, "ear": 0.29, "parpadeos": 4,
+        info = {"ear": 0.29, "parpadeos": 4,
                 "quedan": 42, "progreso": 0.3, "avisos": ["POCA LUZ: acerquen una lampara de frente"]}
         v.dibujar(cuadro, pts, conexiones, info)
-        v.dibujar(cuadro, None, conexiones, {"pulso": None, "ear": float("nan"), "quedan": None})
+        v.dibujar(cuadro, None, conexiones, {"ear": float("nan"), "quedan": None})
         pts[1], pts[152], pts[168], pts[6] = (320, 290), (320, 400), (320, 215), (320, 240)
         mano = np.column_stack([np.linspace(270, 370, 21), np.linspace(300, 350, 21)])
         conexiones_mano = [(c.start, c.end) for c in mpv.HandLandmarksConnections.HAND_CONNECTIONS]
-        v.dibujar(cuadro, pts, conexiones, {"pulso": None, "ear": 0.2, "quedan": None, "mano": True, "manos": [mano],
+        v.dibujar(cuadro, pts, conexiones, {"ear": 0.2, "quedan": None, "mano": True, "manos": [mano],
                                             "conexiones_mano": conexiones_mano, "lentes": (6.3, 0.9),
                                             "mensaje": ["SE VEN LENTES", "Quitatelos para continuar con la medicion",
                                                         "(si no, se mide igual en 25 s)"]})
