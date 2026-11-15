@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Becspace · Estación de monitoreo</title>
+<link rel="stylesheet" href="_ds/nocturne-1a0b704c-0dc5-4075-ad8d-b7c4f9f1344f/styles.css">
+<script src="_ds/nocturne-1a0b704c-0dc5-4075-ad8d-b7c4f9f1344f/_ds_bundle.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<script src="logica.js"></script>
+<script src="datos-demo.js"></script>
+<script src="servicios.js"></script>
+<style>
+body{margin:0;background:var(--color-bg);transition:background-color .4s,color .4s;color:var(--color-text);font-family:var(--font-body);font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:var(--color-accent-300)}a:hover{color:var(--color-accent-200)}
+button{font:inherit;color:inherit}
+.ph{line-height:1}
+@keyframes pulso{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn{transition:background-color .15s,border-color .15s,color .15s,transform .1s}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn-primary{background:var(--color-accent-800);color:var(--color-accent-100);border-color:var(--color-accent-500)}
+.btn-primary:hover:not(:disabled){background:var(--color-accent-700)}
+.btn-primary:active:not(:disabled){background:var(--color-accent-600)}
+.btn-secondary{background:var(--color-neutral-800);color:var(--color-text);border-color:var(--color-neutral-700)}
+.btn-secondary:hover:not(:disabled){background:var(--color-neutral-700)}
+.btn-secondary:active:not(:disabled){background:var(--color-neutral-600)}
+.btn-ghost{background:var(--color-accent-900);color:var(--color-accent-300);border-color:var(--color-accent-800);padding-inline:10px}
+.btn-ghost:hover:not(:disabled){background:var(--color-accent-800)}
+.btn-ghost:active:not(:disabled){background:var(--color-accent-700)}
+@keyframes barrido{from{transform:translateY(-100%)}to{transform:translateY(100%)}}
+@keyframes brillo{0%{background-position:-200px 0}100%{background-position:200px 0}}
+</style>
+</helmet>
+<canvas ref="{{ bgRef }}" aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none"></canvas>
+<div style="position:relative;z-index:1;display:flex;min-height:100vh;flex-direction:{{ shellDir }}">
+  <nav aria-label="Navegación principal" style="flex:none;display:flex;flex-direction:{{ navDir }};gap:4px;padding:{{ navPad }};width:{{ navW }};background:var(--nav-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);position:sticky;top:0;z-index:20;overflow-x:auto;box-shadow:{{ navEdge }};height:{{ navH }}">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 8px 26px;flex:none">
+      <div style="display:flex;flex-direction:column;gap:10px;padding:6px 0 4px">
+        <div style="width:196px"><dc-import name="Becspace Logo" variant="compact" tone="{{ logoTone }}" hint-size="196px,97px"></dc-import></div>
+        <span style="padding-left:6px;margin-top:0;font-size:9.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Estación de monitoreo</span>
+      </div>
+    </div>
+    <sc-for list="{{ nav }}" as="n" hint-placeholder-count="6">
+      <button type="button" onClick="{{ n.go }}" aria-current="{{ n.current }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:0;border-radius:var(--radius-md);background:{{ n.bg }};color:{{ n.fg }};box-shadow:{{ n.bar }};cursor:pointer;text-align:left;font-size:14px;white-space:nowrap;flex:none" style-hover="background:color-mix(in srgb, var(--color-text) 6%, transparent)">
+        <i class="ph {{ n.icon }}" style="font-size:18px"></i><span>{{ n.label }}</span>
+      </button>
+    </sc-for>
+    <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:auto;padding:12px 10px;display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--color-neutral-400)">
+        <div style="display:flex;align-items:center;gap:8px"><i class="ph ph-broadcast" style="font-size:15px;color:var(--color-neutral-400)"></i><span>Broker sin conectar</span></div>
+        <div style="display:flex;align-items:center;gap:8px"><i class="ph ph-flask" style="font-size:15px;color:var(--color-accent-300)"></i><span>Datos demostrativos</span></div>
+      </div>
+    </sc-if>
+  </nav>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 24px;background:linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent) no-repeat bottom / 100% 1px;background-color:color-mix(in srgb, var(--color-bg) 35%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)">
+      <div style="display:flex;flex-direction:column;gap:2px;margin-right:auto;min-width:0">
+        <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">{{ kicker }}</span>
+        <h1 style="font-size:22px;margin:0">{{ title }}</h1>
+      </div>
+      <span title="Los datos de esta pantalla son demostrativos: no vienen de sensores" style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border:1px dashed var(--color-accent-500);border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.1em;color:var(--color-accent-300)"><i class="ph ph-flask"></i>DEMO</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;box-shadow:inset 0 0 0 1px var(--color-neutral-700);font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.08em;color:var(--color-neutral-300)"><i class="ph ph-plugs"></i>BROKER · SIN CONECTAR</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--color-neutral-300)"><i class="ph ph-user-circle" style="font-size:18px"></i>{{ personaNombre }}</span>
+    </header>
+    <main style="flex:1;padding:24px;display:flex;flex-direction:column;gap:20px;max-width:1360px;width:100%;box-sizing:border-box" ref="{{ mainRef }}">
+
+<!-- ==================== PANEL ==================== -->
+<sc-if value="{{ isDash }}" hint-placeholder-val="{{ true }}">
+  <section style="position:relative;overflow:hidden;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:20px;padding:22px;border-radius:var(--radius-lg);background:linear-gradient(135deg, var(--color-surface), color-mix(in srgb, var(--color-surface) 40%, var(--color-bg)));box-shadow:var(--shadow-sm)">
+    <svg aria-hidden="true" viewBox="0 0 600 300" style="position:absolute;right:-120px;top:-90px;width:560px;opacity:.5;pointer-events:none"><ellipse cx="300" cy="150" rx="280" ry="90" fill="none" stroke="var(--color-accent-800)" stroke-width="1" transform="rotate(-14 300 150)"></ellipse><ellipse cx="300" cy="150" rx="200" ry="60" fill="none" stroke="var(--color-neutral-800)" stroke-width="1" transform="rotate(-14 300 150)"></ellipse><circle cx="528" cy="88" r="3" fill="var(--color-accent)"></circle></svg>
+    <div style="position:relative;display:flex;flex-direction:column;gap:12px">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-accent-300);font-family:ui-monospace,Menlo,monospace">Recomendación · {{ tareaTitulo }}</span>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:6px;background:{{ rec.st.bg }};color:{{ rec.st.fg }};font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:600;letter-spacing:0.08em"><i class="ph-fill {{ rec.st.icon }}" style="font-size:16px"></i>{{ rec.st.word }}</span>
+        <h2 style="font-size:30px;margin:0">{{ rec.nombre }}</h2>
+      </div>
+      <p style="margin:0;font-size:15px;line-height:1.55;color:var(--color-neutral-200);max-width:60ch;text-wrap:pretty">{{ rec.texto }}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+        <button class="btn btn-primary" type="button" onClick="{{ goEval }}" style="padding:9px 16px"><i class="ph ph-play"></i>Nueva evaluación</button>
+        <button class="btn btn-secondary" type="button" onClick="{{ goRes }}" style="padding:9px 16px">Ver último resultado</button>
+      </div>
+    </div>
+    <div style="position:relative;display:flex;flex-direction:column;gap:10px">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Tarea a asignar</span>
+      <div class="seg" role="radiogroup" aria-label="Tarea" style="flex-wrap:wrap">
+        <sc-for list="{{ tareas }}" as="t" hint-placeholder-count="3">
+          <label class="seg-opt"><input type="radio" name="tarea-dash" checked="{{ t.on }}" onChange="{{ t.pick }}"><span>{{ t.label }}</span></label>
+        </sc-for>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:6px">
+        <sc-for list="{{ conteo }}" as="c" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-bg) 55%, transparent)">
+            <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:{{ c.fg }}"><i class="ph-fill {{ c.icon }}"></i>{{ c.word }}</span>
+            <span style="font-family:ui-monospace,Menlo,monospace;font-size:24px;font-variant-numeric:tabular-nums">{{ c.n }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start">
+    <section style="display:flex;flex-direction:column;gap:10px;grid-column:span {{ crewSpan }}">
+      <div style="display:flex;align-items:baseline;gap:10px"><h2 style="font-size:17px;margin:0">Tripulación</h2><span style="font-size:12px;color:var(--color-neutral-400)">Última evaluación de cada integrante, de hoy</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ crew }}" as="m" hint-placeholder-count="5">
+          <button type="button" onClick="{{ m.open }}" style="display:flex;flex-direction:column;gap:8px;padding:12px 16px;border:0;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 3px 0 0 {{ m.st.fg }}, inset 0 0 0 1px var(--card-edge);text-align:left;cursor:pointer;transition:transform .2s, background-color .2s;width:100%;min-width:0" style-hover="background:color-mix(in srgb, var(--color-surface) 80%, var(--color-neutral-700));transform:translateX(3px)">
+            <span style="display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;width:100%">
+              <span style="display:flex;align-items:center;gap:7px;font-size:16px;font-weight:500"><i class="ph-fill {{ m.icon }}" style="font-size:18px;color:var(--color-accent-300)"></i>{{ m.nombre }}</span>
+              <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-neutral-400)">{{ m.hora }}</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:5px;background:{{ m.st.bg }};color:{{ m.st.fg }};font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:600;letter-spacing:0.06em;white-space:nowrap"><i class="ph-fill {{ m.st.icon }}"></i>{{ m.st.word }}</span>
+              <span style="margin-left:auto;display:flex;gap:16px;flex-wrap:wrap;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--color-neutral-200);font-variant-numeric:tabular-nums">
+                <span title="Pulso">{{ m.pulso }}<span style="color:var(--color-neutral-500);font-size:11px"> lpm</span></span>
+                <span title="Somnolencia KSS">KSS {{ m.kss }}</span>
+                <span title="Mediana PVT">{{ m.pvt }}<span style="color:var(--color-neutral-500);font-size:11px"> ms</span></span>
+              </span>
+            </span>
+            <span style="font-size:13px;line-height:1.45;color:var(--color-neutral-300);text-wrap:pretty;max-width:80ch">{{ m.motivo }}</span>
+          </button>
+        </sc-for>
+      </div>
+    </section>
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <section style="display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
+        <div style="display:flex;align-items:center;gap:8px"><h2 style="font-size:15px;margin:0;margin-right:auto">Módulos</h2><span style="font-size:12px;color:var(--color-neutral-400)">{{ modActivos }}</span></div>
+        <sc-for list="{{ modulos }}" as="mo" hint-placeholder-count="5">
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0">
+            <i class="ph-fill {{ mo.icon }}" style="font-size:16px;margin-top:1px;color:{{ mo.fg }}"></i>
+            <div style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1">
+              <span style="font-size:13px"><b style="font-weight:500">{{ mo.nombre }}</b> <span style="color:var(--color-neutral-400)">{{ mo.estado }}</span></span>
+              <sc-if value="{{ mo.off }}" hint-placeholder-val="{{ false }}"><code style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-neutral-500);word-break:break-all">{{ mo.comando }}</code></sc-if>
+            </div>
+            <sc-if value="{{ mo.provisional }}" hint-placeholder-val="{{ false }}"><span class="tag tag-neutral" style="font-family:ui-monospace,Menlo,monospace;font-size:10px">PROVISIONAL</span></sc-if>
+          </div>
+        </sc-for>
+      </section>
+      <section role="status" style="display:flex;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:{{ stAm.bg }};box-shadow:inset 0 0 0 1px color-mix(in srgb, {{ stAm.fg }} 40%, transparent)">
+        <i class="ph ph-warning" style="font-size:20px;color:{{ stAm.fg }};flex:none"></i>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <b style="font-weight:500;color:{{ stAm.fg }}">Oxígeno más bajo de lo habitual en Bri</b>
+          <span style="font-size:13px;color:var(--color-neutral-200)">Es un aviso, no cambia el color. Repetir la medición con el sensor antes de la tarea.</span>
+        </div>
+      </section>
+      <section style="display:flex;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge), var(--shadow-sm)">
+        <i class="ph ph-info" style="font-size:20px;color:var(--color-neutral-400);flex:none"></i>
+        <span style="font-size:13px;color:var(--color-neutral-300);text-wrap:pretty">Indicadores orientativos para apoyar la decisión. No es un diagnóstico médico ni una certificación de aptitud.</span>
+      </section>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ==================== EVALUACIÓN ==================== -->
+<sc-if value="{{ isEval }}" hint-placeholder-val="{{ false }}">
+  <ol aria-label="Pasos de la evaluación" style="display:flex;gap:4px;margin:0;padding:0;list-style:none;overflow-x:auto;scrollbar-width:none">
+    <sc-for list="{{ pasos }}" as="p" hint-placeholder-count="8">
+      <li style="flex:1 0 auto;display:flex;align-items:center;gap:7px;padding:8px 10px 0;border-top:2px solid {{ p.line }};color:{{ p.fg }};font-size:12px;white-space:nowrap" aria-current="{{ p.current }}">
+        <i class="ph {{ p.icon }}" style="font-size:15px"></i><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px">{{ p.n }}</span><span style="display:{{ p.labelDisp }}">{{ p.label }}</span>
+      </li>
+    </sc-for>
+  </ol>
+
+  <sc-if value="{{ pInicio }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:24px;align-items:start">
+      <div style="display:flex;flex-direction:column;gap:18px">
+        <div style="display:flex;flex-direction:column;gap:6px"><h2 style="font-size:26px;margin:0">Nueva evaluación</h2><p style="margin:0;color:var(--color-neutral-300);max-width:56ch">Elige quién se evalúa y para qué tarea. Luego el sistema mide con el sensor, la cámara y la voz, y hace dos pruebas cortas.</p></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">¿Quién se evalúa?</span>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px">
+            <sc-for list="{{ personas }}" as="pe" hint-placeholder-count="5">
+              <button type="button" aria-pressed="{{ pe.on }}" onClick="{{ pe.pick }}" style="min-height:56px;padding:10px;border:0;border-radius:var(--radius-md);background:{{ pe.bg }};box-shadow:{{ pe.ring }};font-size:17px;font-weight:500;cursor:pointer" style-hover="box-shadow:inset 0 0 0 1px var(--color-accent)"><span style="display:inline-flex;align-items:center;gap:8px"><i class="ph-fill {{ pe.icon }}" style="font-size:20px;color:var(--color-accent-300)"></i>{{ pe.label }}</span></button>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Tarea</span>
+          <div class="seg" role="radiogroup" aria-label="Tarea" style="flex-wrap:wrap;align-self:flex-start">
+            <sc-for list="{{ tareas }}" as="t" hint-placeholder-count="3">
+              <label class="seg-opt"><input type="radio" name="tarea-ev" checked="{{ t.on }}" onChange="{{ t.pick }}"><span>{{ t.label }}</span></label>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ opciones }}" as="o" hint-placeholder-count="3">
+            <label style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-surface);cursor:pointer;box-shadow:inset 0 0 0 1px var(--card-edge)">
+              <input type="checkbox" checked="{{ o.on }}" onChange="{{ o.toggle }}" style="width:18px;height:18px;margin:1px 0 0;accent-color:var(--color-accent);flex:none">
+              <span style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:500">{{ o.label }}</span><span style="font-size:12px;color:var(--color-neutral-400)">{{ o.help }}</span></span>
+            </label>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
+        <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Verificación de condiciones</span>
+        <sc-for list="{{ checks }}" as="ck" hint-placeholder-count="6">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <i class="ph-fill {{ ck.st.icon }}" style="font-size:17px;color:{{ ck.st.fg }};margin-top:1px"></i>
+            <div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:13px"><b style="font-weight:500">{{ ck.label }}</b> <span style="color:{{ ck.st.fg }}">{{ ck.estado }}</span></span><span style="font-size:12px;color:var(--color-neutral-400)">{{ ck.help }}</span></div>
+          </div>
+        </sc-for>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-primary" type="button" onClick="{{ next }}" style="padding:9px 18px">Comenzar<i class="ph ph-arrow-right"></i></button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ pDisp }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:6px"><h2 style="font-size:26px;margin:0">Dispositivo</h2><p style="margin:0;color:var(--color-neutral-300)">Colócate el sensor en el dedo y quédate sin moverte.</p></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px">
+      <sc-for list="{{ dispCards }}" as="d" hint-placeholder-count="4">
+        <div style="display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
+          <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-300)"><i class="ph {{ d.icon }}" style="font-size:16px;color:var(--color-accent)"></i>{{ d.label }}<span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--color-accent-300)">DEMO</span></span>
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:40px;line-height:1.05;font-variant-numeric:tabular-nums">{{ d.valor }}</span>
+          <span style="font-size:12px;color:var(--color-neutral-400)">{{ d.unidad }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <i class="ph-fill ph-heart" style="font-size:17px;color:var(--st-rojo);transform:scale({{ beatScale }});transition:transform .12s ease-out"></i>
+        <span style="font-size:13px;font-weight:500">Pulso en tiempo real</span>
+        <span style="font-size:12px;color:var(--color-neutral-400)">fotopletismografía · sensor del dedo</span>
+        <span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:15px;font-variant-numeric:tabular-nums">{{ pulsoBpm }}<span style="font-size:11px;color:var(--color-neutral-400)"> lpm</span></span>
+        <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--color-accent-300)">DEMO</span>
+      </div>
+      <div style="position:relative;border-radius:var(--radius-sm);overflow:hidden;background:color-mix(in srgb, var(--color-bg) 60%, var(--ink))">
+        <div style="position:absolute;inset:0;background-image:linear-gradient(color-mix(in srgb, var(--color-accent) 8%, transparent) 1px, transparent 1px),linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 8%, transparent) 1px, transparent 1px);background-size:100% 25%, 12.5% 100%"></div>
+        <svg viewBox="0 0 600 120" style="position:relative;width:100%;height:auto;display:block" role="img" aria-label="Onda del pulso en tiempo real">
+          <polyline points="{{ ppgPts }}" style="fill:none;stroke:var(--color-accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;filter:drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 55%, transparent))"></polyline>
+          <circle cx="{{ ppgHead.x }}" cy="{{ ppgHead.y }}" r="4" style="fill:var(--color-accent-200)"></circle>
+        </svg>
+      </div>
+      <span style="font-size:12px;color:var(--color-neutral-400)">Cada pico es un latido. El tiempo entre picos alimenta la HRV. Cuadrícula de 1 segundo.</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--color-neutral-200);padding:12px 16px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge), var(--shadow-sm)" aria-live="polite"><i class="ph-fill ph-check-circle" style="color:{{ stVe.fg }};font-size:18px"></i>Dedo detectado · calidad {{ dispCalidad }} · lecturas cada segundo</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" type="button" onClick="{{ prev }}" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-secondary" type="button" onClick="{{ next }}" style="padding:9px 16px">Omitir</button>
+      <button class="btn btn-primary" type="button" onClick="{{ next }}" style="padding:9px 18px">Continuar<i class="ph ph-arrow-right"></i></button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ pCam }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:6px;margin-right:auto"><h2 style="font-size:26px;margin:0">Cámara y reacción</h2><p style="margin:0;color:var(--color-neutral-300);max-width:64ch;text-wrap:pretty">Las dos pruebas van juntas durante 1 minuto. Mira la pantalla de frente: la cámara mide parpadeos, ojos cerrados, bostezos y pulso mientras respondes a los contadores con la barra espaciadora o tocando el recuadro.</p></div>
+      <div class="seg" role="radiogroup" aria-label="Vista de la cámara">
+        <label class="seg-opt"><input type="radio" name="vista" checked="{{ vistaVentana }}" onChange="{{ setVentana }}"><i class="ph ph-app-window"></i><span>Ventana de visión</span></label>
+        <label class="seg-opt"><input type="radio" name="vista" checked="{{ vistaWeb }}" onChange="{{ setWeb }}"><i class="ph ph-browser"></i><span>Vista web · pendiente</span></label>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="position:relative;aspect-ratio:4/3;border-radius:var(--radius-lg);overflow:hidden;background:radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--color-surface) 70%, var(--color-bg)), color-mix(in srgb, var(--color-bg) 60%, var(--ink)));box-shadow:var(--shadow-sm)">
+          <div style="position:absolute;inset:0;background-image:linear-gradient(color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px),linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px);background-size:40px 40px"></div>
+          <div style="position:absolute;left:14px;top:14px;width:22px;height:22px;border-left:1.5px solid var(--color-accent-500);border-top:1.5px solid var(--color-accent-500)"></div>
+          <div style="position:absolute;right:14px;top:14px;width:22px;height:22px;border-right:1.5px solid var(--color-accent-500);border-top:1.5px solid var(--color-accent-500)"></div>
+          <div style="position:absolute;left:14px;bottom:14px;width:22px;height:22px;border-left:1.5px solid var(--color-accent-500);border-bottom:1.5px solid var(--color-accent-500)"></div>
+          <div style="position:absolute;right:14px;bottom:14px;width:22px;height:22px;border-right:1.5px solid var(--color-accent-500);border-bottom:1.5px solid var(--color-accent-500)"></div>
+          <div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%);border-radius:50%;border:1.5px dashed {{ ovalColor }}"></div>
+          <sc-if value="{{ vistaWeb }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%)">
+              <sc-for list="{{ landmarks }}" as="lm" hint-placeholder-count="0">
+                <span style="position:absolute;left:{{ lm.x }};top:{{ lm.y }};width:4px;height:4px;margin:-2px;border-radius:50%;background:var(--color-accent-300);opacity:.85"></span>
+              </sc-for>
+            </div>
+            <span style="position:absolute;left:50%;bottom:44px;transform:translateX(-50%);padding:4px 10px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 80%, transparent);font-size:12px;color:var(--color-neutral-200);white-space:nowrap">Vista previa simulada · la transmisión web aún no existe</span>
+          </sc-if>
+          <sc-if value="{{ vistaVentana }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center">
+              <i class="ph ph-app-window" style="font-size:36px;color:var(--color-accent-400)"></i>
+              <span style="font-size:15px;max-width:34ch;color:var(--color-neutral-100)">{{ ventanaTexto }}</span>
+              <span style="font-size:12px;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">vision.py --servicio · cámara {{ camaraSel }}</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ camMidiendo }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:0;right:0;top:0;height:100%;background:linear-gradient(to bottom, transparent 85%, color-mix(in srgb, var(--color-accent) 14%, transparent));animation:barrido 3s linear infinite;pointer-events:none"></div>
+          </sc-if>
+          <div style="position:absolute;left:14px;right:14px;top:44px;display:flex;gap:6px;flex-wrap:wrap;padding:0 30px">
+            <sc-for list="{{ camChips }}" as="cc" hint-placeholder-count="3">
+              <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 82%, transparent);color:{{ cc.fg }};font-family:ui-monospace,Menlo,monospace;font-size:11px"><i class="ph-fill {{ cc.icon }}"></i>{{ cc.label }}</span>
+            </sc-for>
+          </div>
+        </div>
+        <sc-for list="{{ camAvisos }}" as="av" hint-placeholder-count="0">
+          <div role="alert" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:var(--radius-md);background:{{ stAm.bg }}">
+            <i class="ph ph-warning" style="font-size:18px;color:{{ stAm.fg }};flex:none"></i>
+            <span style="display:flex;flex-direction:column;gap:2px"><b style="font-weight:500;color:{{ stAm.fg }}">{{ av.titulo }}</b><span style="font-size:13px;color:var(--color-neutral-200)">{{ av.texto }}</span></span>
+          </div>
+        </sc-for>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          
+          <button class="btn btn-secondary" type="button" onClick="{{ camDetener }}" disabled="{{ camNoMidiendo }}" style="padding:9px 16px"><i class="ph ph-stop"></i>Detener las dos</button>
+          <button class="btn btn-ghost" type="button" onClick="{{ camReiniciar }}" style="padding:9px 10px"><i class="ph ph-arrow-counter-clockwise"></i>Reiniciar</button>
+          <span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--color-neutral-400)">Simular:
+            <button class="btn btn-secondary" type="button" onClick="{{ simLuz }}" style="font-size:12px;padding:4px 8px"><i class="ph ph-sun-dim"></i>Poca luz</button>
+            <button class="btn btn-secondary" type="button" onClick="{{ simCara }}" style="font-size:12px;padding:4px 8px"><i class="ph ph-user-focus"></i>Sin rostro</button>
+          </span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:center;gap:16px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
+          <div style="position:relative;width:84px;height:84px;flex:none">
+            <svg viewBox="0 0 84 84" width="84" height="84" style="transform:rotate(-90deg)"><circle cx="42" cy="42" r="37" fill="none" stroke="var(--color-neutral-800)" stroke-width="4"></circle><circle cx="42" cy="42" r="37" fill="none" stroke="var(--color-accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="232.5" stroke-dashoffset="{{ camDash }}" style="transition:stroke-dashoffset .25s linear;filter:drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 60%, transparent))"></circle></svg>
+            <span style="position:absolute;inset:0;display:grid;place-items:center;font-family:ui-monospace,Menlo,monospace;font-size:24px;font-variant-numeric:tabular-nums">{{ camSeg }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px" aria-live="polite">
+            <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Estado</span>
+            <span style="font-size:18px;font-weight:500">{{ camEstado }}</span>
+            <span style="font-size:13px;color:var(--color-neutral-400)">{{ camSub }}</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
+          <div style="display:flex;align-items:center;gap:8px"><i class="ph ph-eye" style="font-size:16px;color:var(--color-accent)"></i><span style="font-size:13px;font-weight:500">EAR · apertura de ojos</span><span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:13px;font-variant-numeric:tabular-nums">{{ earActual }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--color-accent-300)">DEMO</span></div>
+          <svg viewBox="0 0 400 90" style="width:100%;height:auto;display:block" role="img" aria-label="Señal EAR en el tiempo">
+            <line x1="0" y1="54" x2="400" y2="54" stroke="var(--color-neutral-700)" stroke-dasharray="3 4" stroke-width="1"></line>
+            
+            <polyline points="{{ earPts }}" fill="none" stroke="var(--color-accent)" stroke-width="1.5" stroke-linejoin="round"></polyline>
+          </svg>
+          <span style="font-size:12px;color:var(--color-neutral-400)">Línea punteada: umbral de parpadeo, 60 % del ojo abierto. Cada caída bajo la línea durante 2 cuadros cuenta como parpadeo.</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+          <sc-for list="{{ visionCards }}" as="v" hint-placeholder-count="4">
+            <div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
+              <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-300)">{{ v.label }}<span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:10px;color:{{ v.tipoFg }}"><i class="ph {{ v.tipoIcon }}"></i>{{ v.tipo }}</span></span>
+              <span style="font-family:ui-monospace,Menlo,monospace;font-size:24px;font-variant-numeric:tabular-nums;color:{{ v.valFg }}">{{ v.valor }}</span>
+              <span style="font-size:11px;color:var(--color-neutral-400)">{{ v.unidad }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ pVoz }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:6px"><h2 style="font-size:26px;margin:0">Voz</h2><p style="margin:0;color:var(--color-neutral-300)">Cuando empiece la grabación, lee esta frase en voz alta, con tono normal.</p></div>
+    <div class="seg" role="radiogroup" aria-label="Frase a leer" style="align-self:flex-start;flex-wrap:wrap">
+      <sc-for list="{{ frases }}" as="f" hint-placeholder-count="4">
+        <label class="seg-opt"><input type="radio" name="frase" checked="{{ f.on }}" onChange="{{ f.pick }}"><span>{{ f.label }}</span></label>
+      </sc-for>
+    </div>
+    <blockquote style="margin:0;padding:22px 26px;border-radius:var(--radius-lg);background:var(--color-surface);font-size:22px;line-height:1.5;max-width:46ch;text-wrap:pretty;box-shadow:inset 2px 0 0 var(--color-accent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">{{ fraseTexto }}</blockquote>
+    <div style="display:flex;align-items:center;gap:14px;max-width:640px;padding:14px 18px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge), var(--shadow-sm)">
+      <div style="display:flex;align-items:flex-end;gap:3px;height:36px;flex:none" aria-hidden="true">
+        <sc-for list="{{ vozBarras }}" as="b" hint-placeholder-count="0"><span style="width:4px;border-radius:2px;height:{{ b.h }};background:{{ b.c }};transition:height .2s"></span></sc-for>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:15px;font-weight:500" aria-live="polite">{{ vozEstado }}</span>
+        <div style="height:4px;border-radius:2px;background:var(--color-neutral-800);overflow:hidden"><div style="height:100%;width:{{ vozPct }};background:var(--color-accent);transition:width .25s linear"></div></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" type="button" onClick="{{ prev }}" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-secondary" type="button" onClick="{{ next }}" style="padding:9px 16px">Omitir</button>
+      <button class="btn btn-primary" type="button" onClick="{{ vozAccion }}" disabled="{{ vozOcupado }}" style="padding:9px 18px"><i class="ph {{ vozBtnIcon }}"></i>{{ vozBtn }}</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ pPvt }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:4px"><h3 style="font-size:17px;font-weight:500;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-timer" style="color:var(--color-accent)"></i>Prueba de reacción · 1 minuto</h3><p style="margin:0;font-size:13px;color:var(--color-neutral-300);max-width:62ch">Cuando aparezca el contador, responde lo más rápido que puedas. Si respondes antes, cuenta como anticipada.</p></div>
+    <div role="button" tabindex="0" aria-label="Área de la prueba de reacción" onMouseDown="{{ pvtTap }}" style="position:relative;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 55%, var(--ink));box-shadow:var(--shadow-sm);cursor:pointer;user-select:none">
+      <span style="position:absolute;top:14px;right:16px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-400)">{{ pvtProg }}</span>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:clamp(64px,12vw,140px);line-height:1;font-variant-numeric:tabular-nums;color:{{ pvtColor }};min-height:1em">{{ pvtCont }}</span>
+      <span style="font-size:17px;color:var(--color-neutral-300);text-align:center" aria-live="polite">{{ pvtMsg }}</span>
+      <span style="position:absolute;bottom:14px;font-size:12px;color:var(--color-neutral-500)">Barra espaciadora o toca aquí</span>
+    </div>
+    <sc-if value="{{ pvtFin }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+        <sc-for list="{{ pvtRes }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:4px;padding:14px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)"><span style="font-size:12px;color:var(--color-neutral-300)">{{ r.label }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:28px;font-variant-numeric:tabular-nums">{{ r.valor }}</span><span style="font-size:11px;color:var(--color-neutral-400)">{{ r.unidad }}</span></div>
+        </sc-for>
+      </div>
+    </sc-if>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" type="button" onClick="{{ prev }}" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-secondary" type="button" onClick="{{ next }}" style="padding:9px 16px">Omitir</button>
+      <button class="btn btn-primary" type="button" onClick="{{ pvtBtnFn }}" style="padding:9px 18px">{{ pvtBtn }}<i class="ph ph-arrow-right"></i></button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ pDsst }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:6px"><h2 style="font-size:26px;margin:0">Prueba de símbolos</h2><p style="margin:0;color:var(--color-neutral-300);max-width:62ch">Arriba está la clave: cada símbolo tiene su número. Cuando aparezca un símbolo en el centro, toca su número lo más rápido que puedas. Dura 90 segundos.</p></div>
+    <div style="display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px;max-width:720px">
+      <sc-for list="{{ simbolos }}" as="s" hint-placeholder-count="9">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--card-edge)">
+          <svg viewBox="0 0 40 40" style="width:100%;max-width:40px;aspect-ratio:1"><path d="{{ s.d }}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:16px;color:var(--color-accent)">{{ s.n }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;padding:14px 16px;border-radius:var(--radius-md);box-shadow:inset 0 0 0 1px var(--color-neutral-800);max-width:720px"><i class="ph ph-info" style="font-size:18px;color:var(--color-neutral-400)"></i><span style="font-size:13px;color:var(--color-neutral-300)">La prueba completa vive en la estación actual. En este prototipo solo se muestra la clave.</span></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" type="button" onClick="{{ prev }}" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-primary" type="button" onClick="{{ next }}" style="padding:9px 18px">Ver resultado<i class="ph ph-arrow-right"></i></button>
+    </div>
+  </sc-if>
+
+
+  <sc-if value="{{ pAnal }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;align-items:flex-start;gap:16px;padding:48px 0">
+      <div style="width:56px;height:56px;border-radius:50%;border:3px solid var(--color-neutral-800);border-top-color:var(--color-accent);animation:{{ spin }}"></div>
+      <h2 style="font-size:26px;margin:0">Analizando…</h2>
+      <sc-for list="{{ analPasos }}" as="ap" hint-placeholder-count="4">
+        <span style="display:flex;align-items:center;gap:8px;font-size:14px;color:{{ ap.fg }}"><i class="ph {{ ap.icon }}"></i>{{ ap.label }}</span>
+      </sc-for>
+    </div>
+  </sc-if>
+</sc-if>
+
+<!-- ==================== RESULTADOS ==================== -->
+<sc-if value="{{ isRes }}" hint-placeholder-val="{{ false }}">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:stretch">
+    <section style="position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:22px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <div style="position:relative;width:140px;height:140px">
+        <svg viewBox="0 0 140 140" width="140" height="140"><circle cx="70" cy="70" r="62" fill="none" stroke="var(--color-neutral-800)" stroke-width="1"></circle><circle cx="70" cy="70" r="50" fill="{{ resSt.bg }}" stroke="{{ resSt.fg }}" stroke-width="2"></circle><circle cx="70" cy="70" r="62" fill="none" stroke="{{ resSt.fg }}" stroke-width="3" stroke-linecap="round" stroke-dasharray="{{ resArc }}" transform="rotate(-90 70 70)"></circle></svg>
+        <i class="ph-fill {{ resSt.icon }}" style="position:absolute;inset:0;display:grid;place-items:center;font-size:44px;color:{{ resSt.fg }}"></i>
+      </div>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:30px;font-weight:600;letter-spacing:0.08em;color:{{ resSt.fg }}">{{ resSt.word }}</span>
+      <span style="font-size:15px;color:var(--color-neutral-200)">{{ resSt.label }}</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span class="tag tag-neutral" style="font-family:ui-monospace,Menlo,monospace;font-size:10px">PROVISIONAL</span>
+        <span class="tag tag-outline" style="font-family:ui-monospace,Menlo,monospace;font-size:10px">DEMO</span>
+        <span class="tag tag-neutral" style="font-family:ui-monospace,Menlo,monospace;font-size:10px">REACCIÓN 1 MIN</span>
+      </div>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-400)">Puntaje {{ resPuntaje }} · sesión {{ resSesion }}</span>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:var(--radius-lg);background:var(--color-surface);grid-column:span {{ resSpan }};box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Recomendación</span>
+        <p style="margin:0;font-size:20px;line-height:1.35;font-weight:500;text-wrap:pretty">{{ resAccion }}</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Motivos</span>
+        <sc-for list="{{ resMotivos }}" as="mt" hint-placeholder-count="2">
+          <span style="display:flex;gap:8px;align-items:flex-start;font-size:15px"><i class="ph ph-caret-right" style="color:var(--color-accent);margin-top:3px"></i>{{ mt }}</span>
+        </sc-for>
+      </div>
+      <div role="status" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:var(--radius-md);background:{{ stAm.bg }}">
+        <i class="ph ph-drop" style="font-size:18px;color:{{ stAm.fg }}"></i>
+        <span style="display:flex;flex-direction:column;gap:2px"><b style="font-weight:500;color:{{ stAm.fg }}">Oxígeno más bajo de lo habitual: repetir la medición</b><span style="font-size:13px;color:var(--color-neutral-200)">Es un aviso y no cambia el color del resultado.</span></span>
+      </div>
+      <span style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--color-neutral-400);margin-top:auto"><i class="ph ph-info" style="font-size:15px"></i>Resultado orientativo para apoyar la decisión. No es un diagnóstico médico ni una certificación de aptitud.</span>
+    </section>
+  </div>
+
+  <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+    <div style="display:flex;align-items:center;gap:8px"><span aria-hidden="true" style="position:relative;width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:9px;background:linear-gradient(135deg, var(--color-accent-800), var(--color-accent-900));box-shadow:inset 0 0 0 1px var(--color-accent-600), 0 0 16px color-mix(in srgb, var(--color-accent) 30%, transparent)"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3C12.7 8.6 15.4 11.3 21 12C15.4 12.7 12.7 15.4 12 21C11.3 15.4 8.6 12.7 3 12C8.6 11.3 11.3 8.6 12 3Z" style="fill:var(--color-accent-200)"></path><circle cx="18.6" cy="5.4" r="1.5" style="fill:var(--color-accent-300)"><animate attributeName="opacity" values="1;.25;1" dur="2.4s" repeatCount="indefinite"></animate></circle></svg></span><span style="display:flex;flex-direction:column;gap:1px"><h2 style="font-size:16px;margin:0">Becspace AI</h2><span style="font-size:12px;color:var(--color-neutral-400)">Asistente de la estación · responde con las fichas de protocolos</span></span></div>
+    <sc-for list="{{ conversacion }}" as="cv" hint-placeholder-count="1">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <span style="align-self:flex-end;max-width:80%;padding:8px 12px;border-radius:10px 10px 2px 10px;background:var(--color-neutral-800);font-size:14px">{{ cv.pregunta }}</span>
+        <span style="max-width:90%;padding:10px 14px;border-radius:10px 10px 10px 2px;background:var(--color-accent-900);box-shadow:inset 0 0 0 1px var(--color-accent-800);font-size:14px;line-height:1.5">{{ cv.respuesta }}</span>
+        <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--color-neutral-500)">{{ cv.meta }}</span>
+      </div>
+    </sc-for>
+    <form onSubmit="{{ preguntar }}" style="display:flex;gap:8px">
+      <input class="input" value="{{ pregunta }}" onChange="{{ setPregunta }}" placeholder="Pregunta a Becspace AI o toca Hablar" aria-label="Pregunta para Becspace AI">
+      <button class="btn btn-secondary" type="button" style="padding:0 12px;flex:none"><i class="ph ph-microphone"></i>Hablar</button>
+      <button class="btn btn-primary" type="submit" style="padding:0 14px;flex:none"><i class="ph ph-paper-plane-tilt"></i>Enviar</button>
+    </form>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <h2 style="font-size:17px;margin:0;margin-right:auto">Indicadores analizados</h2>
+      <sc-for list="{{ tiposLeyenda }}" as="tl" hint-placeholder-count="4">
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:{{ tl.fg }}"><i class="ph {{ tl.icon }}"></i>{{ tl.label }}</span>
+      </sc-for>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:10px">
+      <sc-for list="{{ indicadores }}" as="ind" hint-placeholder-count="8">
+        <article style="display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:var(--radius-md);background:{{ ind.bg }};box-shadow:{{ ind.ring }};transition:transform .2s" style-hover="transform:translateY(-2px)">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:13px;font-weight:500">{{ ind.nombre }}</span>
+            <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:11px;color:{{ ind.tipoFg }}"><i class="ph {{ ind.tipoIcon }}"></i>{{ ind.tipoLabel }}</span>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:6px;min-height:34px">
+            <span style="font-family:ui-monospace,Menlo,monospace;font-size:28px;font-variant-numeric:tabular-nums;color:{{ ind.valFg }}">{{ ind.valorShow }}</span>
+            <span style="font-size:12px;color:var(--color-neutral-400)">{{ ind.unidad }}</span>
+            <span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:{{ ind.ptsFg }}">{{ ind.pts }}</span>
+          </div>
+          <sc-if value="{{ ind.hasCal }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--color-neutral-400);width:52px">Calidad</span><div style="flex:1;height:3px;border-radius:2px;background:var(--color-neutral-800)"><div style="height:100%;width:{{ ind.calPct }};border-radius:2px;background:{{ ind.calFg }}"></div></div><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-neutral-300)">{{ ind.calTxt }}</span></div>
+          </sc-if>
+          <p style="margin:0;font-size:12px;line-height:1.45;color:var(--color-neutral-300);text-wrap:pretty">{{ ind.nota }}</p>
+          <span style="font-size:11px;color:var(--color-neutral-500);font-family:ui-monospace,Menlo,monospace">Fuente · {{ ind.fuente }}</span>
+        </article>
+      </sc-for>
+    </div>
+  </section>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-primary" type="button" onClick="{{ goEval }}" style="padding:9px 16px"><i class="ph ph-arrow-counter-clockwise"></i>Nueva evaluación</button>
+    <button class="btn btn-secondary" type="button" onClick="{{ goHist }}" style="padding:9px 16px"><i class="ph ph-chart-line-up"></i>Ver historial</button>
+  </div>
+</sc-if>
+
+<!-- ==================== HISTORIAL ==================== -->
+<sc-if value="{{ isHist }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+    <div class="seg" role="radiogroup" aria-label="Periodo">
+      <sc-for list="{{ periodos }}" as="pr" hint-placeholder-count="3"><label class="seg-opt"><input type="radio" name="periodo" checked="{{ pr.on }}" onChange="{{ pr.pick }}"><span>{{ pr.label }}</span></label></sc-for>
+    </div>
+    <div class="seg" role="radiogroup" aria-label="Persona" style="flex-wrap:wrap">
+      <sc-for list="{{ histPersonas }}" as="hp" hint-placeholder-count="6"><label class="seg-opt"><input type="radio" name="hpersona" checked="{{ hp.on }}" onChange="{{ hp.pick }}"><span>{{ hp.label }}</span></label></sc-for>
+    </div>
+    <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-400)"><i class="ph ph-database"></i>Requiere el registrador (MongoDB local)</span>
+  </div>
+  <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <h2 style="font-size:15px;margin:0;margin-right:auto">Evolución · {{ serieLabel }}</h2>
+      <div role="tablist" aria-label="Indicador" style="display:flex;gap:2px;flex-wrap:wrap">
+        <sc-for list="{{ series }}" as="se" hint-placeholder-count="4">
+          <button role="tab" type="button" aria-selected="{{ se.on }}" onClick="{{ se.pick }}" style="padding:6px 10px;border:0;background:{{ se.bg }};border-radius:var(--radius-sm);color:{{ se.fg }};box-shadow:{{ se.bar }};font-size:13px;cursor:pointer" style-hover="background:color-mix(in srgb, var(--color-text) 6%, transparent)">{{ se.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+    <sc-if value="{{ esTodos }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center">
+        <sc-for list="{{ leyendaCrew }}" as="lc" hint-placeholder-count="5"><span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--color-neutral-200)"><i class="ph-fill {{ lc.icon }}" style="font-size:22px;color:var(--color-neutral-100)"></i>{{ lc.nombre }}</span></sc-for>
+        <span style="font-size:12px;color:var(--color-neutral-400)">El color del icono es el resultado de esa evaluación</span>
+      </div>
+    </sc-if>
+    <div style="position:relative">
+    <svg viewBox="0 0 800 220" style="width:100%;height:auto;display:block" role="img" aria-label="Gráfico de evolución">
+      <sc-for list="{{ grid }}" as="g" hint-placeholder-count="4"><line x1="40" x2="790" y1="{{ g.y }}" y2="{{ g.y }}" style="stroke:var(--color-neutral-800);stroke-width:1"></line></sc-for>
+      <polyline points="{{ chartPts }}" style="fill:none;stroke:var(--color-accent);stroke-width:1.5;stroke-linejoin:round"></polyline>
+      <sc-for list="{{ chartDots }}" as="cd" hint-placeholder-count="0"><circle cx="{{ cd.x }}" cy="{{ cd.y }}" r="{{ cd.r }}" style="fill:{{ cd.fill }};stroke:var(--color-surface);stroke-width:1.5"></circle></sc-for>
+    </svg>
+    <sc-for list="{{ grid }}" as="g" hint-placeholder-count="0"><span style="position:absolute;left:0;width:4.5%;top:{{ g.top }};transform:translateY(-50%);text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--color-neutral-500)">{{ g.label }}</span></sc-for>
+    <sc-for list="{{ chartIcons }}" as="ci" hint-placeholder-count="0"><button type="button" onClick="{{ ci.open }}" title="{{ ci.title }}" aria-label="{{ ci.title }}" style="position:absolute;left:{{ ci.left }};top:{{ ci.top }};transform:translate(-50%,-50%) scale({{ ci.scale }});width:28px;height:28px;padding:0;border:0;background:transparent;display:grid;place-items:center;color:{{ ci.fg }};cursor:pointer;filter:{{ ci.shadow }};transition:transform .15s" style-hover="transform:translate(-50%,-50%) scale(1.3);z-index:2"><i class="ph-fill {{ ci.icon }}" style="font-size:24px"></i></button></sc-for>
+    <sc-for list="{{ xLabels }}" as="xl" hint-placeholder-count="0"><span style="position:absolute;bottom:0;left:{{ xl.left }};transform:translateX(-50%);font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--color-neutral-500)">{{ xl.label }}</span></sc-for>
+    </div>
+    <span style="font-size:12px;color:var(--color-neutral-400)">{{ chartNota }}</span>
+  </section>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:20px;align-items:start">
+    <section style="overflow-x:auto;grid-column:span {{ histSpan }}">
+      <table class="table" style="min-width:560px">
+        <thead><tr><th>Fecha</th><th>Persona</th><th>Estado</th><th style="text-align:right">Puntaje</th><th style="text-align:right">KSS</th><th style="text-align:right">Sueño</th><th style="text-align:right">PVT</th></tr></thead>
+        <tbody>
+          <sc-for list="{{ histRows }}" as="h" hint-placeholder-count="8">
+            <tr onClick="{{ h.open }}" style="cursor:pointer;background-color:{{ h.selBg }}">
+              <td style="font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap">{{ h.fecha }}</td>
+              <td>{{ h.nombre }}</td>
+              <td><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:5px;background:{{ h.st.bg }};color:{{ h.st.fg }};font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:600"><i class="ph-fill {{ h.st.icon }}"></i>{{ h.st.word }}</span></td>
+              <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ h.puntaje }}</td>
+              <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ h.kss }}</td>
+              <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ h.horas }}</td>
+              <td style="text-align:right;font-family:ui-monospace,Menlo,monospace">{{ h.pvt }}</td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+      <sc-if value="{{ hayPags }}" hint-placeholder-val="{{ false }}">
+        <nav aria-label="Paginación del historial" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:12px 4px 0">
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-400);margin-right:auto">{{ pagInfo }}</span>
+          <button class="btn btn-ghost" type="button" onClick="{{ pagPrev }}" disabled="{{ pagPrevDis }}" aria-label="Página anterior" style="padding:6px 8px"><i class="ph ph-caret-left"></i></button>
+          <sc-for list="{{ pagNums }}" as="pn" hint-placeholder-count="3">
+            <sc-if value="{{ pn.num }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ pn.go }}" aria-current="{{ pn.cur }}" style="min-width:32px;height:32px;padding:0 8px;border:0;border-radius:var(--radius-sm);background:{{ pn.bg }};box-shadow:{{ pn.ring }};color:{{ pn.fg }};font-family:ui-monospace,Menlo,monospace;font-size:12px;cursor:pointer" style-hover="box-shadow:inset 0 0 0 1px var(--color-accent-600)">{{ pn.label }}</button></sc-if>
+            <sc-if value="{{ pn.gap }}" hint-placeholder-val="{{ false }}"><span style="padding:0 4px;color:var(--color-neutral-500)">…</span></sc-if>
+          </sc-for>
+          <button class="btn btn-ghost" type="button" onClick="{{ pagNext }}" disabled="{{ pagNextDis }}" aria-label="Página siguiente" style="padding:6px 8px"><i class="ph ph-caret-right"></i></button>
+        </nav>
+      </sc-if>
+      <sc-if value="{{ histVacio }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:32px 8px"><i class="ph ph-tray" style="font-size:28px;color:var(--color-neutral-500)"></i><b style="font-weight:500">Sin evaluaciones en este periodo</b><span style="font-size:13px;color:var(--color-neutral-400)">Prueba con un periodo más largo u otra persona.</span></div>
+      </sc-if>
+    </section>
+    <aside style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);position:sticky;top:20px;box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+        <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Detalle de la evaluación</span>
+        <div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px;font-weight:500">{{ sel.nombre }}</span><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:5px;background:{{ sel.st.bg }};color:{{ sel.st.fg }};font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:600"><i class="ph-fill {{ sel.st.icon }}"></i>{{ sel.st.word }}</span></div>
+        <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-400)">{{ sel.fechaLarga }} · sesión {{ sel.id }}</span>
+        <dl style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0;font-size:13px">
+          <dt style="color:var(--color-neutral-400)">Puntaje</dt><dd style="margin:0;font-family:ui-monospace,Menlo,monospace">{{ sel.puntaje }}</dd>
+          <dt style="color:var(--color-neutral-400)">KSS</dt><dd style="margin:0;font-family:ui-monospace,Menlo,monospace">{{ sel.kss }} de 9</dd>
+          <dt style="color:var(--color-neutral-400)">Sueño</dt><dd style="margin:0;font-family:ui-monospace,Menlo,monospace">{{ sel.horas }} h</dd>
+          <dt style="color:var(--color-neutral-400)">PVT mediana</dt><dd style="margin:0;font-family:ui-monospace,Menlo,monospace">{{ sel.pvt }} ms</dd>
+          <dt style="color:var(--color-neutral-400)">Pulso</dt><dd style="margin:0;font-family:ui-monospace,Menlo,monospace">{{ sel.pulso }} lpm</dd>
+          <dt style="color:var(--color-neutral-400)">PERCLOS</dt><dd style="margin:0;font-family:ui-monospace,Menlo,monospace">{{ sel.perclos }}</dd>
+        </dl>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-secondary" type="button" style="font-size:13px"><i class="ph ph-download-simple"></i>Exportar CSV</button><button class="btn btn-ghost" type="button" style="font-size:13px"><i class="ph ph-play-circle"></i>Reproducir sesión</button></div>
+      </sc-if>
+      <sc-if value="{{ noSel }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;padding:12px 0"><i class="ph ph-cursor-click" style="font-size:24px;color:var(--color-neutral-500)"></i><b style="font-weight:500">Elige una evaluación</b><span style="font-size:13px;color:var(--color-neutral-400)">El detalle aparece aquí.</span></div>
+      </sc-if>
+    </aside>
+  </div>
+</sc-if>
+
+<!-- ==================== PRUEBAS ==================== -->
+<sc-if value="{{ isPru }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:72ch"><h2 style="font-size:26px;margin:0">Prueba de cámara y micrófono</h2><p style="margin:0;color:var(--color-neutral-300);line-height:1.55;text-wrap:pretty">Comprueba que la estación vea y escuche bien a la tripulación antes de evaluar. Usa los dispositivos reales de este equipo y no guarda imagen ni audio.</p></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start">
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <div style="display:flex;align-items:center;gap:8px"><i class="ph ph-webcam" style="font-size:18px;color:var(--color-accent)"></i><h3 style="font-size:16px;font-weight:500;margin:0;margin-right:auto">Cámara</h3><span style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:5px;background:{{ camPill.bg }};color:{{ camPill.fg }};font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:600;letter-spacing:0.06em;white-space:nowrap"><i class="ph-fill {{ camPill.icon }}"></i>{{ camPill.word }}</span></div>
+      <div class="field"><label for="pcam">Dispositivo</label><select id="pcam" class="input" value="{{ camDevSel }}" onChange="{{ setCamDev }}"><sc-for list="{{ camDevs }}" as="cd" hint-placeholder-count="1"><option value="{{ cd.id }}">{{ cd.label }}</option></sc-for></select></div>
+      <div style="position:relative;aspect-ratio:4/3;border-radius:var(--radius-md);overflow:hidden;background:radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--color-surface) 70%, var(--color-bg)), color-mix(in srgb, var(--color-bg) 60%, var(--ink)))">
+        <div style="position:absolute;inset:0;background-image:linear-gradient(color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px),linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px);background-size:40px 40px"></div>
+        <video ref="{{ videoRef }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:{{ videoOp }};transition:opacity .5s"></video>
+        <div style="position:absolute;left:12px;top:12px;width:20px;height:20px;border-left:1.5px solid var(--color-accent-500);border-top:1.5px solid var(--color-accent-500)"></div>
+        <div style="position:absolute;right:12px;top:12px;width:20px;height:20px;border-right:1.5px solid var(--color-accent-500);border-top:1.5px solid var(--color-accent-500)"></div>
+        <div style="position:absolute;left:12px;bottom:12px;width:20px;height:20px;border-left:1.5px solid var(--color-accent-500);border-bottom:1.5px solid var(--color-accent-500)"></div>
+        <div style="position:absolute;right:12px;bottom:12px;width:20px;height:20px;border-right:1.5px solid var(--color-accent-500);border-bottom:1.5px solid var(--color-accent-500)"></div>
+        <div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%);border-radius:50%;border:1.5px dashed {{ ovalPru }};transition:border-color .3s"></div>
+        <sc-if value="{{ camOff }}" hint-placeholder-val="{{ true }}">
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center"><i class="ph ph-video-camera" style="font-size:34px;color:var(--color-accent-400)"></i><span style="font-size:14px;color:var(--color-neutral-200);max-width:30ch">{{ camMsg }}</span></div>
+        </sc-if>
+        <sc-if value="{{ camOn }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:40px;right:40px;top:14px;display:flex;gap:6px;flex-wrap:wrap">
+            <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 82%, transparent);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-text)"><span style="width:7px;height:7px;border-radius:50%;background:var(--st-rojo);animation:pulso 1.4s ease-in-out infinite"></span>EN VIVO</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 82%, transparent);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-text)">{{ camRes }}</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 82%, transparent);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-text)">{{ camFpsTxt }}</span>
+          </div>
+          <span style="position:absolute;left:50%;bottom:16px;transform:translateX(-50%);padding:4px 10px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 80%, transparent);font-size:12px;color:var(--color-text);white-space:nowrap">Centra el rostro en el óvalo</span>
+        </sc-if>
+      </div>
+      <sc-if value="{{ camErr }}" hint-placeholder-val="{{ false }}"><div role="alert" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:var(--radius-md);background:var(--st-rojo-bg)"><i class="ph ph-x-circle" style="font-size:18px;color:var(--st-rojo);flex:none"></i><span style="font-size:13px;color:var(--color-text)">{{ camErrTxt }}</span></div></sc-if>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px"><i class="ph ph-sun" style="font-size:16px;color:var(--color-neutral-300)"></i><span>Iluminación</span><span style="margin-left:auto;color:{{ luzFg }}">{{ luzTxt }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-400);min-width:28px;text-align:right">{{ luzVal }}</span></div>
+        <div style="position:relative;height:6px;border-radius:3px;background:linear-gradient(to right, color-mix(in srgb, var(--st-amarillo) 35%, transparent) 0 20%, color-mix(in srgb, var(--st-verde) 30%, transparent) 20% 82%, color-mix(in srgb, var(--st-amarillo) 35%, transparent) 82%)"><span style="position:absolute;top:-3px;left:{{ luzPct }};width:3px;height:12px;margin-left:-1.5px;border-radius:2px;background:var(--color-text);transition:left .4s"></span></div>
+        <span style="font-size:11px;color:var(--color-neutral-500)">Brillo medio de la imagen. La zona central es la adecuada para medir parpadeos y pulso.</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" type="button" onClick="{{ pruCamStart }}" disabled="{{ camStartDis }}" style="padding:9px 16px"><i class="ph ph-play"></i>{{ camStartTxt }}</button>
+        <button class="btn btn-secondary" type="button" onClick="{{ pruCamStop }}" disabled="{{ camStopDis }}" style="padding:9px 16px"><i class="ph ph-stop"></i>Detener</button>
+      </div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <div style="display:flex;align-items:center;gap:8px"><i class="ph ph-microphone" style="font-size:18px;color:var(--color-accent)"></i><h3 style="font-size:16px;font-weight:500;margin:0;margin-right:auto">Micrófono</h3><span style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:5px;background:{{ micPill.bg }};color:{{ micPill.fg }};font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:600;letter-spacing:0.06em;white-space:nowrap"><i class="ph-fill {{ micPill.icon }}"></i>{{ micPill.word }}</span></div>
+      <div class="field"><label for="pmic">Dispositivo</label><select id="pmic" class="input" value="{{ micDevSel }}" onChange="{{ setMicDev }}"><sc-for list="{{ micDevs }}" as="md" hint-placeholder-count="1"><option value="{{ md.id }}">{{ md.label }}</option></sc-for></select></div>
+      <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-bg) 60%, var(--ink))">
+        <div style="display:flex;align-items:flex-end;gap:3px;height:52px" aria-hidden="true">
+          <sc-for list="{{ micBars }}" as="b" hint-placeholder-count="32"><span style="flex:1;height:{{ b.h }};border-radius:2px;background:{{ b.c }};box-shadow:{{ b.glow }};transition:background-color .08s"></span></sc-for>
+        </div>
+        <svg viewBox="0 0 400 80" style="width:100%;height:auto;display:block" role="img" aria-label="Forma de onda del micrófono"><line x1="0" y1="40" x2="400" y2="40" style="stroke:var(--color-neutral-800);stroke-width:1"></line><polyline points="{{ micPts }}" style="fill:none;stroke:var(--color-accent);stroke-width:1.5;stroke-linejoin:round"></polyline></svg>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+        <sc-for list="{{ micStats }}" as="ms" hint-placeholder-count="3"><div style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:var(--radius-md);box-shadow:inset 0 0 0 1px var(--color-neutral-800)"><span style="font-size:11px;color:var(--color-neutral-400)">{{ ms.label }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:22px;font-variant-numeric:tabular-nums">{{ ms.valor }}</span><span style="font-size:10px;color:var(--color-neutral-500)">{{ ms.unidad }}</span></div></sc-for>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);box-shadow:inset 2px 0 0 var(--color-accent);background:color-mix(in srgb, var(--color-accent) 6%, transparent)"><i class="ph ph-quotes" style="font-size:18px;color:var(--color-accent)"></i><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:var(--color-neutral-400)">Di en voz alta, con tono normal</span><span style="font-size:15px">Estación lista para la evaluación de la tripulación.</span></span></div>
+      <sc-if value="{{ micErr }}" hint-placeholder-val="{{ false }}"><div role="alert" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:var(--radius-md);background:var(--st-rojo-bg)"><i class="ph ph-x-circle" style="font-size:18px;color:var(--st-rojo);flex:none"></i><span style="font-size:13px;color:var(--color-text)">{{ micErrTxt }}</span></div></sc-if>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" type="button" onClick="{{ pruMicStart }}" disabled="{{ micStartDis }}" style="padding:9px 16px"><i class="ph ph-play"></i>{{ micStartTxt }}</button>
+        <button class="btn btn-secondary" type="button" onClick="{{ pruMicStop }}" disabled="{{ micStopDis }}" style="padding:9px 16px"><i class="ph ph-stop"></i>Detener</button>
+        <button class="btn btn-ghost" type="button" onClick="{{ pruGrabar }}" disabled="{{ recDis }}" style="padding:9px 12px"><i class="ph ph-record"></i>{{ recBtn }}</button>
+      </div>
+      <sc-if value="{{ hasRec }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;color:var(--color-neutral-400)">Escucha la grabación: la voz debe oírse clara y sin eco.</span><audio controls="" src="{{ recUrl }}" style="width:100%;height:36px"></audio></div></sc-if>
+    </section>
+  </div>
+  <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+    <div style="display:flex;align-items:baseline;gap:10px"><h2 style="font-size:15px;margin:0">Resumen</h2><span style="font-size:12px;color:var(--color-neutral-400)">{{ pruResumen }}</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px">
+      <sc-for list="{{ pruChecks }}" as="pc" hint-placeholder-count="5">
+        <div style="display:flex;gap:10px;align-items:flex-start"><i class="ph-fill {{ pc.st.icon }}" style="font-size:18px;color:{{ pc.st.fg }};margin-top:1px;transition:color .3s"></i><span style="display:flex;flex-direction:column;gap:1px"><span style="font-size:13px"><b style="font-weight:500">{{ pc.label }}</b> <span style="color:{{ pc.st.fg }}">{{ pc.estado }}</span></span><span style="font-size:12px;color:var(--color-neutral-400);text-wrap:pretty">{{ pc.help }}</span></span></div>
+      </sc-for>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn btn-primary" type="button" onClick="{{ goEval }}" style="padding:9px 18px">Ir a la evaluación<i class="ph ph-arrow-right"></i></button></div>
+  </section>
+</sc-if>
+
+<!-- ==================== CONFIGURACIÓN ==================== -->
+<sc-if value="{{ isConf }}" hint-placeholder-val="{{ false }}">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:20px;align-items:start">
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-users-three" style="color:var(--color-accent)"></i>Icono de cada tripulante</h2>
+      <span style="font-size:12px;color:var(--color-neutral-400)">Identifica a cada persona en las gráficas del historial y en la evaluación.</span>
+      <sc-for list="{{ crewIconRows }}" as="cr" hint-placeholder-count="5">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="width:64px;font-size:14px">{{ cr.nombre }}</span>
+          <div role="radiogroup" aria-label="{{ cr.aria }}" style="display:flex;gap:4px;flex-wrap:wrap">
+            <sc-for list="{{ cr.opts }}" as="io" hint-placeholder-count="10"><button type="button" role="radio" aria-checked="{{ io.on }}" aria-label="{{ io.label }}" onClick="{{ io.pick }}" style="width:30px;height:30px;padding:0;border:0;border-radius:7px;display:grid;place-items:center;background:{{ io.bg }};box-shadow:{{ io.ring }};color:{{ io.fg }};cursor:pointer" style-hover="box-shadow:inset 0 0 0 1px var(--color-accent-600)"><i class="ph-fill {{ io.icon }}" style="font-size:18px"></i></button></sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:14px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-circle-half" style="color:var(--color-accent)"></i>Apariencia</h2>
+      <div role="radiogroup" aria-label="Modo de color" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+        <sc-for list="{{ temas }}" as="tm" hint-placeholder-count="2">
+          <button type="button" role="radio" aria-checked="{{ tm.on }}" onClick="{{ tm.pick }}" style="display:flex;flex-direction:column;gap:8px;padding:10px;border:0;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-neutral-800) 55%, transparent);box-shadow:{{ tm.ring }};cursor:pointer;text-align:left;transition:box-shadow .2s" style-hover="box-shadow:inset 0 0 0 1px var(--color-accent-600)">
+            <span style="position:relative;display:block;height:64px;border-radius:6px;overflow:hidden;background:{{ tm.bg }}">
+              <span style="position:absolute;left:0;top:0;bottom:0;width:26%;background:{{ tm.nav }}"></span>
+              <span style="position:absolute;left:34%;top:12px;width:40%;height:8px;border-radius:3px;background:{{ tm.ink }}"></span>
+              <span style="position:absolute;left:34%;top:28px;right:10px;height:24px;border-radius:4px;background:{{ tm.card }}"></span>
+              <span style="position:absolute;left:40%;top:37px;width:22%;height:6px;border-radius:3px;background:{{ tm.acc }}"></span>
+            </span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:13px"><i class="ph {{ tm.icon }}"></i>{{ tm.label }}<sc-if value="{{ tm.sel }}" hint-placeholder-val="{{ false }}"><i class="ph-fill ph-check-circle" style="margin-left:auto;color:var(--color-accent)"></i></sc-if></span>
+          </button>
+        </sc-for>
+      </div>
+      <span style="font-size:12px;color:var(--color-neutral-400)">Misma paleta en los dos modos. El modo oscuro es el recomendado para el proyector de la tripulación.</span>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:14px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-webcam" style="color:var(--color-accent)"></i>Cámara</h2>
+      <div class="field"><label for="cam">Fuente de video (CAMARA)</label>
+        <select id="cam" class="input" value="{{ camaraSel }}" onChange="{{ setCamara }}"><option value="0">0 · Cámara de la laptop</option><option value="1">1 · Cámara USB</option><option value="droidcam">DroidCam · celular por Wi-Fi</option></select>
+      </div>
+      <sc-if value="{{ isDroid }}" hint-placeholder-val="{{ false }}">
+        <div class="field"><label for="url">URL de DroidCam</label><input id="url" class="input" placeholder="http://192.168.0.12:4747/video" style="font-family:ui-monospace,Menlo,monospace"></div>
+        <span style="font-size:12px;color:var(--color-neutral-400)">La app del celular muestra la IP. Solo un programa a la vez puede recibir la imagen.</span>
+      </sc-if>
+      <div class="field"><label for="dur">Duración de la medición</label><input id="dur" class="input" value="60 s" readonly style="font-family:ui-monospace,Menlo,monospace"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-secondary" type="button"><i class="ph ph-magnifying-glass"></i>Buscar cámaras</button><button class="btn btn-ghost" type="button" onClick="{{ goPru }}"><i class="ph ph-faders"></i>Probar cámara y micrófono</button></div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-shield-check" style="color:var(--color-accent)"></i>Permisos</h2>
+      <sc-for list="{{ permisos }}" as="pm" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:10px"><i class="ph {{ pm.icon }}" style="font-size:18px;color:var(--color-neutral-300)"></i><span style="flex:1;font-size:14px">{{ pm.label }}</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:{{ pm.st.fg }}"><i class="ph-fill {{ pm.st.icon }}"></i>{{ pm.estado }}</span></div>
+      </sc-for>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:14px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-sliders-horizontal" style="color:var(--color-accent)"></i>Preferencias visuales</h2>
+      <sc-for list="{{ prefs }}" as="pf" hint-placeholder-count="3">
+        <label style="display:flex;align-items:center;gap:12px;cursor:pointer">
+          <span style="flex:1;display:flex;flex-direction:column;gap:1px"><span style="font-size:14px">{{ pf.label }}</span><span style="font-size:12px;color:var(--color-neutral-400)">{{ pf.help }}</span></span>
+          <input type="checkbox" role="switch" checked="{{ pf.on }}" onChange="{{ pf.toggle }}" style="position:absolute;opacity:0;width:0;height:0">
+          <span aria-hidden="true" style="width:36px;height:20px;border-radius:10px;flex:none;position:relative;background:{{ pf.track }};box-shadow:inset 0 0 0 1px {{ pf.edge }};transition:background .15s"><span style="position:absolute;top:3px;left:{{ pf.knob }};width:14px;height:14px;border-radius:50%;background:{{ pf.knobBg }};transition:left .15s"></span></span>
+        </label>
+      </sc-for>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-cpu" style="color:var(--color-accent)"></i>Información del sistema</h2>
+      <dl style="display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0;font-size:13px">
+        <sc-for list="{{ sistema }}" as="si" hint-placeholder-count="6"><dt style="color:var(--color-neutral-400)">{{ si.k }}</dt><dd style="margin:0;font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all">{{ si.v }}</dd></sc-for>
+      </dl>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-lock-simple" style="color:var(--color-accent)"></i>Privacidad y datos</h2>
+      <sc-for list="{{ privacidad }}" as="pv" hint-placeholder-count="4"><span style="display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--color-neutral-200);text-wrap:pretty"><i class="ph ph-check" style="color:var(--color-accent);margin-top:2px"></i>{{ pv }}</span></sc-for>
+      <button class="btn btn-secondary" type="button" onClick="{{ openModal }}" style="align-self:flex-start;margin-top:4px"><i class="ph ph-trash"></i>Borrar mi historial</button>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:var(--radius-lg);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge), var(--shadow-sm)">
+      <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-info" style="color:var(--color-neutral-300)"></i>Cómo funciona la evaluación</h2>
+      <p style="margin:0;font-size:13px;line-height:1.55;color:var(--color-neutral-200);text-wrap:pretty">Cada fuente da 0, 1 o 2 puntos frente a tu línea base. Rojo si una fuente tiene 2 puntos o tres fuentes tienen puntos; amarillo si alguna tiene puntos; verde si ninguna. La voz pesa como máximo 1 punto y el oxígeno solo genera un aviso.</p>
+      <p style="margin:0;font-size:13px;line-height:1.55;color:var(--color-neutral-300);text-wrap:pretty">Es un prototipo de apoyo a la decisión. No es un dispositivo médico y no diagnostica.</p>
+    </section>
+  </div>
+</sc-if>
+
+<!-- ==================== SISTEMA DE DISEÑO ==================== -->
+<sc-if value="{{ isDs }}" hint-placeholder-val="{{ false }}">
+  <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:center;padding:22px;border-radius:var(--radius-lg);background:radial-gradient(90% 90% at 40% 50%, #0b1f22, #080C12);box-shadow:var(--shadow-sm)">
+    <div style="grid-column:span 2;min-width:0;max-width:620px"><dc-import name="Becspace Logo" variant="full" hint-size="100%,340px"></dc-import></div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#A7B3CC;font-family:ui-monospace,Menlo,monospace">Logotipo animado</span>
+      <p style="margin:0;font-size:14px;line-height:1.55;color:#F4F6FF;text-wrap:pretty">La Tierra gira despacio y el cohete da una vuelta cada 8 segundos: pasa por detrás del planeta y cruza las letras con un destello verde en el punto de entrada.</p>
+      <div style="width:196px;padding:8px;border-radius:8px;box-shadow:inset 0 0 0 1px rgba(125,145,210,0.18)"><dc-import name="Becspace Logo" variant="compact" hint-size="180px,90px"></dc-import></div>
+      <span style="font-size:12px;color:#A7B3CC">Versión compacta para la barra lateral. Pantalla de carga al abrir la estación.</span>
+    </div>
+  </section>
+  <section style="display:flex;flex-direction:column;gap:10px;max-width:72ch">
+    <h2 style="font-size:26px;margin:0">Identidad: una estación personal de monitoreo</h2>
+    <p style="margin:0;color:var(--color-neutral-300);line-height:1.6;text-wrap:pretty">Nocturne aporta el fondo azul grisáceo, Inter a peso 500 y el acento violeta usado como línea y brillo. Encima sumamos tres piezas propias: datos en monoespaciada, un semáforo desaturado que siempre lleva palabra e icono, y una instrumentación discreta con retículas, órbitas y trazos de señal solo donde hay medición.</p>
+  </section>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:20px;align-items:start">
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Color · base Nocturne</span>
+      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:3px">
+        <sc-for list="{{ rampN }}" as="rn" hint-placeholder-count="9"><div style="aspect-ratio:1;border-radius:4px;background:{{ rn }}"></div></sc-for>
+        <sc-for list="{{ rampA }}" as="ra" hint-placeholder-count="9"><div style="aspect-ratio:1;border-radius:4px;background:{{ ra }}"></div></sc-for>
+      </div>
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace;margin-top:6px">Estados · OKLCH desaturado</span>
+      <sc-for list="{{ estados }}" as="es" hint-placeholder-count="4">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="display:inline-flex;align-items:center;gap:6px;min-width:120px;padding:3px 9px;border-radius:5px;background:{{ es.bg }};color:{{ es.fg }};font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:600"><i class="ph-fill {{ es.icon }}"></i>{{ es.word }}</span>
+          <span style="font-size:12px;color:var(--color-neutral-300)">{{ es.label }}</span>
+        </div>
+      </sc-for>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Tipografía</span>
+      <span style="font-size:42px;font-weight:500;line-height:1.1;letter-spacing:-0.015em">Display 42</span>
+      <span style="font-size:26px;font-weight:500">Título de pantalla 26</span>
+      <span style="font-size:17px;font-weight:500">Sección 17</span>
+      <span style="font-size:14px">Texto 14 · Inter 400 para descripciones y formularios.</span>
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Etiqueta mono 11</span>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:40px;font-variant-numeric:tabular-nums">68<span style="font-size:13px;color:var(--color-neutral-400)"> lpm</span></span>
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace;margin-top:6px">Espacio · radios</span>
+      <div style="display:flex;align-items:flex-end;gap:8px">
+        <sc-for list="{{ espacios }}" as="sp" hint-placeholder-count="6"><div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:{{ sp.v }};height:{{ sp.v }};background:var(--color-accent-700);border-radius:2px"></div><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--color-neutral-400)">{{ sp.k }}</span></div></sc-for>
+        <div style="width:1px;height:28px;background:var(--color-divider);margin:0 6px"></div>
+        <div style="width:28px;height:28px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--color-neutral-500)"></div>
+        <div style="width:28px;height:28px;border-radius:8px;box-shadow:inset 0 0 0 1px var(--color-neutral-500)"></div>
+        <div style="width:28px;height:28px;border-radius:14px;box-shadow:inset 0 0 0 1px var(--color-neutral-500)"></div>
+      </div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Botones · reposo, foco, deshabilitado</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary" type="button" style="padding:9px 16px">Primario</button>
+        <button class="btn btn-secondary" type="button" style="padding:9px 16px">Secundario</button>
+        <button class="btn btn-secondary" type="button" style="padding:9px 16px;border-color:var(--color-accent-600);color:var(--color-accent-200)">Contorno</button>
+        <button class="btn btn-ghost" type="button" style="padding:9px 10px">Fantasma</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary" type="button" style="padding:9px 16px;outline:2px solid var(--color-accent);outline-offset:2px">Foco</button>
+        <button class="btn btn-primary" type="button" style="padding:9px 16px;background:color-mix(in srgb, var(--color-accent) 22%, transparent)">Activo</button>
+        <button class="btn btn-primary" type="button" disabled style="padding:9px 16px">Deshabilitado</button>
+        <button class="btn btn-secondary btn-icon" type="button" aria-label="Reiniciar"><i class="ph ph-arrow-counter-clockwise"></i></button>
+      </div>
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace;margin-top:6px">Etiquetas y tooltip</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="tag tag-outline" style="font-family:ui-monospace,Menlo,monospace;font-size:10px">DEMO</span>
+        <span class="tag tag-neutral" style="font-family:ui-monospace,Menlo,monospace;font-size:10px">PROVISIONAL</span>
+        <span class="tag tag-accent">Línea base</span>
+        <span style="position:relative;display:inline-flex" onMouseEnter="{{ tipOn }}" onMouseLeave="{{ tipOff }}" onFocus="{{ tipOn }}" onBlur="{{ tipOff }}" tabindex="0">
+          <i class="ph ph-question" style="font-size:18px;color:var(--color-neutral-300)"></i>
+          <sc-if value="{{ tip }}" hint-placeholder-val="{{ false }}"><span role="tooltip" style="position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);width:220px;padding:8px 10px;border-radius:var(--radius-md);background:var(--color-neutral-900);box-shadow:var(--shadow-md);font-size:12px;line-height:1.45;color:var(--color-neutral-100)">PERCLOS es la fracción del tiempo con los ojos casi cerrados.</span></sc-if>
+        </span>
+      </div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Estados de contenido</span>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-bg) 50%, transparent)" aria-busy="true">
+          <div style="height:10px;width:40%;border-radius:4px;background:linear-gradient(90deg, var(--color-neutral-800), var(--color-neutral-700), var(--color-neutral-800));background-size:400px 100%;animation:brillo 1.4s linear infinite"></div>
+          <div style="height:22px;width:60%;border-radius:4px;background:linear-gradient(90deg, var(--color-neutral-800), var(--color-neutral-700), var(--color-neutral-800));background-size:400px 100%;animation:brillo 1.4s linear infinite"></div>
+        </div>
+        <sc-for list="{{ alertas }}" as="al" hint-placeholder-count="4">
+          <div role="status" style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:var(--radius-md);background:{{ al.bg }}">
+            <i class="ph {{ al.icon }}" style="font-size:17px;color:{{ al.fg }};flex:none"></i>
+            <span style="display:flex;flex-direction:column;gap:1px"><b style="font-weight:500;font-size:13px;color:{{ al.fg }}">{{ al.titulo }}</b><span style="font-size:12px;color:var(--color-neutral-200)">{{ al.texto }}</span></span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Formularios y progreso</span>
+      <div class="field"><label for="dsn">Nombre</label><input id="dsn" class="input" placeholder="bri"></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <label class="radio"><input type="radio" name="dsr" checked><span class="dot"></span>3 minutos</label>
+        <label class="radio"><input type="radio" name="dsr"><span class="dot"></span>1 minuto (demo)</label>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--color-neutral-300)"><span>Adquiriendo datos</span><span style="font-family:ui-monospace,Menlo,monospace">62 %</span></div>
+        <div style="height:4px;border-radius:2px;background:var(--color-neutral-800)"><div style="height:100%;width:62%;border-radius:2px;background:var(--color-accent);box-shadow:0 0 8px color-mix(in srgb, var(--color-accent) 60%, transparent)"></div></div>
+      </div>
+      <button class="btn btn-secondary" type="button" onClick="{{ openModal }}" style="align-self:flex-start">Abrir modal</button>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <span style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">Tipos de dato</span>
+      <sc-for list="{{ tiposLeyenda }}" as="tl" hint-placeholder-count="4">
+        <div style="display:flex;gap:10px;align-items:flex-start"><i class="ph {{ tl.icon }}" style="font-size:17px;color:{{ tl.fg }};margin-top:1px"></i><span style="display:flex;flex-direction:column;gap:1px"><b style="font-weight:500;font-size:13px">{{ tl.label }}</b><span style="font-size:12px;color:var(--color-neutral-400)">{{ tl.help }}</span></span></div>
+      </sc-for>
+    </section>
+  </div>
+</sc-if>
+
+    </main>
+  </div>
+</div>
+<sc-if value="{{ splash }}" hint-placeholder-val="{{ false }}">
+  <div role="status" aria-label="Cargando la estación" onClick="{{ hideSplash }}" style="position:fixed;inset:0;z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(80% 70% at 50% 45%, #0B1430, #060913);opacity:{{ splashOp }};transition:opacity .6s;cursor:pointer">
+    <div style="width:min(78vw,560px)"><dc-import name="Becspace Logo" variant="full" hint-size="100%,320px"></dc-import></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#A7B3CC">Cargando estación de monitoreo</span><div style="width:180px;height:2px;border-radius:1px;background:rgba(125,145,210,0.2);overflow:hidden"><div style="height:100%;width:{{ splashPct }};background:#00C896;transition:width 1.8s ease-out"></div></div></div>
+  </div>
+</sc-if>
+<sc-if value="{{ modal }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" onClick="{{ closeModal }}" style="z-index:50">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-t" onClick="{{ stop }}">
+      <div id="dlg-t" class="dialog-title">¿Borrar tu historial?</div>
+      <div class="dialog-body">Se borran tus evaluaciones guardadas en esta laptop. Tu línea base también se reinicia y las próximas mediciones no tendrán con qué compararse.</div>
+      <div class="dialog-actions"><button class="btn btn-ghost" type="button" onClick="{{ closeModal }}">Cancelar</button><button class="btn btn-primary" type="button" onClick="{{ closeModal }}">Borrar</button></div>
+    </div>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const ST = {
+  verde: { fg: "var(--st-verde)", bg: "var(--st-verde-bg)", icon: "ph-check-circle", word: "VERDE", label: "Condición favorable para la tarea" },
+  amarillo: { fg: "var(--st-amarillo)", bg: "var(--st-amarillo-bg)", icon: "ph-warning-circle", word: "AMARILLO", label: "Precaución: en pareja o posponer" },
+  rojo: { fg: "var(--st-rojo)", bg: "var(--st-rojo-bg)", icon: "ph-x-circle", word: "ROJO", label: "No recomendado hoy" },
+  sin: { fg: "var(--color-neutral-400)", bg: "var(--color-neutral-900)", icon: "ph-minus-circle", word: "SIN EVALUAR", label: "Falta la evaluación" },
+};
+const TIPOS = {
+  medido: { label: "Medido", icon: "ph-target", fg: "var(--color-accent-300)", help: "Lo calcula un sensor o una prueba con un método definido." },
+  estimado: { label: "Estimado", icon: "ph-approximate-equals", fg: "var(--color-neutral-300)", help: "Aproximación sin validación clínica; se muestra con su calidad." },
+  reportado: { label: "Reportado", icon: "ph-chat-centered-text", fg: "var(--color-neutral-300)", help: "Lo responde la persona en el cuestionario." },
+  no_disponible: { label: "No disponible", icon: "ph-prohibit", fg: "var(--color-neutral-500)", help: "No se calcula o la calidad no alcanzó; nunca se muestra un número." },
+};
+const THEME_DARK = { "--card-solid": "#151b2e", "--color-bg": "#060913", "--color-surface": "rgba(22,28,48,0.82)", "--color-text": "#F4F6FF", "--color-neutral-300": "#A7B3CC", "--color-divider": "rgba(125,145,210,0.16)", "--nav-bg": "rgba(8,14,34,0.74)", "--card-edge": "rgba(125,145,210,0.18)", "--shadow-sm": "0 0 0 1px rgba(125,145,210,0.18), 0 12px 36px rgba(0,0,0,0.22)", "--st-verde": "oklch(0.80 0.10 160)", "--st-verde-bg": "oklch(0.32 0.045 160)", "--st-amarillo": "oklch(0.85 0.10 85)", "--st-amarillo-bg": "oklch(0.34 0.05 80)", "--st-rojo": "oklch(0.76 0.11 25)", "--st-rojo-bg": "oklch(0.32 0.06 22)", "--ink": "black" };
+const THEME_LIGHT = {
+  "--color-bg": "#e9ebf5", "--color-surface": "#f7f7fc", "--color-text": "#1c1e2b", "--color-accent": "#6a5cc4", "--color-divider": "color-mix(in srgb, #1c1e2b 14%, transparent)",
+  "--color-neutral-100": "#1f2129", "--color-neutral-200": "#2f3240", "--color-neutral-300": "#454857", "--color-neutral-400": "#5a5e6e", "--color-neutral-500": "#6e7285", "--color-neutral-600": "#9397ab", "--color-neutral-700": "#b2b6ca", "--color-neutral-800": "#d3d6e4", "--color-neutral-900": "#e2e4ef",
+  "--color-accent-100": "#1e1a3a", "--color-accent-200": "#2b2560", "--color-accent-300": "#4a3f99", "--color-accent-400": "#5d50b5", "--color-accent-500": "#6a5cc4", "--color-accent-600": "#8a7ed6", "--color-accent-700": "#c4bdf5", "--color-accent-800": "#ddd8fb", "--color-accent-900": "#ecebfd",
+  "--shadow-sm": "0 0 0 1px #d3d6e4, 0 1px 3px rgba(30,30,70,0.06)", "--shadow-md": "0 0 0 1px #c9cde0, 0 6px 18px rgba(30,30,70,0.12)", "--shadow-lg": "0 0 0 1px #b2b6ca, 0 16px 40px rgba(30,30,70,0.18)",
+  "--st-verde": "oklch(0.45 0.10 160)", "--st-verde-bg": "oklch(0.92 0.04 160)", "--st-amarillo": "oklch(0.48 0.09 70)", "--st-amarillo-bg": "oklch(0.93 0.05 85)", "--st-rojo": "oklch(0.50 0.14 25)", "--st-rojo-bg": "oklch(0.93 0.035 22)", "--ink": "#d9dcea", "--card-solid": "#f7f8fc", "--nav-bg": "rgba(240,242,250,0.78)", "--card-edge": "rgba(90,100,160,0.16)",
+};
+const ICONOS = [["ph-star-four", "Estrella"], ["ph-rocket-launch", "Cohete"], ["ph-triangle", "Triángulo"], ["ph-moon-stars", "Luna"], ["ph-diamond", "Diamante"], ["ph-hexagon", "Hexágono"], ["ph-heart", "Corazón"], ["ph-lightning", "Rayo"], ["ph-crown-simple", "Corona"], ["ph-square", "Cuadrado"]];
+const ICONOS_DEF = { bri: "ph-star-four", danilo: "ph-rocket-launch", sebas: "ph-triangle", erick: "ph-moon-stars", adrian: "ph-diamond" };
+const NAV = [
+  ["dashboard", "Panel", "ph-squares-four", "Tripulación", "Panel de la misión"],
+  ["evaluacion", "Evaluación", "ph-scan", "Estación", "Evaluación en curso"],
+  ["pruebas", "Pruebas", "ph-faders", "Cámara y micrófono", "Pruebas de dispositivos"],
+  ["resultados", "Resultados", "ph-clipboard-text", "Bri · hoy 08:12", "Resultado de la evaluación"],
+  ["historial", "Historial", "ph-chart-line-up", "Registrador", "Historial de monitoreo"],
+  ["config", "Configuración", "ph-gear-six", "Sistema", "Configuración"],
+  ["sistema", "Sistema de diseño", "ph-swatches", "Nocturne + Apto", "Sistema de diseño"],
+];
+const FRASES = {
+  estandar: ["Estándar", "El cielo de hoy está despejado y la nave avanza sin problemas hacia su destino."],
+  variacion_1: ["Variación 1", "Revisamos los paneles solares antes de salir a la caminata de mantenimiento."],
+  variacion_2: ["Variación 2", "La tripulación registra cada maniobra con precisión durante el acoplamiento."],
+  trabalenguas: ["Trabalenguas", "Tres tristes tripulantes trazan trayectorias tras el tercer trasbordador."],
+};
+const LANDMARKS = [[30,38],[36,36],[42,38],[58,38],[64,36],[70,38],[33,40],[39,41],[61,41],[67,40],[50,48],[50,56],[46,60],[54,60],[40,72],[45,75],[50,76],[55,75],[60,72],[50,71],[20,45],[22,62],[30,80],[50,92],[70,80],[78,62],[80,45],[50,18],[32,22],[68,22]];
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const fmt = (x, c = 2) => (x == null ? "–" : Number(x).toFixed(c).replace(".", ","));
+
+class Component extends DCLogic {
+  bgRef = React.createRef(); mainRef = React.createRef(); videoRef = React.createRef();
+  state = {
+    theme: (() => { try { return localStorage.getItem("becspace-tema") || "oscuro"; } catch (e) { return "oscuro"; } })(),
+    ppg: [], beat: 0, pCam: "off", camErr: null, camDevs: [], camDev: "", camRes: "", camFps: null, luz: null,
+    pMic: "off", micErr: null, micDevs: [], micDev: "", level: 0, peak: 0, peakMax: 0, noise: null, wave: [], recFase: "no", recUrl: null,
+    screen: "dashboard", paso: "inicio", persona: "bri", tarea: "caminata espacial", lineaBase: false, demo: true, dsst: true,
+    w: 1280, vista: "ventana", camFase: "lista", camT: 60, ear: [], blinks: 0, aviso: null, disp: { pulso: 68, hrv: 41, spo2: 96 },
+    frase: "estandar", vozFase: "lista", vozT: 0, pvtFase: "intro", pvtRts: [], pvtAnt: 0, pvtCont: "", pvtN: 0,
+    kss: null, horas: 7, periodo: "30", hPersona: "bri", serie: "puntaje", hSel: null, hPag: 0, modal: false, tip: false,
+    splash: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches), splashOut: false, splashGo: false,
+    crewIcons: (() => { try { return Object.assign({}, ICONOS_DEF, JSON.parse(localStorage.getItem("becspace-iconos-v2") || "{}")); } catch (e) { return { ...ICONOS_DEF }; } })(),
+    pregunta: "", conv: null, camara: "0", prefs: { proyector: false, movimiento: false, alto: false }, analT: 0,
+  };
+  componentDidMount() {
+    this.applyTheme(); this.startBg();
+    if (this.state.splash) { setTimeout(() => this.setState({ splashGo: true }), 60); this.spT1 = setTimeout(() => this.setState({ splashOut: true }), 2300); this.spT2 = setTimeout(() => this.setState({ splash: false }), 2900); } this.fast = setInterval(() => this.fastTick(), 50);
+    this.onResize = () => this.setState({ w: window.innerWidth });
+    window.addEventListener("resize", this.onResize); this.onResize();
+    this.onKey = (e) => { if (e.code === "Space" && this.state.screen === "evaluacion" && this.state.paso === "camreac") { e.preventDefault(); this.pvtTap(); } };
+    window.addEventListener("keydown", this.onKey);
+    this.tick = setInterval(() => this.onTick(), 250);
+    this.wait = setInterval(() => { if (window.AptoDemo && window.Logica) { clearInterval(this.wait); this.forceUpdate(); } }, 100);
+  }
+  reduced() { return this.state.prefs.movimiento || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); }
+  applyTheme() {
+    const r = document.documentElement.style; const light = this.state.theme === "claro";
+    Object.keys(THEME_DARK).concat(Object.keys(THEME_LIGHT)).forEach((k) => r.removeProperty(k));
+    if (light) Object.entries(THEME_LIGHT).forEach(([k, v]) => r.setProperty(k, v));
+    if (!light) Object.entries(THEME_DARK).forEach(([k, v]) => r.setProperty(k, v));
+    r.colorScheme = light ? "light" : "dark";
+  }
+  componentDidUpdate() {
+    const s = this.state; const ps = this._pv || { theme: s.theme, prefs: s.prefs, screen: s.screen, paso: s.paso };
+    this._pv = { theme: s.theme, prefs: s.prefs, screen: s.screen, paso: s.paso };
+    if (ps.theme !== s.theme) this.applyTheme();
+    if (ps.theme !== s.theme && this.bgResize) this.bgResize();
+    if ((ps.theme !== s.theme || ps.prefs.movimiento !== s.prefs.movimiento) && !this.bgRaf && this.bgDraw) this.bgRaf = requestAnimationFrame(this.bgDraw);
+    if (ps.screen !== s.screen || ps.paso !== s.paso) this.animateIn();
+    if (ps.screen === "pruebas" && s.screen !== "pruebas") { this.stopCam(); this.stopMic(); }
+  }
+  animateIn() {
+    const m = this.mainRef.current; if (!m || !m.animate || this.reduced()) return;
+    Array.from(m.children).forEach((c, i) => c.animate && c.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 460, delay: Math.min(i, 8) * 55, easing: "cubic-bezier(.2,.7,.2,1)", fill: "backwards" }));
+  }
+  startBg() {
+    const cv = this.bgRef.current; if (!cv) return;
+    const ctx = cv.getContext("2d"); let seed = 4; const rnd = (a, b) => a + ((seed = (seed * 16807) % 2147483647) / 2147483647) * (b - a);
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1); let W = 0, H = 0, E = null, A = null, stat = null, tw = [], dots = [], L = null;
+    if (!this.moonImg) { this.moonImg = new Image(); this.moonImg.onload = () => { if (this.state.theme === "claro" && this.bgResize) this.bgResize(); }; this.moonImg.src = "assets/fondo-luna.png"; }
+    const buildLight = () => {
+      seed = 9; stat = document.createElement("canvas"); stat.width = W * dpr; stat.height = H * dpr; const c = stat.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const g0 = c.createLinearGradient(0, 0, 0, H); [[0, "#eef2fb"], [0.45, "#f8f9fd"], [1, "#ffffff"]].forEach(([o, k]) => g0.addColorStop(o, k)); c.fillStyle = g0; c.fillRect(0, 0, W, H);
+      [[0.85, 0.12, 0.45, "rgba(69,110,200,0.07)"], [0.1, 0.35, 0.4, "rgba(128,102,217,0.05)"]].forEach(([x, y, r, col]) => { const g = c.createRadialGradient(x * W, y * H, 0, x * W, y * H, r * Math.max(W, H)); g.addColorStop(0, col); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(0, 0, W, H); });
+      for (let i = 0; i < 90; i++) { c.beginPath(); c.arc(rnd(0, W), rnd(0, H * 0.75), rnd(0.5, 1.2), 0, 7); c.fillStyle = "rgba(15,42,92," + rnd(0.15, 0.45) + ")"; c.fill(); }
+      const img = this.moonImg; const ok = img && img.complete && img.naturalWidth;
+      const sy = 1160, sh = 1448 - sy; const scale = Math.max(W / 1086, (H * 0.2) / sh); const dw = 1086 * scale, dh = sh * scale; const dx = (W - dw) / 2, dy = H - Math.min(dh, Math.max(120, H * 0.22) + (1180 - sy) * scale);
+      const half = W / 2, sag = Math.max(8, 48 * scale * Math.min(1, W / dw)); const R = (half * half + sag * sag) / (2 * sag); const top = dy + (1180 - sy) * scale;
+      L = { moon: null, top, R, cx: W / 2, cy: top + R };
+      if (ok) {
+        c.save(); c.globalCompositeOperation = "multiply"; c.globalAlpha = 0.55; c.drawImage(img, 0, sy, 1086, sh, dx, dy, dw, dh); c.restore();
+        const by = Math.max(0, Math.floor(top - 4)), bh = Math.ceil(H - by); const m = document.createElement("canvas"); m.width = Math.ceil(W * dpr); m.height = Math.ceil(bh * dpr); const mc = m.getContext("2d");
+        mc.drawImage(stat, 0, by * dpr, W * dpr, bh * dpr, 0, 0, W * dpr, bh * dpr);
+        mc.globalCompositeOperation = "destination-in"; mc.setTransform(dpr, 0, 0, dpr, 0, 0); mc.beginPath(); mc.arc(W / 2, top + R - by, R, 0, Math.PI * 2); mc.fill();
+        L.moon = m; L.by = by; L.bh = bh;
+      }
+      const base = [[121, 252, 15], [785, 179, 13], [976, 452, 22], [894, 1046, 13], [355, 209, 0], [1005, 73, 0], [66, 675, 0], [986, 834, 0]];
+      L.sparks = base.map(([x, y, s]) => ({ x: (x / 1086) * W, y: Math.min((y / 1448) * H * 1.05, top - 40), s, p: rnd(0, 6.28), sp: rnd(0.4, 0.9) }))
+        .concat(Array.from({ length: 10 }, () => ({ x: rnd(0, W), y: rnd(20, top - 60), s: rnd(0, 1) < 0.5 ? rnd(6, 10) : 0, p: rnd(0, 6.28), sp: rnd(0.3, 0.8) })));
+      const sp = L.sparks.filter((q) => q.s > 0); L.lines = [[sp[0], sp[1]], [sp[1], sp[2]], [sp[2], sp[3]]].filter((l) => l[0] && l[1]);
+      tw = [];
+    };
+    const build = () => {
+      if (this.state.theme === "claro") return buildLight();
+      L = null;
+      seed = 4; stat = document.createElement("canvas"); stat.width = W * dpr; stat.height = H * dpr; const c = stat.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const g0 = c.createLinearGradient(0, 0, 0, H); [[0, "#060913"], [0.28, "#0B1430"], [0.53, "#111D3D"], [0.76, "#192D56"], [1, "#243B6A"]].forEach(([o, k]) => g0.addColorStop(o, k)); c.fillStyle = g0; c.fillRect(0, 0, W, H);
+      c.globalCompositeOperation = "lighter";
+      for (let i = 0; i < 170; i++) { const u = rnd(-0.1, 1.1); const x = u * W, y = (0.04 + u * 0.34 + rnd(-0.12, 0.12)) * H; const r = rnd(30, 190); const pur = rnd(0, 1) < 0.6;
+        const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, pur ? "rgba(128,102,217," + rnd(0.02, 0.06) + ")" : "rgba(69,110,220," + rnd(0.015, 0.045) + ")"); g.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); }
+      for (let i = 0; i < 900; i++) { const u = rnd(0, 1); const x = u * W, y = (0.04 + u * 0.34 + rnd(-0.1, 0.1)) * H; c.fillStyle = "rgba(220,215,255," + rnd(0.05, 0.35) + ")"; c.fillRect(x, y, rnd(0.4, 1.1), rnd(0.4, 1.1)); }
+      c.globalCompositeOperation = "source-over";
+      for (let i = 0; i < 380; i++) { const y = Math.pow(rnd(0, 1), 1.5) * H * 0.85, x = rnd(0, W); const a = rnd(0.15, 0.8) * (1 - y / H * 0.8); c.beginPath(); c.arc(x, y, rnd(0.3, 0.9), 0, 7); c.fillStyle = "rgba(244,246,255," + a + ")"; c.fill(); }
+      tw = Array.from({ length: 70 }, () => ({ x: rnd(0, W), y: Math.pow(rnd(0, 1), 1.4) * H * 0.75, r: rnd(0.8, 1.6), p: rnd(0, 6.28), s: rnd(0.3, 0.9), big: rnd(0, 1) < 0.18 }));
+      // orbital arc (mid)
+      c.save(); c.beginPath(); c.ellipse(A.cx, A.cy, A.rx, A.ry, 0, Math.PI * 1.12, Math.PI * 1.88);
+      const ga = c.createLinearGradient(A.cx - A.rx, 0, A.cx + A.rx, 0); ga.addColorStop(0, "rgba(69,143,255,0)"); ga.addColorStop(0.5, "rgba(150,190,255,0.55)"); ga.addColorStop(1, "rgba(69,143,255,0)");
+      c.strokeStyle = ga; c.lineWidth = 1.2; c.shadowColor = "rgba(69,143,255,0.8)"; c.shadowBlur = 10; c.stroke(); c.restore();
+      [1.08, 1.2].forEach((k, i) => { c.beginPath(); c.ellipse(A.cx, A.cy, A.rx * k, A.ry * k, 0, Math.PI * 1.15, Math.PI * 1.85); c.strokeStyle = "rgba(150,165,235," + (0.1 - i * 0.04) + ")"; c.lineWidth = 1; c.stroke(); });
+      // earth
+      const { cx, cy, R } = E; const top = cy - R;
+      const glow = c.createRadialGradient(cx, top, 0, cx, top, W * 0.55); glow.addColorStop(0, "rgba(69,143,255,0.38)"); glow.addColorStop(0.35, "rgba(100,110,230,0.14)"); glow.addColorStop(1, "rgba(69,143,255,0)");
+      c.save(); c.translate(cx, top); c.scale(1, 0.42); c.translate(-cx, -top); c.fillStyle = glow; c.fillRect(0, top - W * 0.6, W, W * 1.2); c.restore();
+      c.save(); c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.clip();
+      const gs = c.createLinearGradient(0, top, 0, top + H * 0.2); gs.addColorStop(0, "#0e2550"); gs.addColorStop(0.25, "#071433"); gs.addColorStop(1, "#02050d"); c.fillStyle = gs; c.fillRect(0, top, W, H);
+      for (let i = 0; i < 60; i++) { const x = rnd(0, W), y = top + rnd(6, H * 0.15); const r = rnd(20, 90); const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, "rgba(40,70,120," + rnd(0.05, 0.15) + ")"); g.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); }
+      const surf = (x) => cy - Math.sqrt(Math.max(0, R * R - (x - cx) * (x - cx)));
+      for (let k = 0; k < 34; k++) { const x0 = rnd(0, W); const d0 = rnd(8, H * 0.13); const n = Math.floor(rnd(15, 60)); const spread = rnd(14, 60);
+        for (let i = 0; i < n; i++) { const x = x0 + rnd(-spread, spread) * rnd(0.2, 1); const y = surf(x) + d0 + rnd(-spread, spread) * 0.35; const r = rnd(0.4, 1.3); const a = rnd(0.35, 0.95) * Math.max(0.2, 1 - d0 / (H * 0.16));
+          c.beginPath(); c.arc(x, y, r, 0, 7); c.fillStyle = "rgba(255,196,120," + a + ")"; c.fill(); if (r > 1.05) { c.beginPath(); c.arc(x, y, r * 3.5, 0, 7); c.fillStyle = "rgba(255,170,90," + a * 0.12 + ")"; c.fill(); } } }
+      const lim = c.createRadialGradient(cx, cy, R - 90, cx, cy, R); lim.addColorStop(0, "rgba(69,143,255,0)"); lim.addColorStop(1, "rgba(69,143,255,0.32)"); c.fillStyle = lim; c.fillRect(0, top, W, H);
+      c.restore();
+      [[40, "rgba(128,102,217,0.10)", 50], [14, "rgba(69,143,255,0.30)", 26], [4, "rgba(110,170,255,0.75)", 12], [1.4, "rgba(225,240,255,0.95)", 4]].forEach(([lw, col, bl]) => { c.beginPath(); c.arc(cx, cy, R + lw * 0.3, Math.PI * 1.02, Math.PI * 1.98); c.strokeStyle = col; c.lineWidth = lw; c.shadowColor = "rgba(69,143,255,0.9)"; c.shadowBlur = bl; c.stroke(); });
+      c.shadowBlur = 0;
+      dots = Array.from({ length: 16 }, () => ({ a: rnd(1.2, 1.8) * Math.PI, sp: rnd(0.006, 0.016), k: [1, 1.08, 1.2][Math.floor(rnd(0, 3))] }));
+    };
+    const size = () => {
+      W = window.innerWidth; H = window.innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const R = Math.max(W * 0.9, (0.25 * W * W) / (0.2 * H)); E = { cx: W * 0.52, cy: H * 0.905 + R, R };
+      A = { cx: W * 0.47, cy: H * 0.95, rx: W * 0.36, ry: H * 0.62 };
+      build(); if (!this.bgRaf && this.bgDraw) this.bgRaf = requestAnimationFrame(this.bgDraw);
+    };
+    size(); this.bgResize = size; window.addEventListener("resize", size);
+    const rocketPt = (u) => { const p = [[0.6, -0.04], [0.74, 0.04], [0.83, 0.15], [0.85, 0.3]]; const m = 1 - u; const b = [m * m * m, 3 * m * m * u, 3 * m * u * u, u * u * u]; return [b.reduce((s, k, i) => s + k * p[i][0], 0) * W, b.reduce((s, k, i) => s + k * p[i][1], 0) * H]; };
+    let lastT = 0;
+    const draw = (t) => {
+      const still = this.reduced();
+      if (document.hidden || (!still && t - lastT < (L ? 50 : 40))) { this.bgRaf = requestAnimationFrame(draw); return; }
+      lastT = t; const T = still ? 0 : t / 1000; const light = this.state.theme === "claro";
+      ctx.drawImage(stat, 0, 0, W, H);
+      if (L) {
+        const NAVY = "15,42,92";
+        const star = (x, y, k, rot, al) => { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = "rgba(" + NAVY + "," + al + ")"; ctx.beginPath(); ctx.moveTo(0, -k); ctx.quadraticCurveTo(k * 0.12, -k * 0.12, k * 0.62, 0); ctx.quadraticCurveTo(k * 0.12, k * 0.12, 0, k); ctx.quadraticCurveTo(-k * 0.12, k * 0.12, -k * 0.62, 0); ctx.quadraticCurveTo(-k * 0.12, -k * 0.12, 0, -k); ctx.fill(); ctx.restore(); };
+        // constellation lines draw in and out
+        const cl = still ? 1 : 0.5 - 0.5 * Math.cos(T * 0.12);
+        L.lines.forEach(([p, q]) => { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + (q.x - p.x) * cl, p.y + (q.y - p.y) * cl); ctx.strokeStyle = "rgba(" + NAVY + ",0.14)"; ctx.setLineDash([2, 5]); ctx.lineWidth = 1; ctx.stroke(); });
+        ctx.setLineDash([]);
+        L.sparks.forEach((s) => { const a = 0.5 + 0.5 * Math.sin(T * s.sp + s.p);
+          if (s.s) { star(s.x, s.y, s.s * (0.75 + 0.3 * a), Math.sin(T * 0.2 + s.p) * 0.12, 0.65 + 0.35 * a); if (a > 0.92) { ctx.beginPath(); ctx.arc(s.x, s.y, s.s * 1.4, 0, 7); ctx.fillStyle = "rgba(69,110,200," + (a - 0.92) * 1.5 + ")"; ctx.fill(); } }
+          else { ctx.beginPath(); ctx.arc(s.x, s.y, 2 + a * 0.8, 0, 7); ctx.fillStyle = "rgba(" + NAVY + "," + (0.55 + 0.4 * a) + ")"; ctx.fill(); } });
+        // satellite crossing with dashed trail
+        const sc = 38, sq = still ? 0.4 : (T % sc) / sc; const sx = -40 + sq * (W + 80), syy = H * 0.16 + Math.sin(sq * Math.PI) * -H * 0.06;
+        ctx.beginPath(); for (let i = 0; i <= 30; i++) { const qq = Math.max(0, sq - i * 0.006); const x = -40 + qq * (W + 80), y = H * 0.16 + Math.sin(qq * Math.PI) * -H * 0.06; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+        ctx.strokeStyle = "rgba(" + NAVY + ",0.18)"; ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.save(); ctx.translate(sx, syy); ctx.rotate(0.3 + T * 0.15); ctx.fillStyle = "rgba(" + NAVY + ",0.85)"; ctx.fillRect(-3, -3, 6, 6); ctx.fillRect(-15, -2, 9, 4); ctx.fillRect(6, -2, 9, 4); ctx.restore();
+        // earthrise behind the lunar horizon
+        const ec = 70, eq = still ? 0.6 : (T % ec) / ec; const ex = W * 0.2, er = Math.min(46, W * 0.035);
+        const hy = L.cy - Math.sqrt(Math.max(0, L.R * L.R - (ex - L.cx) * (ex - L.cx)));
+        const ey = hy + er + 6 - Math.min(1, eq / 0.7) * (er * 2 + 70); const ea = Math.min(1, (1 - eq) * 8);
+        ctx.save(); ctx.globalAlpha = ea;
+        const eg = ctx.createRadialGradient(ex, ey, er, ex, ey, er * 2.2); eg.addColorStop(0, "rgba(69,143,255,0.18)"); eg.addColorStop(1, "rgba(69,143,255,0)"); ctx.fillStyle = eg; ctx.fillRect(ex - er * 2.3, ey - er * 2.3, er * 4.6, er * 4.6);
+        ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); const eb = ctx.createRadialGradient(ex - er * 0.4, ey - er * 0.4, 0, ex, ey, er); eb.addColorStop(0, "#cfe0fa"); eb.addColorStop(1, "#7f9fd6"); ctx.fillStyle = eb; ctx.fill();
+        ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); ctx.clip(); ctx.fillStyle = "rgba(" + NAVY + ",0.45)"; const rot = (T * 3) % (er * 4);
+        [[-0.5, -0.3, 0.42, 0.3], [0.15, 0.25, 0.3, 0.4], [0.5, -0.4, 0.22, 0.18]].forEach(([u, v, rx, ry]) => { for (const off of [0, er * 4]) { ctx.beginPath(); ctx.ellipse(ex + u * er + rot - off * 0.5, ey + v * er, rx * er, ry * er, 0.4, 0, 7); ctx.fill(); } });
+        const sh = ctx.createLinearGradient(ex - er, 0, ex + er, 0); sh.addColorStop(0.45, "rgba(15,42,92,0)"); sh.addColorStop(1, "rgba(15,42,92,0.55)"); ctx.fillStyle = sh; ctx.fillRect(ex - er, ey - er, er * 2, er * 2); ctx.restore();
+        ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); ctx.strokeStyle = "rgba(" + NAVY + ",0.7)"; ctx.lineWidth = 1.2; ctx.stroke(); ctx.restore();
+        // lunar lander descending
+        const lc = 30, lq = still ? 0.5 : (T % lc) / lc; const lx = W * 0.72; const lhy = L.cy - Math.sqrt(Math.max(0, L.R * L.R - (lx - L.cx) * (lx - L.cx)));
+        const dq = Math.min(1, lq / 0.75); const ease = 1 - Math.pow(1 - dq, 2.4); const ly = -30 + ease * (lhy - 14 + 30); const la = Math.min(1, lq * 10, (1 - lq) * 6);
+        ctx.save(); ctx.globalAlpha = la; ctx.translate(lx, ly);
+        if (dq < 1) { const fl = 8 + 6 * Math.sin(T * 30); const fg = ctx.createLinearGradient(0, 8, 0, 8 + fl * 2); fg.addColorStop(0, "rgba(255,150,80,0.85)"); fg.addColorStop(1, "rgba(255,150,80,0)"); ctx.fillStyle = fg; ctx.beginPath(); ctx.moveTo(-3, 8); ctx.lineTo(0, 8 + fl * 2); ctx.lineTo(3, 8); ctx.fill(); }
+        ctx.fillStyle = "rgba(" + NAVY + ",0.92)"; ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(6, -4); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.lineTo(-6, -4); ctx.closePath(); ctx.fill();
+        ctx.fillRect(-4, 6, 8, 3); ctx.strokeStyle = "rgba(" + NAVY + ",0.92)"; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(-5, 6); ctx.lineTo(-10, 14); ctx.moveTo(5, 6); ctx.lineTo(10, 14); ctx.moveTo(-12, 14); ctx.lineTo(-8, 14); ctx.moveTo(8, 14); ctx.lineTo(12, 14); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, -3, 2.2, 0, 7); ctx.fillStyle = "#cfe0fa"; ctx.fill(); ctx.restore();
+        if (dq > 0.9 && dq <= 1) { const pd = lq < 0.75 ? (dq - 0.9) / 0.1 : 1 + (lq - 0.75) * 4; ctx.beginPath(); ctx.ellipse(lx, lhy + 1, 10 + pd * 28, 2 + pd * 5, 0, 0, 7); ctx.fillStyle = "rgba(120,135,170," + Math.max(0, 0.35 - pd * 0.18) * la + ")"; ctx.fill(); }
+        // shooting star (navy)
+        const ss = 14, sq2 = still ? 2 : (T % ss) / 1.1; if (sq2 < 1) { const x0 = W * 0.65, y0 = H * 0.05; const x = x0 - sq2 * W * 0.25, y = y0 + sq2 * H * 0.12; const g = ctx.createLinearGradient(x, y, x + W * 0.06, y - H * 0.03); g.addColorStop(0, "rgba(" + NAVY + "," + (1 - sq2) * 0.7 + ")"); g.addColorStop(1, "rgba(" + NAVY + ",0)"); ctx.strokeStyle = g; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + W * 0.06, y - H * 0.03); ctx.stroke(); }
+        if (L.moon) { ctx.drawImage(L.moon, 0, L.by, W, L.bh);
+          const glint = still ? 0.5 : (T * 0.03) % 1.4 - 0.2; const gg = ctx.createLinearGradient((glint - 0.15) * W, 0, (glint + 0.15) * W, 0); gg.addColorStop(0, "rgba(255,255,255,0)"); gg.addColorStop(0.5, "rgba(255,255,255,0.14)"); gg.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = gg; ctx.fillRect(Math.max(0, (glint - 0.15) * W), L.top, 0.3 * W, H - L.top); }
+        this.bgRaf = still ? null : requestAnimationFrame(draw); return;
+      }
+      tw.forEach((s) => { const a = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(T * s.s + s.p)); ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fillStyle = "rgba(244,246,255," + a + ")"; ctx.fill();
+        if (s.big) { ctx.strokeStyle = "rgba(200,210,255," + a * 0.35 + ")"; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(s.x - 6 * a, s.y); ctx.lineTo(s.x + 6 * a, s.y); ctx.moveTo(s.x, s.y - 6 * a); ctx.lineTo(s.x, s.y + 6 * a); ctx.stroke(); } });
+      dots.forEach((d) => { const ang = d.a + T * d.sp; const x = A.cx + Math.cos(ang) * A.rx * d.k, y = A.cy + Math.sin(ang) * A.ry * d.k; if (y > H * 0.9 || x < 0 || x > W) return; ctx.beginPath(); ctx.arc(x, y, 1.4, 0, 7); ctx.fillStyle = "rgba(170,205,255,0.8)"; ctx.fill(); });
+      const { cx, cy, R } = E; const pul = 0.5 + 0.5 * Math.sin(T * 0.5);
+      ctx.beginPath(); ctx.arc(cx, cy, R + 3, Math.PI * 1.1, Math.PI * 1.9); ctx.strokeStyle = "rgba(69,143,255," + (0.1 + 0.12 * pul) + ")"; ctx.lineWidth = 10; ctx.shadowColor = "rgba(69,143,255,0.9)"; ctx.shadowBlur = 24; ctx.stroke(); ctx.shadowBlur = 0;
+      const cyc = 26, ph = still ? 1 : Math.min(1, ((T % cyc) / 20)); const fade = still ? 1 : Math.min(1, (T % cyc) / 1.5, Math.max(0, (cyc - (T % cyc)) / 2.5));
+      const u1 = 0.35 + ph * 0.65, u0 = Math.max(0, u1 - 0.55);
+      const N = 60; let prev = rocketPt(u0);
+      for (let i = 1; i <= N; i++) { const u = u0 + (u1 - u0) * (i / N); const p = rocketPt(u); const f = i / N;
+        const col = f > 0.75 ? [255, 150, 80] : f > 0.45 ? [235, 105, 165] : [128, 102, 217];
+        ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(p[0], p[1]); ctx.strokeStyle = "rgba(" + col.join(",") + "," + (f * f * 0.75 * fade) + ")"; ctx.lineWidth = 0.6 + f * 3.2; ctx.lineCap = "round"; ctx.shadowColor = "rgba(" + col.join(",") + ",0.9)"; ctx.shadowBlur = 8 * f; ctx.stroke(); prev = p; }
+      ctx.shadowBlur = 0;
+      const [x, y] = rocketPt(u1), [x2, y2] = rocketPt(Math.min(1, u1 + 0.004)); const ang = Math.atan2(y2 - y, x2 - x) || 1.4;
+      const gw = ctx.createRadialGradient(x, y, 0, x, y, 34); gw.addColorStop(0, "rgba(255,170,110," + 0.4 * fade + ")"); gw.addColorStop(1, "rgba(255,170,110,0)"); ctx.fillStyle = gw; ctx.fillRect(x - 34, y - 34, 68, 68);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.globalAlpha = fade;
+      ctx.beginPath(); ctx.moveTo(-15, 0); ctx.lineTo(-26, -3); ctx.lineTo(-30, 0); ctx.lineTo(-26, 3); ctx.closePath(); ctx.fillStyle = "rgba(255,190,120,0.9)"; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(14, 0); ctx.bezierCurveTo(10, -5, 2, -5, -12, -4); ctx.lineTo(-12, 4); ctx.bezierCurveTo(2, 5, 10, 5, 14, 0); ctx.closePath();
+      const bd = ctx.createLinearGradient(0, -5, 0, 5); bd.addColorStop(0, "#F4F6FF"); bd.addColorStop(1, "#8f9ab8"); ctx.fillStyle = bd; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-6, -4); ctx.lineTo(-14, -9); ctx.lineTo(-12, -4); ctx.closePath(); ctx.moveTo(-6, 4); ctx.lineTo(-14, 9); ctx.lineTo(-12, 4); ctx.closePath(); ctx.fillStyle = "#c4cbe0"; ctx.fill();
+      ctx.beginPath(); ctx.arc(4, 0, 1.8, 0, 7); ctx.fillStyle = "#458FFF"; ctx.fill(); ctx.restore();
+      this.bgRaf = still ? null : requestAnimationFrame(draw);
+    };
+    this.bgDraw = draw; this.bgRaf = requestAnimationFrame(draw);
+  }
+  fastTick() {
+    const s = this.state; if (s.screen !== "evaluacion" || s.paso !== "dispositivo") return;
+    this.ppgPh = (this.ppgPh || 0) + 0.05 * s.disp.pulso / 60; let beat = s.beat;
+    if (this.ppgPh >= 1) { this.ppgPh -= 1; beat = performance.now(); }
+    const p = this.ppgPh;
+    const v = 0.95 * Math.exp(-(((p - 0.16) / 0.065) ** 2)) + 0.36 * Math.exp(-(((p - 0.43) / 0.09) ** 2)) + 0.05 * Math.sin(performance.now() / 1900) + (Math.random() - 0.5) * 0.025;
+    this.setState({ ppg: s.ppg.concat([v]).slice(-160), beat });
+  }
+  errTxt(e, q) {
+    const n = e && e.name; const Q = q.charAt(0).toUpperCase() + q.slice(1);
+    if (!navigator.mediaDevices) return "Este navegador no permite usar " + q + " aquí. Abre la estación desde localhost o https.";
+    if (n === "NotAllowedError" || n === "SecurityError") return "Permiso denegado. Permite el acceso a " + q + " desde el candado de la barra de direcciones y vuelve a intentar.";
+    if (n === "NotFoundError" || n === "OverconstrainedError") return "No se encontró " + (q === "la cámara" ? "ninguna cámara" : "ningún micrófono") + ". Conéctalo y vuelve a intentar.";
+    if (n === "NotReadableError") return Q + " está en uso por otro programa, por ejemplo vision.py o DroidCam. Ciérralo y vuelve a intentar.";
+    return "No se pudo abrir " + q + ". " + ((e && e.message) || n || "");
+  }
+  async listDevices() {
+    try { const ds = await navigator.mediaDevices.enumerateDevices(); const m = (k, n) => ds.filter((d) => d.kind === k).map((d, i) => ({ id: d.deviceId, label: d.label || n + " " + (i + 1) })); this.setState({ camDevs: m("videoinput", "Cámara"), micDevs: m("audioinput", "Micrófono") }); } catch (e) {}
+  }
+  async startCam() {
+    this.stopCam(); this.setState({ pCam: "pidiendo", camErr: null });
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({ video: this.state.camDev ? { deviceId: { exact: this.state.camDev } } : { width: { ideal: 1280 }, height: { ideal: 720 } } });
+      this.camStream = st; const v = this.videoRef.current;
+      if (v) { v.muted = true; v.playsInline = true; v.srcObject = st; await v.play().catch(() => {}); }
+      const se = st.getVideoTracks()[0].getSettings();
+      this.setState({ pCam: "on", camRes: (se.width || "?") + "×" + (se.height || "?"), camFps: se.frameRate ? Math.round(se.frameRate) : null });
+      const c = document.createElement("canvas"); c.width = 64; c.height = 48; const x = c.getContext("2d", { willReadFrequently: true });
+      this.lumaIv = setInterval(() => { const vv = this.videoRef.current; if (!vv || vv.readyState < 2) return; x.drawImage(vv, 0, 0, 64, 48); const d = x.getImageData(0, 0, 64, 48).data; let L = 0; for (let i = 0; i < d.length; i += 4) L += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; this.setState({ luz: L / (d.length / 4) }); }, 500);
+      this.listDevices();
+    } catch (e) { this.setState({ pCam: "error", camErr: this.errTxt(e, "la cámara") }); }
+  }
+  stopCam() {
+    clearInterval(this.lumaIv); if (this.camStream) { this.camStream.getTracks().forEach((t) => t.stop()); this.camStream = null; }
+    const v = this.videoRef.current; if (v) v.srcObject = null;
+    if (this.state.pCam === "on" || this.state.pCam === "pidiendo") this.setState({ pCam: "off", luz: null });
+  }
+  async startMic() {
+    this.stopMic(); this.setState({ pMic: "pidiendo", micErr: null, peakMax: 0, noise: null });
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({ audio: this.state.micDev ? { deviceId: { exact: this.state.micDev } } : true });
+      this.micStream = st; const AC = window.AudioContext || window.webkitAudioContext; this.ac = new AC();
+      const src = this.ac.createMediaStreamSource(st); this.an = this.ac.createAnalyser(); this.an.fftSize = 1024; src.connect(this.an);
+      const buf = new Float32Array(this.an.fftSize); let last = 0, sm = 0, floor = 1;
+      const loop = (t) => {
+        if (!this.an) return; this.an.getFloatTimeDomainData(buf); let sum = 0, pk = 0;
+        for (let i = 0; i < buf.length; i++) { sum += buf[i] * buf[i]; pk = Math.max(pk, Math.abs(buf[i])); }
+        const rms = Math.sqrt(sum / buf.length); sm = sm * 0.75 + rms * 0.25; floor = Math.min(floor * 1.003 + 0.000005, Math.max(sm, 0.00001));
+        if (t - last > 60) { last = t; const wave = []; for (let i = 0; i < 64; i++) wave.push(buf[i * 16]); this.setState((s) => ({ level: sm, peak: pk, peakMax: Math.max(s.peakMax, pk), noise: floor, wave, pMic: "on" })); }
+        this.micRaf = requestAnimationFrame(loop);
+      };
+      this.micRaf = requestAnimationFrame(loop); this.listDevices();
+    } catch (e) { this.setState({ pMic: "error", micErr: this.errTxt(e, "el micrófono") }); }
+  }
+  stopMic() {
+    cancelAnimationFrame(this.micRaf); this.an = null; if (this.ac) { this.ac.close(); this.ac = null; }
+    if (this.micStream) { this.micStream.getTracks().forEach((t) => t.stop()); this.micStream = null; }
+    if (this.state.pMic === "on" || this.state.pMic === "pidiendo") this.setState({ pMic: "off", level: 0, wave: [] });
+  }
+  grabar() {
+    if (!this.micStream || this.state.recFase === "grabando" || !window.MediaRecorder) return;
+    const ch = []; const mr = new MediaRecorder(this.micStream);
+    mr.ondataavailable = (e) => ch.push(e.data);
+    mr.onstop = () => { if (this.state.recUrl) URL.revokeObjectURL(this.state.recUrl); this.setState({ recFase: "listo", recUrl: URL.createObjectURL(new Blob(ch, { type: mr.mimeType })) }); };
+    mr.start(); this.setState({ recFase: "grabando" }); setTimeout(() => mr.state !== "inactive" && mr.stop(), 3000);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this.bgRaf); this.bgDraw = null; clearInterval(this.fast); window.removeEventListener("resize", this.bgResize); this.stopCam(); this.stopMic(); clearInterval(this.tick); clearInterval(this.wait); clearTimeout(this.pvtTo); clearInterval(this.pvtIv); window.removeEventListener("resize", this.onResize); window.removeEventListener("keydown", this.onKey); }
+  onTick() {
+    const s = this.state;
+    if (s.screen !== "evaluacion") return;
+    if (s.paso === "dispositivo") {
+      const j = (v, d, a, b) => Math.max(a, Math.min(b, Math.round((v + (Math.random() - 0.5) * d) * 10) / 10));
+      this.setState({ disp: { pulso: Math.round(j(s.disp.pulso, 3, 60, 78)), hrv: Math.round(j(s.disp.hrv, 3, 34, 50)), spo2: Math.round(j(s.disp.spo2, 1.2, 94, 99)) } });
+    }
+    if (s.paso === "camreac" && s.camFase === "midiendo") {
+      const blink = Math.random() < 0.07 && !s.aviso;
+      const v = s.aviso === "cara" ? null : blink ? 0.09 + Math.random() * 0.05 : 0.29 + (Math.random() - 0.5) * 0.03;
+      const ear = s.ear.concat([v]).slice(-100);
+      const t = Math.max(0, s.camT - 0.25);
+      this.setState({ ear, camT: t, blinks: s.blinks + (blink ? 1 : 0), camFase: t <= 0 ? "listo" : "midiendo" });
+      if (t <= 0) this.pvtStop("fin");
+    }
+    if (s.paso === "voz" && s.vozFase === "grabando") {
+      const t = s.vozT + 0.25;
+      this.setState(t >= 12 ? { vozFase: "analizando", vozT: 12 } : { vozT: t });
+      if (t >= 12) setTimeout(() => this.setState({ vozFase: "listo" }), 1200);
+    }
+    if (s.paso === "analizando") {
+      const t = s.analT + 0.25;
+      if (t >= 3) this.setState({ screen: "resultados", paso: "inicio", analT: 0 }); else this.setState({ analT: t });
+    }
+  }
+  pasosList() { return ["inicio", "dispositivo", "camreac", "voz", "simbolos", "resultado"]; }
+  go(screen) { this.setState({ screen }); window.scrollTo(0, 0); }
+  mover(d) {
+    const l = this.pasosList(); let i = l.indexOf(this.state.paso); if (i < 0) i = l.length - 1;
+    const n = l[Math.max(0, Math.min(l.length - 1, i + d))];
+    this.setState({ paso: n === "resultado" ? "analizando" : n, analT: 0 }); window.scrollTo(0, 0);
+  }
+  pvtTap() {
+    const s = this.state;
+    if (s.pvtFase === "espera") { clearTimeout(this.pvtTo); this.setState({ pvtAnt: s.pvtAnt + 1, pvtCont: "", pvtMsg: "Te adelantaste: cuenta como anticipada" }); this.pvtArm(); return; }
+    if (s.pvtFase === "estimulo") {
+      clearInterval(this.pvtIv); const rt = Math.round(performance.now() - this.t0);
+      const rts = s.pvtRts.concat([rt]); const n = s.pvtN + 1;
+      this.setState({ pvtRts: rts, pvtN: n, pvtCont: String(rt), pvtFase: "respuesta", pvtMsg: rt >= 355 ? "Lapso: 355 ms o más" : "Bien" });
+      this.pvtNext = setTimeout(() => { if (this.state.camFase === "midiendo") this.pvtArm(); }, 800);
+    }
+  }
+  pvtStop(fase) { clearTimeout(this.pvtTo); clearTimeout(this.pvtNext); clearInterval(this.pvtIv); this.setState({ pvtFase: fase, pvtCont: "", pvtMsg: fase === "fin" ? "Prueba terminada" : "" }); }
+  startCombo() { clearTimeout(this.pvtTo); clearTimeout(this.pvtNext); clearInterval(this.pvtIv); this.setState({ camFase: "midiendo", camT: 60, ear: [], blinks: 0, pvtRts: [], pvtN: 0, pvtAnt: 0 }, () => this.pvtArm()); }
+  pvtArm() {
+    this.setState({ pvtFase: "espera", pvtCont: "" });
+    clearTimeout(this.pvtTo);
+    this.pvtTo = setTimeout(() => {
+      this.t0 = performance.now(); this.setState({ pvtFase: "estimulo", pvtMsg: "" });
+      this.pvtIv = setInterval(() => this.setState({ pvtCont: String(Math.round(performance.now() - this.t0)) }), 30);
+    }, 1000 + Math.random() * 3000);
+  }
+  renderVals() {
+    const s = this.state; const D = window.AptoDemo; const L = window.Logica;
+    const wide = s.w >= 900;
+    const base = {
+      splash: s.splash, splashOp: s.splashOut ? "0" : "1", splashPct: s.splashGo ? "100%" : "0%", hideSplash: () => { clearTimeout(this.spT1); clearTimeout(this.spT2); this.setState({ splashOut: true }); setTimeout(() => this.setState({ splash: false }), 600); },
+      logoTone: s.theme === "claro" ? "light" : "dark",
+      wide, bgRef: this.bgRef, mainRef: this.mainRef, videoRef: this.videoRef, shellDir: wide ? "row" : "column", navDir: wide ? "column" : "row", navW: wide ? "232px" : "100%", navH: wide ? "100vh" : "auto",
+      navPad: wide ? "18px 12px" : "8px 12px", navEdge: wide ? "inset -1px 0 0 var(--color-neutral-900)" : "inset 0 -1px 0 var(--color-neutral-900)",
+      stAm: ST.amarillo, stVe: ST.verde, modal: s.modal, tip: s.tip,
+      openModal: () => this.setState({ modal: true }), closeModal: () => this.setState({ modal: false }), stop: (e) => e.stopPropagation(),
+      tipOn: () => this.setState({ tip: true }), tipOff: () => this.setState({ tip: false }),
+    };
+    const navMeta = NAV.find((n) => n[0] === s.screen);
+    base.nav = NAV.map(([id, label, icon]) => ({ label, icon: icon, current: s.screen === id ? "page" : "false", go: () => this.go(id),
+      bg: "transparent", fg: s.screen === id ? "var(--color-accent-200)" : "var(--color-neutral-300)",
+      bar: s.screen === id ? "inset 2px 0 0 var(--color-accent)" : "none" }));
+    base.kicker = navMeta[3]; base.title = navMeta[4];
+    base.personaNombre = cap(s.persona);
+    Object.entries({ isDash: "dashboard", isEval: "evaluacion", isPru: "pruebas", isRes: "resultados", isHist: "historial", isConf: "config", isDs: "sistema" }).forEach(([k, id]) => (base[k] = s.screen === id));
+    base.goPru = () => this.go("pruebas");
+    base.goEval = () => this.setState({ screen: "evaluacion", paso: "inicio", camFase: "lista", camT: 60, ear: [], blinks: 0, pvtFase: "intro", pvtRts: [], pvtN: 0, pvtAnt: 0, kss: null, vozFase: "lista", vozT: 0 });
+    base.goRes = () => this.go("resultados"); base.goHist = () => this.go("historial");
+    if (!D || !L) return Object.assign(base, { tareaTitulo: "", rec: { st: ST.sin, nombre: "", texto: "" } });
+
+    const tareas = D.TAREAS.map((t) => ({ label: cap(t), on: s.tarea === t, pick: () => this.setState({ tarea: t }) }));
+    const evs = D.EVALUACIONES;
+    const r = L.recomendacion(evs, s.tarea);
+    const ic = (p) => s.crewIcons[p] || "ph-user";
+    const crew = D.TRIPULACION.map((p) => {
+      const e = evs[p]; const u = D.ULTIMAS[p] || {};
+      return { nombre: cap(p), icon: ic(p), st: ST[e ? e.color : "sin"], hora: e ? "hoy " + e.ts.slice(11, 16) : "sin evaluación", pulso: u.pulso_lpm ?? "–", kss: u.kss ?? "–", pvt: u.pvt_mediana ?? "–",
+        motivo: e ? (e.motivos.length ? e.motivos.join(" · ") : "Sin motivos de alerta") : "Pendiente de evaluar", open: () => { this.setState({ persona: p }); this.go(e ? "resultados" : "evaluacion"); } };
+    });
+    const cnt = { verde: 0, amarillo: 0, rojo: 0, sin: 0 }; D.TRIPULACION.forEach((p) => cnt[evs[p] ? evs[p].color : "sin"]++);
+    const modulos = D.MODULOS.map((m) => ({ ...m, off: !m.activo, provisional: !!m.provisional, icon: m.activo ? "ph-check-circle" : "ph-x-circle",
+      fg: m.activo ? ST.verde.fg : ST.rojo.fg, estado: m.activo ? "activo" : "no está abierto" }));
+    Object.assign(base, {
+      tareas, tareaTitulo: cap(s.tarea), crew, modulos, crewSpan: 1, crewCols: s.w >= 1100 ? "100px 130px auto minmax(0,1fr)" : "1fr auto",
+      modActivos: D.MODULOS.filter((m) => m.activo).length + " de " + D.MODULOS.length + " activos",
+      rec: { st: ST[r.mejor ? r.mejor.color : "sin"], nombre: r.mejor ? cap(r.mejor.persona) : "Sin datos", texto: r.texto },
+      conteo: ["verde", "amarillo", "rojo", "sin"].map((c) => ({ ...ST[c], word: c === "sin" ? "Pendiente" : cap(c), n: cnt[c] })),
+    });
+
+    // Evaluación
+    const pl = this.pasosList(); const cur = s.paso === "analizando" ? pl.length - 1 : pl.indexOf(s.paso);
+    const PI = { inicio: ["Inicio", "ph-user"], dispositivo: ["Dispositivo", "ph-heartbeat"], camreac: ["Cámara y reacción", "ph-webcam"], camara: ["Cámara", "ph-webcam"], voz: ["Voz", "ph-microphone"], reaccion: ["Reacción", "ph-timer"], simbolos: ["Símbolos", "ph-shapes"], cuestionario: ["Cuestionario", "ph-list-checks"], resultado: ["Resultado", "ph-flag-checkered"] };
+    base.pasos = pl.map((p, i) => ({ n: String(i + 1).padStart(2, "0"), label: PI[p][0], icon: i < cur ? "ph-check" : PI[p][1], current: i === cur ? "step" : "false",
+      line: i === cur ? "var(--color-accent)" : i < cur ? "var(--color-accent-700)" : "var(--color-neutral-800)",
+      fg: i === cur ? "var(--color-text)" : i < cur ? "var(--color-neutral-300)" : "var(--color-neutral-500)", labelDisp: wide || i === cur ? "inline" : "none" }));
+    ["pInicio:inicio", "pDisp:dispositivo", "pCam:camreac", "pVoz:voz", "pPvt:camreac", "pDsst:simbolos", "pAnal:analizando"].forEach((x) => { const [k, v] = x.split(":"); base[k] = s.paso === v; });
+    base.next = () => this.mover(1); base.prev = () => this.mover(-1);
+    base.personas = D.TRIPULACION.map((p) => ({ label: cap(p), icon: ic(p), on: String(s.persona === p), pick: () => this.setState({ persona: p }),
+      bg: s.persona === p ? "var(--color-accent-900)" : "var(--color-surface)", ring: s.persona === p ? "inset 0 0 0 1px var(--color-accent)" : "inset 0 0 0 1px transparent" }));
+    base.opciones = [
+      ["lineaBase", "Medición de línea base", "Márcala si hoy descansaste bien: esta medición servirá para comparar las siguientes."],
+    ].map(([k, label, help]) => ({ label, help, on: s[k], toggle: () => this.setState({ [k]: !s[k] }) }));
+    const esp = D.MODULOS.find((m) => m.id === "esp32");
+    base.checks = [
+      { label: "Broker", st: ST.amarillo, estado: "sin conectar", help: "Prototipo con datos demostrativos. Se conecta con paneles/web/comun.js." },
+      ...D.MODULOS.map((m) => ({ label: m.nombre, st: m.activo ? ST.verde : ST.rojo, estado: m.activo ? "activo" : "no está abierto", help: m.activo ? (m.provisional ? "Coordinador provisional: el resultado lleva la etiqueta PROVISIONAL." : "Listo para medir.") : m.comando })),
+    ];
+    base.dispCards = [
+      { label: "Pulso", icon: "ph-heartbeat", valor: s.disp.pulso, unidad: "latidos por minuto" },
+      { label: "HRV", icon: "ph-wave-sine", valor: s.disp.hrv, unidad: "ms (RMSSD de 30 s)" },
+      { label: "SpO₂", icon: "ph-drop", valor: s.disp.spo2, unidad: "% de oxígeno en sangre" },
+      { label: "Movimiento", icon: "ph-hand", valor: "0,02", unidad: "g · quieto" },
+    ];
+    base.dispCalidad = "0,82";
+    const nP = s.ppg.length; const px = (i) => ((160 - nP + i) * 600) / 159; const py = (v) => Math.round((110 - v * 88) * 10) / 10;
+    base.ppgPts = s.ppg.map((v, i) => px(i).toFixed(1) + "," + py(v)).join(" ");
+    base.ppgHead = nP ? { x: px(nP - 1), y: py(s.ppg[nP - 1]) } : { x: -10, y: -10 };
+    base.beatScale = performance.now() - s.beat < 170 ? "1.3" : "1"; base.pulsoBpm = s.disp.pulso;
+    // cámara
+    const mid = s.camFase === "midiendo";
+    Object.assign(base, {
+      vistaVentana: s.vista === "ventana", vistaWeb: s.vista === "web", setVentana: () => this.setState({ vista: "ventana" }), setWeb: () => this.setState({ vista: "web" }),
+      camaraSel: s.camara, camMidiendo: mid, camNoMidiendo: !mid, camNoListo: s.camFase !== "listo",
+      landmarks: s.aviso === "cara" ? [] : LANDMARKS.map(([x, y]) => ({ x: x + "%", y: y + "%" })),
+      ovalColor: s.aviso === "cara" ? ST.amarillo.fg : mid ? "var(--color-accent)" : "var(--color-neutral-600)",
+      ventanaTexto: mid ? "Tu rostro se ve en la ventana del módulo de visión. Mírala de frente." : s.camFase === "listo" ? "Medición terminada. La ventana de visión ya se cerró." : "Al iniciar, el módulo de visión abre su ventana con tu rostro.",
+      camDash: String(232.5 * (s.camT / 60)), camSeg: String(Math.ceil(s.camT)),
+      camEstado: { lista: "Listo para medir", midiendo: s.aviso ? "Midiendo con avisos" : "Midiendo", listo: "Medición lista", error: "Error" }[s.camFase],
+      camSub: { lista: "Cámara " + s.camara + " encontrada · 30 fps", midiendo: "Quedan " + Math.ceil(s.camT) + " s · el módulo publica cada 5 s", listo: "Datos enviados al coordinador", error: "" }[s.camFase],
+      camIniciar: () => this.setState({ camFase: "midiendo", camT: s.camFase === "listo" ? 60 : s.camT, ear: s.camFase === "listo" ? [] : s.ear }),
+      camDetener: () => { this.setState({ camFase: "lista" }); this.pvtStop("intro"); },
+      camReiniciar: () => { this.pvtStop("intro"); this.setState({ camFase: "lista", camT: 60, ear: [], blinks: 0, aviso: null, pvtRts: [], pvtN: 0, pvtAnt: 0 }); },
+      simLuz: () => this.setState({ aviso: s.aviso === "luz" ? null : "luz" }), simCara: () => this.setState({ aviso: s.aviso === "cara" ? null : "cara" }),
+    });
+    base.camChips = [
+      { icon: "ph-webcam", label: "CÁMARA " + s.camara, fg: ST.verde.fg },
+      s.aviso === "cara" ? { icon: "ph-warning-circle", label: "ROSTRO NO DETECTADO", fg: ST.amarillo.fg } : { icon: "ph-check-circle", label: "ROSTRO 98 %", fg: ST.verde.fg },
+      s.aviso === "luz" ? { icon: "ph-warning-circle", label: "LUZ BAJA", fg: ST.amarillo.fg } : { icon: "ph-sun", label: "LUZ OK", fg: ST.verde.fg },
+    ];
+    base.camAvisos = s.aviso === "luz" ? [{ titulo: "Poca luz en la piel", texto: "Busca una luz frontal o acércate a una ventana. Sin luz suficiente el pulso no se puede estimar." }]
+      : s.aviso === "cara" ? [{ titulo: "No se encuentra tu rostro", texto: "Centra la cara en el óvalo y mira la ventana de frente. Si dura más del 20 % del tiempo, la medición pierde calidad." }] : [];
+    const ear = s.ear; const last = ear.length ? ear[ear.length - 1] : null;
+    base.earPts = ear.map((v, i) => (i * 4) + "," + (v == null ? 88 : Math.round(88 - v * 230))).join(" ");
+    base.earActual = last == null ? "–" : fmt(last, 2);
+    const ya = s.camFase !== "lista" || ear.length > 0;
+    base.visionCards = [
+      { label: "Parpadeos", valor: ya ? String(s.blinks) : "–", unidad: "en esta medición", tipo: "MEDIDO", tipoIcon: TIPOS.medido.icon, tipoFg: TIPOS.medido.fg, valFg: "var(--color-text)" },
+      { label: "PERCLOS", valor: ya ? "0,06" : "–", unidad: "fracción con ojos casi cerrados", tipo: "ESTIMADO", tipoIcon: TIPOS.estimado.icon, tipoFg: TIPOS.estimado.fg, valFg: "var(--color-text)" },
+      { label: "Bostezos", valor: ya ? "0" : "–", unidad: "boca abierta ≥ 1,5 s", tipo: "MEDIDO", tipoIcon: TIPOS.medido.icon, tipoFg: TIPOS.medido.fg, valFg: "var(--color-text)" },
+      { label: "Pulso sin contacto", valor: s.aviso === "luz" || !ya ? "–" : "Calidad baja", unidad: "se publica con calidad ≥ 0,5", tipo: "ESTIMADO", tipoIcon: TIPOS.estimado.icon, tipoFg: TIPOS.estimado.fg, valFg: "var(--color-neutral-400)" },
+    ];
+    // voz
+    const vb = s.vozFase === "grabando";
+    Object.assign(base, {
+      frases: Object.entries(FRASES).map(([k, [label]]) => ({ label, on: s.frase === k, pick: () => this.setState({ frase: k }) })),
+      fraseTexto: FRASES[s.frase][1],
+      vozBarras: Array.from({ length: 14 }, (_, i) => ({ h: vb ? (8 + Math.round(Math.abs(Math.sin(s.vozT * 3 + i)) * 26)) + "px" : "6px", c: vb ? "var(--color-accent)" : "var(--color-neutral-700)" })),
+      vozEstado: { lista: "Listo para grabar 12 segundos", grabando: "Grabando… lee la frase", analizando: "Analizando tu voz…", listo: "Voz lista: tono, jitter, shimmer y pausas" }[s.vozFase],
+      vozPct: (s.vozT / 12 * 100) + "%", vozOcupado: vb || s.vozFase === "analizando",
+      vozBtn: s.vozFase === "listo" ? "Continuar" : "Grabar (12 s)", vozBtnIcon: s.vozFase === "listo" ? "ph-arrow-right" : "ph-record",
+      vozAccion: () => (s.vozFase === "listo" ? this.mover(1) : this.setState({ vozFase: "grabando", vozT: 0 })),
+    });
+    // pvt
+    const res = L.resumenPvt(s.pvtRts.filter((x) => x >= 100), s.pvtAnt, 0, s.pvtN, 60000);
+    Object.assign(base, {
+      pvtTap: () => (s.pvtFase === "intro" || s.pvtFase === "fin" ? null : this.pvtTap()),
+      pvtCont: s.pvtFase === "intro" ? "" : s.pvtCont, pvtColor: s.pvtFase === "estimulo" ? ST.amarillo.fg : s.pvtFase === "respuesta" && +s.pvtCont >= 355 ? ST.rojo.fg : "var(--color-text)",
+      pvtMsg: s.pvtFase === "intro" ? "Toca Empezar las dos pruebas cuando estés listo" : s.pvtFase === "espera" ? (s.pvtMsg || "Espera el contador…") : s.pvtMsg,
+      pvtProg: s.pvtFase === "intro" ? "1 minuto · junto con la cámara" : s.pvtFase === "fin" ? s.pvtN + " estímulos" : s.pvtN + " estímulos · quedan " + Math.ceil(s.camT) + " s", pvtFin: s.pvtFase === "fin",
+      pvtBtn: s.pvtFase === "intro" ? "Empezar las dos pruebas" : s.pvtFase === "fin" ? "Continuar" : "En curso…",
+      pvtBtnFn: () => (s.pvtFase === "intro" ? this.startCombo() : s.pvtFase === "fin" ? this.mover(1) : null),
+      pvtRes: [
+        { label: "Reacción media", valor: res.rt_media_ms ?? "–", unidad: "ms" }, { label: "Mediana", valor: res.rt_mediana_ms ?? "–", unidad: "ms" },
+        { label: "Lapsos", valor: res.lapsos, unidad: "355 ms o más" }, { label: "Anticipadas", valor: s.pvtAnt, unidad: "de " + s.pvtN + " estímulos" },
+      ],
+      simbolos: L.SIMBOLOS_DSST.map((d, i) => ({ d, n: i + 1 })),
+      kss: L.KSS.map(([n, label]) => ({ n, label, on: String(s.kss === n), pick: () => this.setState({ kss: n }),
+        bg: s.kss === n ? "var(--color-accent-900)" : "var(--color-surface)", ring: s.kss === n ? "inset 0 0 0 1px var(--color-accent)" : "none" })),
+      kssVacio: s.kss == null, horas: fmt(s.horas, 1),
+      horasMenos: () => this.setState({ horas: Math.max(0, s.horas - 0.5) }), horasMas: () => this.setState({ horas: Math.min(16, s.horas + 0.5) }),
+      spin: s.prefs.movimiento ? "none" : "spin 1s linear infinite",
+      analPasos: [["Juntando cámara, reacción, símbolos y sensor", 0.6], ["Comparando con tu línea base", 1.4], ["Esperando al coordinador", 2.2]].map(([label, t]) => ({ label, icon: s.analT >= t ? "ph-check" : "ph-circle-dashed", fg: s.analT >= t ? "var(--color-text)" : "var(--color-neutral-500)" })),
+    });
+    // resultados
+    const ev = evs[s.persona] || evs.bri; const det = D.DETALLE;
+    const resSt = ST[ev.color];
+    Object.assign(base, {
+      resSt, resPuntaje: ev.puntaje, resSesion: det.sesion, resAccion: ev.accion, resMotivos: ev.motivos.length ? ev.motivos : ["Sin motivos de alerta"],
+      resArc: (Math.min(ev.puntaje, 6) / 6 * 389.6) + " 389.6", resSpan: s.w >= 1100 ? 2 : 1,
+      tiposLeyenda: Object.values(TIPOS),
+      indicadores: det.indicadores.map((it) => {
+        const T = TIPOS[it.tipo]; const nd = it.tipo === "no_disponible";
+        return { ...it, tipoLabel: T.label, tipoIcon: T.icon, tipoFg: T.fg, valorShow: nd ? "No disponible" : it.valor, valFg: nd ? "var(--color-neutral-500)" : it.aviso ? ST.amarillo.fg : "var(--color-text)",
+          pts: it.puntos == null ? (it.aviso ? "AVISO" : "") : "+" + it.puntos + " pt", ptsFg: it.aviso ? ST.amarillo.fg : it.puntos ? ST.amarillo.fg : "var(--color-neutral-500)",
+          hasCal: it.calidad != null, calPct: Math.round((it.calidad || 0) * 100) + "%", calTxt: fmt(it.calidad), calFg: (it.calidad || 0) < 0.5 ? ST.amarillo.fg : "var(--color-accent)",
+          bg: nd ? "transparent" : "var(--color-surface)", ring: nd ? "inset 0 0 0 1px var(--color-neutral-800)" : "none" };
+      }),
+      conversacion: (s.conv || det.conversacion).map((c) => ({ ...c, meta: "becspace ai · " + c.modo })),
+      pregunta: s.pregunta, setPregunta: (e) => this.setState({ pregunta: e.target.value }),
+      preguntar: (e) => { e.preventDefault(); if (!s.pregunta.trim()) return; this.setState({ pregunta: "", conv: (s.conv || det.conversacion).concat([{ pregunta: s.pregunta, respuesta: "Respuesta de ejemplo: el copiloto real contesta con las fichas de protocolos y lo lee en voz alta.", modo: "demo" }]) }); },
+    });
+    // historial
+    const dias = s.periodo === "7" ? 7 : s.periodo === "30" ? 30 : 9999;
+    const hoy = new Date(2026, 10, 14, 23, 59).getTime();
+    const rows = D.HISTORIAL.filter((h) => (s.hPersona === "todos" || h.persona === s.hPersona) && hoy - h.fecha <= dias * 864e5).sort((a, b) => b.fecha - a.fecha);
+    const SER = { puntaje: ["Puntaje", 0, 6, 1, ""], pvt_mediana: ["Reacción mediana", 220, 420, 50, " ms"], kss: ["Somnolencia KSS", 1, 9, 2, ""], horas_sueno: ["Horas de sueño", 3, 9, 2, " h"] };
+    const [sl, mn, mx, stp, un] = SER[s.serie];
+    const asc = rows.slice().reverse(); const x0 = 50, x1 = 780, y = (v) => 190 - ((v - mn) / (mx - mn)) * 170;
+    const xs = (i) => (asc.length > 1 ? x0 + (i / (asc.length - 1)) * (x1 - x0) : (x0 + x1) / 2);
+    const dfmt = (t) => { const d = new Date(t); return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0"); };
+    const sel = rows.find((h) => h.id === s.hSel);
+    const nPag = Math.max(1, Math.ceil(rows.length / 20)); const pag = Math.min(s.hPag, nPag - 1);
+    const goPag = (p) => this.setState({ hPag: Math.max(0, Math.min(nPag - 1, p)) });
+    const nums = []; for (let i = 0; i < nPag; i++) if (i === 0 || i === nPag - 1 || Math.abs(i - pag) <= 1) nums.push(i); else if (nums[nums.length - 1] !== -1) nums.push(-1);
+    base.pagInfo = rows.length ? (pag * 20 + 1) + "–" + Math.min(rows.length, pag * 20 + 20) + " de " + rows.length + " evaluaciones" : "";
+    base.hayPags = nPag > 1; base.pagPrev = () => goPag(pag - 1); base.pagNext = () => goPag(pag + 1); base.pagPrevDis = pag === 0; base.pagNextDis = pag >= nPag - 1;
+    base.pagNums = nums.map((i, k) => ({ gap: i === -1, num: i !== -1, label: String(i + 1), cur: i === pag ? "page" : "false", go: () => goPag(i), bg: i === pag ? "var(--color-accent-900)" : "color-mix(in srgb, var(--color-neutral-800) 55%, transparent)", ring: i === pag ? "inset 0 0 0 1px var(--color-accent)" : "inset 0 0 0 1px var(--color-neutral-800)", fg: i === pag ? "var(--color-accent-200)" : "var(--color-neutral-300)" }));
+    Object.assign(base, {
+      periodos: [["7", "7 días"], ["30", "30 días"], ["todo", "Todo"]].map(([k, label]) => ({ label, on: s.periodo === k, pick: () => this.setState({ periodo: k, hPag: 0 }) })),
+      histPersonas: ["todos"].concat(D.TRIPULACION).map((p) => ({ label: p === "todos" ? "Todos" : cap(p), on: s.hPersona === p, pick: () => this.setState({ hPersona: p, hSel: null, hPag: 0 }) })),
+      series: Object.entries(SER).map(([k, [label]]) => ({ label, on: String(s.serie === k), pick: () => this.setState({ serie: k }), bg: s.serie === k ? "var(--color-accent-900)" : "color-mix(in srgb, var(--color-neutral-800) 55%, transparent)", fg: s.serie === k ? "var(--color-accent-200)" : "var(--color-neutral-400)", bar: s.serie === k ? "inset 0 -2px 0 var(--color-accent)" : "none" })),
+      serieLabel: sl + (s.hPersona === "todos" ? " · toda la tripulación" : " · " + cap(s.hPersona)),
+      grid: Array.from({ length: Math.floor((mx - mn) / stp) + 1 }, (_, i) => { const v = mn + i * stp; return { y: y(v), top: (y(v) / 220 * 100) + "%", label: v + un }; }),
+      chartPts: s.hPersona === "todos" ? "" : asc.map((h, i) => xs(i) + "," + y(h[s.serie])).join(" "),
+      chartDots: s.hPersona === "todos" ? [] : asc.map((h, i) => ({ x: xs(i), y: y(h[s.serie]), r: h.id === s.hSel ? 6 : 4, fill: ST[h.color].fg })),
+      esTodos: s.hPersona === "todos", leyendaCrew: D.TRIPULACION.map((p) => ({ nombre: cap(p), icon: ic(p) })),
+      chartIcons: s.hPersona !== "todos" ? [] : asc.map((h, i) => ({ left: (xs(i) / 800 * 100) + "%", top: (y(h[s.serie]) / 220 * 100) + "%", icon: ic(h.persona), fg: s.theme === "claro" ? { verde: "oklch(0.72 0.15 158)", amarillo: "oklch(0.80 0.15 80)", rojo: "oklch(0.70 0.17 25)" }[h.color] : ST[h.color].fg, shadow: s.theme === "claro" ? "drop-shadow(0 0 1px rgba(255,255,255,1)) drop-shadow(0 1px 2px rgba(40,40,90,.35))" : "drop-shadow(0 0 1.5px rgba(6,9,19,.95)) drop-shadow(0 1px 2px rgba(6,9,19,.8))", scale: h.id === s.hSel ? "1.35" : "1",
+        title: cap(h.persona) + " · " + dfmt(h.fecha) + " · " + ST[h.color].word, open: () => this.setState({ hSel: h.id }) })),
+      xLabels: asc.filter((_, i) => i % Math.max(1, Math.ceil(asc.length / 8)) === 0).map((h) => ({ left: (xs(asc.indexOf(h)) / 800 * 100) + "%", label: dfmt(h.fecha) })),
+      chartNota: "Cada punto es una evaluación, con el color de su resultado. " + (s.hPersona === "todos" ? "Cada icono es un tripulante. Toca uno para ver el detalle, o elige una persona para ver su línea." : "Datos demostrativos."),
+      histRows: rows.slice(pag * 20, pag * 20 + 20).map((h) => ({ ...h, nombre: cap(h.persona), st: ST[h.color], fecha: dfmt(h.fecha) + " " + new Date(h.fecha).toTimeString().slice(0, 5), horas: fmt(h.horas_sueno, 1), pvt: h.pvt_mediana,
+        selBg: h.id === s.hSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent", open: () => this.setState({ hSel: h.id }) })),
+      histVacio: rows.length === 0, histSpan: s.w >= 1200 ? 2 : 1, hasSel: !!sel, noSel: !sel,
+      sel: sel ? { ...sel, nombre: cap(sel.persona), st: ST[sel.color], fechaLarga: new Date(sel.fecha).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" }), horas: fmt(sel.horas_sueno, 1), pvt: sel.pvt_mediana, pulso: sel.pulso_lpm, perclos: fmt(sel.perclos) } : { st: ST.sin },
+    });
+    // configuración
+    const sw = (on) => ({ track: on ? "var(--color-accent-800)" : "var(--color-neutral-900)", edge: on ? "var(--color-accent)" : "var(--color-neutral-700)", knob: on ? "19px" : "3px", knobBg: on ? "var(--color-accent-200)" : "var(--color-neutral-500)" });
+    Object.assign(base, {
+      setCamara: (e) => this.setState({ camara: e.target.value }), isDroid: s.camara === "droidcam",
+      permisos: [
+        { icon: "ph-webcam", label: "Cámara (módulo de visión)", estado: "Concedido", st: ST.verde },
+        { icon: "ph-microphone", label: "Micrófono (voz y copiloto)", estado: "Concedido", st: ST.verde },
+        { icon: "ph-broadcast", label: "Broker MQTT", estado: "Sin conectar", st: ST.amarillo },
+      ],
+      prefs: [["proyector", "Texto grande para proyector", "Para leerse a 3 m en la pantalla de tripulación."], ["movimiento", "Reducir movimiento", "Quita el barrido de la cámara y los giros de carga."], ["alto", "Alto contraste", "Sube el contraste de bordes y textos secundarios."]]
+        .map(([k, label, help]) => ({ label, help, on: s.prefs[k], ...sw(s.prefs[k]), toggle: () => this.setState({ prefs: { ...s.prefs, [k]: !s.prefs[k] } }) })),
+      sistema: [["Broker", "localhost:1883 · ws 9001"], ["Tripulación", D.TRIPULACION.join(", ")], ["Visión", "MediaPipe FaceLandmarker · 60 s"], ["Becspace AI", "qwen2.5:7b · Whisper small"], ["PVT", "60 s · junto con la cámara"], ["Base de datos", "MongoDB 127.0.0.1 · apto_hoy"]].map(([k, v]) => ({ k, v })),
+      privacidad: ["Todo corre en la laptop de la estación, sin internet.", "La imagen de la cámara no se guarda: solo los números calculados.", "MongoDB escucha solo en 127.0.0.1 y no se abre a la red.", "Las otras laptops entran con un usuario de solo lectura."],
+    });
+    // pruebas
+    const PILL = { off: { ...ST.sin, word: "SIN PROBAR" }, pidiendo: { fg: "var(--color-accent-300)", bg: "var(--color-accent-900)", icon: "ph-circle-notch", word: "PIDIENDO PERMISO" }, on: { ...ST.verde, word: "FUNCIONANDO" }, error: { ...ST.rojo, word: "ERROR" } };
+    const db = (x) => (x > 0 ? Math.max(-90, Math.round(20 * Math.log10(x))) : -90);
+    const lv = Math.max(0, Math.min(1, (db(s.level) + 60) / 60));
+    const luzK = s.luz == null ? null : s.luz < 50 ? "baja" : s.luz > 210 ? "alta" : "ok";
+    const micOn = s.pMic === "on"; const pkDb = db(s.peakMax); const nDb = s.noise == null ? null : db(s.noise);
+    const chk = (st, estado, help) => ({ st, estado, help });
+    const pruChecks = [
+      { label: "Cámara", ...(s.pCam === "on" ? chk(ST.verde, "hay imagen", s.camRes + " · " + (s.camFps ? s.camFps + " fps" : "fps sin dato")) : s.pCam === "error" ? chk(ST.rojo, "sin imagen", "Revisa el aviso de la tarjeta Cámara.") : chk(ST.sin, "sin probar", "Toca Probar cámara.")) },
+      { label: "Iluminación", ...(luzK === "ok" ? chk(ST.verde, "adecuada", "La piel se ve con buena luz.") : luzK === "baja" ? chk(ST.amarillo, "poca luz", "Busca una luz frontal o acércate a una ventana.") : luzK === "alta" ? chk(ST.amarillo, "demasiada luz", "Evita la luz directa detrás o sobre la cámara.") : chk(ST.sin, "sin medir", "Se mide con la cámara encendida.")) },
+      { label: "Micrófono", ...(micOn ? (pkDb > -30 ? chk(ST.verde, "se escucha la voz", "Nivel máximo " + pkDb + " dBFS.") : chk(ST.amarillo, "habla para comprobar", "Lee la frase en voz alta.")) : s.pMic === "error" ? chk(ST.rojo, "sin señal", "Revisa el aviso de la tarjeta Micrófono.") : chk(ST.sin, "sin probar", "Toca Probar micrófono.")) },
+      { label: "Ruido de fondo", ...(micOn && nDb != null ? (nDb < -55 ? chk(ST.verde, "silencioso", nDb + " dBFS en silencio.") : nDb < -42 ? chk(ST.amarillo, "algo de ruido", "Cierra puertas o aleja ventiladores.") : chk(ST.rojo, "mucho ruido", "La voz no se podrá analizar bien aquí.")) : chk(ST.sin, "sin medir", "Se mide con el micrófono encendido.")) },
+      { label: "Saturación", ...(micOn ? (s.peakMax > 0.98 ? chk(ST.amarillo, "satura", "Aleja el micrófono o baja la ganancia.") : chk(ST.verde, "sin saturación", "La voz no se recorta.")) : chk(ST.sin, "sin medir", "Se mide al hablar.")) },
+    ];
+    const okN = pruChecks.filter((c) => c.st === ST.verde).length;
+    Object.assign(base, {
+      camPill: PILL[s.pCam], micPill: PILL[s.pMic],
+      camDevs: s.camDevs.length ? s.camDevs : [{ id: "", label: "Cámara predeterminada" }], camDevSel: s.camDev,
+      setCamDev: (e) => { const v = e.target.value; this.setState({ camDev: v }, () => this.state.pCam === "on" && this.startCam()); },
+      micDevs: s.micDevs.length ? s.micDevs : [{ id: "", label: "Micrófono predeterminado" }], micDevSel: s.micDev,
+      setMicDev: (e) => { const v = e.target.value; this.setState({ micDev: v }, () => this.state.pMic === "on" && this.startMic()); },
+      camOn: s.pCam === "on", camOff: s.pCam !== "on", videoOp: s.pCam === "on" ? "1" : "0",
+      ovalPru: s.pCam === "on" ? (luzK === "ok" ? "var(--st-verde)" : "var(--st-amarillo)") : "var(--color-neutral-600)",
+      camMsg: { off: "Toca Probar cámara para ver la imagen.", pidiendo: "Esperando el permiso del navegador…", error: "No hay imagen." }[s.pCam] || "",
+      camErr: !!s.camErr, camErrTxt: s.camErr || "", camRes: s.camRes, camFpsTxt: s.camFps ? s.camFps + " fps" : "fps sin dato",
+      luzPct: s.luz == null ? "0%" : Math.round((s.luz / 255) * 100) + "%", luzVal: s.luz == null ? "–" : String(Math.round(s.luz)),
+      luzTxt: luzK == null ? "Sin medir" : { baja: "Poca luz", ok: "Adecuada", alta: "Demasiada luz" }[luzK], luzFg: luzK === "ok" ? ST.verde.fg : luzK == null ? "var(--color-neutral-400)" : ST.amarillo.fg,
+      pruCamStart: () => this.startCam(), pruCamStop: () => this.stopCam(), camStartDis: s.pCam === "pidiendo", camStopDis: s.pCam !== "on", camStartTxt: s.pCam === "on" ? "Reiniciar" : "Probar cámara",
+      micBars: Array.from({ length: 32 }, (_, i) => { const on = micOn && i / 32 < lv; const c = i >= 28 ? ST.rojo.fg : i >= 22 ? ST.amarillo.fg : "var(--color-accent)"; return { h: (14 + i * 1.2) + "px", c: on ? c : "var(--color-neutral-800)", glow: on ? "0 0 6px color-mix(in srgb, " + c + " 50%, transparent)" : "none" }; }),
+      micPts: s.wave.length ? s.wave.map((v, i) => ((i * 400) / 63).toFixed(1) + "," + (40 - Math.max(-1, Math.min(1, v * 4)) * 36).toFixed(1)).join(" ") : "0,40 400,40",
+      micStats: [{ label: "Nivel", valor: micOn ? String(db(s.level)) : "–", unidad: "dBFS ahora" }, { label: "Pico", valor: micOn ? String(pkDb) : "–", unidad: "dBFS máximo" }, { label: "Ruido de fondo", valor: micOn && nDb != null ? String(nDb) : "–", unidad: "dBFS en silencio" }],
+      micErr: !!s.micErr, micErrTxt: s.micErr || "",
+      pruMicStart: () => this.startMic(), pruMicStop: () => this.stopMic(), pruGrabar: () => this.grabar(),
+      micStartDis: s.pMic === "pidiendo", micStopDis: !micOn, micStartTxt: micOn ? "Reiniciar" : "Probar micrófono",
+      recDis: !micOn || s.recFase === "grabando", recBtn: s.recFase === "grabando" ? "Grabando 3 s…" : "Grabar 3 s y escuchar", hasRec: !!s.recUrl, recUrl: s.recUrl || "",
+      crewIconRows: D.TRIPULACION.map((p) => ({ nombre: cap(p), aria: "Icono de " + cap(p), opts: ICONOS.map(([icon, label]) => { const on = ic(p) === icon; return { icon, label, on: String(on), bg: on ? "var(--color-accent-900)" : "color-mix(in srgb, var(--color-neutral-800) 55%, transparent)", ring: on ? "inset 0 0 0 1px var(--color-accent)" : "inset 0 0 0 1px var(--color-neutral-800)", fg: on ? "var(--color-accent-200)" : "var(--color-neutral-300)",
+        pick: () => { const ci = { ...this.state.crewIcons, [p]: icon }; this.setState({ crewIcons: ci }); try { localStorage.setItem("becspace-iconos-v2", JSON.stringify(ci)); } catch (e) {} } }; }) })),
+      pruChecks, pruResumen: okN + " de " + pruChecks.length + " en orden",
+      temas: [["oscuro", "Oscuro", "ph-moon", "#161826", "#10121c", "#232532", "#e9e9ed", "#9184d9"], ["claro", "Claro", "ph-sun", "#e9ebf5", "#dcdff0", "#f7f7fc", "#1c1e2b", "#6a5cc4"]].map(([k, label, icon, bg, nav, card, ink, acc]) => ({
+        label, icon, bg, nav, card, ink, acc, sel: s.theme === k, on: String(s.theme === k), ring: s.theme === k ? "inset 0 0 0 1.5px var(--color-accent)" : "inset 0 0 0 1px var(--color-neutral-800)",
+        pick: () => { this.setState({ theme: k }); try { localStorage.setItem("becspace-tema", k); } catch (e) {} } })),
+    });
+    // sistema de diseño
+    Object.assign(base, {
+      rampN: [100, 200, 300, 400, 500, 600, 700, 800, 900].map((n) => "var(--color-neutral-" + n + ")"),
+      rampA: [100, 200, 300, 400, 500, 600, 700, 800, 900].map((n) => "var(--color-accent-" + n + ")"),
+      estados: ["verde", "amarillo", "rojo", "sin"].map((k) => ST[k]),
+      espacios: [["1", "3px"], ["2", "6px"], ["3", "8px"], ["4", "11px"], ["6", "17px"], ["8", "22px"]].map(([k, v]) => ({ k, v })),
+      alertas: [
+        { icon: "ph-circle-notch", fg: "var(--color-accent-300)", bg: "var(--color-accent-900)", titulo: "Cargando", texto: "Esperando la evaluación del coordinador…" },
+        { icon: "ph-check-circle", fg: ST.verde.fg, bg: ST.verde.bg, titulo: "Listo", texto: "Medición enviada. Puedes continuar." },
+        { icon: "ph-warning", fg: ST.amarillo.fg, bg: ST.amarillo.bg, titulo: "Aviso", texto: "Datos insuficientes de la cámara: repetir con más luz." },
+        { icon: "ph-x-circle", fg: ST.rojo.fg, bg: ST.rojo.bg, titulo: "Error", texto: "No se encontró la cámara. Revisa CAMARA en config.env." },
+      ],
+    });
+    return base;
+  }
+}
+</script>
+</body>
+</html>

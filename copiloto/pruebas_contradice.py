@@ -30,7 +30,7 @@ CASOS = [
     ("Deja la caminata para más adelante.", AMARILLO, False),                  # "más adelante" no es "adelante"
     ("Aún no estás lista para la caminata.", AMARILLO, False),                 # negación
     ("Descansa primero. Luego puedes ir a la caminata.", AMARILLO, True),      # se revisa frase por frase
-    ("La caminata la hará Erick. Tú puedes ayudar desde la nave.", AMARILLO, False),  # permiso y tarea en frases distintas
+    ("La caminata la hará Eric. Tú puedes ayudar desde la nave.", AMARILLO, False),  # permiso y tarea en frases distintas
     ("Sí, puedes hacer la caminata espacial.", VERDE, False),                  # en verde no hay contradicción
 ]
 

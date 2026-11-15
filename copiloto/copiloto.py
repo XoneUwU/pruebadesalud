@@ -3,7 +3,7 @@
 - Escucha las evaluaciones del coordinador (apto/+/evaluacion) y explica el semáforo en voz alta.
 - Responde preguntas habladas o escritas usando SOLO las fichas de protocolo y la evaluación actual.
 - Publica cada respuesta en apto/{persona}/copiloto para que el resto del equipo la vea en la interfaz.
-- «Soy Erick», «habla Sebas» o «aquí Bri» cambia la persona activa (nombres de TRIPULACION en config.env).
+- «Soy Eric», «habla Sebas» o «aquí Bri» cambia la persona activa (nombres de TRIPULACION en config.env).
 
 Uso:
   python copiloto/copiloto.py                     modo completo (micrófono + voz)
@@ -13,10 +13,10 @@ Uso:
 
 Temas MQTT:
   lee      apto/+/evaluacion       evaluación del coordinador (mejor si viene con retain)
-  lee      apto/control/sesion     {"persona": "erick", "tarea": "caminata espacial"} cambia la persona activa
-  lee      apto/control/pregunta   {"persona": "erick", "pregunta": "..."} pregunta enviada desde un panel
+  lee      apto/control/sesion     {"persona": "eric", "tarea": "caminata espacial"} cambia la persona activa
+  lee      apto/control/pregunta   {"persona": "eric", "pregunta": "..."} pregunta enviada desde un panel
   publica  apto/{persona}/copiloto {"pregunta", "respuesta", "fichas", "modo", "origen"}
-  publica  apto/control/sesion     {"persona", "tarea"} cuando alguien se identifica («soy Erick»)
+  publica  apto/control/sesion     {"persona", "tarea"} cuando alguien se identifica («soy Eric»)
 """
 import argparse
 import difflib
@@ -97,10 +97,10 @@ def _normalizar(texto: str) -> str:
     return "".join(c for c in texto if unicodedata.category(c) != "Mn")
 
 
-# «Soy Erick», «habla Sebas», «aquí Bri» (con o sin «hola» delante): cambia la persona activa.
+# «Soy Eric», «habla Sebas», «aquí Bri» (con o sin «hola» delante): cambia la persona activa.
 _IDENTIFICACION = re.compile(r"^[\s¡¿]*(?:hola[\s,.!]+)?(soy|habla|aqu[ií])\s+([^\W\d_]+)(.*)$",
                              re.IGNORECASE | re.DOTALL)
-SIMILITUD_NOMBRE = 0.7  # difflib: "erik" se parece 0,89 a "erick"; "diego" no llega a 0,7 con nadie
+SIMILITUD_NOMBRE = 0.7  # difflib: "erik" se parece 0,75 a "eric"; "diego" no llega a 0,7 con nadie
 
 
 def leer_tripulacion(valor: str) -> list[str]:
@@ -113,7 +113,7 @@ def identificar(pregunta: str, tripulacion: list[str]) -> tuple[str | None, str]
 
     persona: el nombre de la tripulación que más se parece a X (sin importar tildes ni mayúsculas,
     porque Whisper puede escribir "Erik"), o None si no se parece a ninguno. resto: lo que sigue
-    al nombre ("Soy Erick, me falta el aire" -> "me falta el aire"); vacío si solo se identificó.
+    al nombre ("Soy Eric, me falta el aire" -> "me falta el aire"); vacío si solo se identificó.
     Devuelve None si la pregunta no es una identificación o no hay tripulación configurada.
     """
     m = _IDENTIFICACION.match(pregunta or "")
@@ -161,7 +161,7 @@ def _puntaje(ev: dict) -> float:
 
 
 def _lista(items: list[str]) -> str:
-    """["Sebas"] -> "Sebas"; ["Sebas", "Ana", "Erick"] -> "Sebas, Ana y Erick"."""
+    """["Sebas"] -> "Sebas"; ["Sebas", "Ana", "Eric"] -> "Sebas, Ana y Eric"."""
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " y " + items[-1]
 
 
@@ -459,9 +459,9 @@ class Copiloto:
                 if quien:
                     self._cambiar_persona(quien)
                     persona = quien
-                    if not resto:  # solo «soy Erick»: se saluda y no se sigue
+                    if not resto:  # solo «soy Eric»: se saluda y no se sigue
                         return self._decir_y_publicar(persona, original, self._saludo(quien), [], "identificacion", origen)
-                    pregunta = resto  # «Soy Erick, me falta el aire»: se responde el resto como Erick
+                    pregunta = resto  # «Soy Eric, me falta el aire»: se responde el resto como Eric
                 elif not resto:  # «soy Diego»: nombre que no es de la tripulación
                     nombres = _lista([p.capitalize() for p in self.tripulacion])
                     return self._decir_y_publicar(persona, original,
@@ -533,7 +533,7 @@ class Copiloto:
         return texto
 
     def _saludo(self, persona: str) -> str:
-        """«Hola Erick.» y su último color, si tiene evaluación (los detalles, solo si los pide)."""
+        """«Hola Eric.» y su último color, si tiene evaluación (los detalles, solo si los pide)."""
         texto = f"Hola {persona.capitalize()}."
         ev = self.evaluaciones.get(persona)
         if ev and ev.get("color"):

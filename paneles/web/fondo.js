@@ -1,61 +1,38 @@
 /* Fondo animado de la estación (del diseño «Apto Hoy» de Claude Design), dibujado en un <canvas> fijo:
  * oscuro = la Tierra de noche con su atmósfera, estrellas, una órbita y un cohete; claro = un sistema solar en
- * acuarela con constelaciones. Fondo.iniciar(canvas, {claro: () => bool, quieto: () => bool});
+ * cielo claro y paisaje lunar exportado de Claude Design. Fondo.iniciar(canvas, {claro: () => bool, quieto: () => bool});
  * Fondo.reconstruir() al cambiar el tema y Fondo.despertar() al quitar «reducir movimiento». */
 (function () {
   "use strict";
 
   let ctx = null, cv = null, op = null;
+  let moonImg = null;
   let W = 0, H = 0, E = null, A = null, stat = null, tw = [], dots = [], L = null, raf = null, lastT = 0;
   let seed = 4;
   const rnd = (a, b) => a + ((seed = (seed * 16807) % 2147483647) / 2147483647) * (b - a);
   const dpr = Math.min(1.5, window.devicePixelRatio || 1);
 
   function construirClaro() {
-    seed = 9; stat = document.createElement("canvas"); stat.width = W * dpr; stat.height = H * dpr;
-    const c = stat.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const g0 = c.createLinearGradient(0, 0, 0, H);
-    [[0, "#f3efff"], [0.35, "#ece8fb"], [0.7, "#e6ecfa"], [1, "#fdeee3"]].forEach(([o, k]) => g0.addColorStop(o, k));
-    c.fillStyle = g0; c.fillRect(0, 0, W, H);
-    // halo del sol, abajo a la derecha
-    const sx = W * 0.86, sy = H * 0.94;
-    const sg = c.createRadialGradient(sx, sy, 0, sx, sy, Math.max(W, H) * 0.55);
-    sg.addColorStop(0, "rgba(255,196,140,0.55)"); sg.addColorStop(0.25, "rgba(255,170,190,0.22)"); sg.addColorStop(1, "rgba(255,200,180,0)");
-    c.fillStyle = sg; c.fillRect(0, 0, W, H);
-    // nebulosas pastel
-    [[0.18, 0.2, 0.42, "rgba(150,130,235,0.16)"], [0.62, 0.12, 0.36, "rgba(110,170,255,0.14)"], [0.4, 0.55, 0.4, "rgba(240,150,200,0.10)"]].forEach(([x, y, r, col]) => {
-      const g = c.createRadialGradient(x * W, y * H, 0, x * W, y * H, r * Math.max(W, H));
-      g.addColorStop(0, col); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(0, 0, W, H);
-    });
-    // cuadrícula de plano
-    c.strokeStyle = "rgba(106,92,196,0.06)"; c.lineWidth = 1; const step = 48;
-    for (let x = 0; x < W; x += step) { c.beginPath(); c.moveTo(x + 0.5, 0); c.lineTo(x + 0.5, H); c.stroke(); }
-    for (let y = 0; y < H; y += step) { c.beginPath(); c.moveTo(0, y + 0.5); c.lineTo(W, y + 0.5); c.stroke(); }
-    // sistema solar: sol y órbitas
-    L = { sx, sy, orbits: [0.16, 0.27, 0.4, 0.55, 0.72].map((k) => k * Math.max(W, H)) };
-    L.orbits.forEach((r, i) => {
-      c.beginPath(); c.arc(sx, sy, r, Math.PI, Math.PI * 1.5); c.setLineDash(i % 2 ? [3, 6] : []);
-      c.strokeStyle = "rgba(106,92,196," + (0.22 - i * 0.03) + ")"; c.lineWidth = 1; c.stroke();
-    });
-    c.setLineDash([]);
-    c.beginPath(); c.arc(sx, sy, 34, 0, 7);
-    const sun = c.createRadialGradient(sx, sy, 0, sx, sy, 34); sun.addColorStop(0, "#fff4dc"); sun.addColorStop(1, "#ffb98a");
-    c.fillStyle = sun; c.fill();
-    // constelaciones
-    const cons = [[[0.08, 0.12], [0.13, 0.08], [0.19, 0.11], [0.23, 0.06], [0.28, 0.1]], [[0.42, 0.3], [0.46, 0.25], [0.51, 0.28], [0.48, 0.35], [0.42, 0.3]],
-      [[0.06, 0.62], [0.1, 0.55], [0.15, 0.6], [0.13, 0.7]], [[0.7, 0.08], [0.74, 0.16], [0.8, 0.12], [0.86, 0.18]]];
-    cons.forEach((pts) => {
-      c.beginPath(); pts.forEach(([x, y], i) => (i ? c.lineTo(x * W, y * H) : c.moveTo(x * W, y * H)));
-      c.strokeStyle = "rgba(80,70,170,0.22)"; c.lineWidth = 1; c.stroke();
-      pts.forEach(([x, y]) => { c.beginPath(); c.arc(x * W, y * H, 2.2, 0, 7); c.fillStyle = "rgba(80,70,170,0.55)"; c.fill(); });
-    });
-    for (let i = 0; i < 160; i++) {
-      const x = rnd(0, W), y = rnd(0, H); c.beginPath(); c.arc(x, y, rnd(0.4, 1.2), 0, 7);
-      c.fillStyle = "rgba(90,80,180," + rnd(0.1, 0.35) + ")"; c.fill();
-    }
-    tw = Array.from({ length: 40 }, () => ({ x: rnd(0, W), y: rnd(0, H * 0.8), r: rnd(1, 2), p: rnd(0, 6.28), s: rnd(0.3, 0.8), big: rnd(0, 1) < 0.35 }));
-    L.planets = [["#7f9cf5", 6, 0.05], ["#f0a6c8", 9, 0.032], ["#9a86e6", 7, 0.022], ["#80c7c0", 12, 0.015, true], ["#c7b4f5", 5, 0.01]]
-      .map(([col, r, sp, ring], i) => ({ col, r, sp, ring, a: rnd(0, 1), orb: L.orbits[i] }));
+seed = 9; stat = document.createElement("canvas"); stat.width = W * dpr; stat.height = H * dpr; const c = stat.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const g0 = c.createLinearGradient(0, 0, 0, H); [[0, "#eef2fb"], [0.45, "#f8f9fd"], [1, "#ffffff"]].forEach(([o, k]) => g0.addColorStop(o, k)); c.fillStyle = g0; c.fillRect(0, 0, W, H);
+      [[0.85, 0.12, 0.45, "rgba(69,110,200,0.07)"], [0.1, 0.35, 0.4, "rgba(128,102,217,0.05)"]].forEach(([x, y, r, col]) => { const g = c.createRadialGradient(x * W, y * H, 0, x * W, y * H, r * Math.max(W, H)); g.addColorStop(0, col); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(0, 0, W, H); });
+      for (let i = 0; i < 90; i++) { c.beginPath(); c.arc(rnd(0, W), rnd(0, H * 0.75), rnd(0.5, 1.2), 0, 7); c.fillStyle = "rgba(15,42,92," + rnd(0.15, 0.45) + ")"; c.fill(); }
+      const img = moonImg; const ok = img && img.complete && img.naturalWidth;
+      const sy = 1160, sh = 1448 - sy; const scale = Math.max(W / 1086, (H * 0.2) / sh); const dw = 1086 * scale, dh = sh * scale; const dx = (W - dw) / 2, dy = H - Math.min(dh, Math.max(120, H * 0.22) + (1180 - sy) * scale);
+      const half = W / 2, sag = Math.max(8, 48 * scale * Math.min(1, W / dw)); const R = (half * half + sag * sag) / (2 * sag); const top = dy + (1180 - sy) * scale;
+      L = { moon: null, top, R, cx: W / 2, cy: top + R };
+      if (ok) {
+        c.save(); c.globalCompositeOperation = "multiply"; c.globalAlpha = 0.55; c.drawImage(img, 0, sy, 1086, sh, dx, dy, dw, dh); c.restore();
+        const by = Math.max(0, Math.floor(top - 4)), bh = Math.ceil(H - by); const m = document.createElement("canvas"); m.width = Math.ceil(W * dpr); m.height = Math.ceil(bh * dpr); const mc = m.getContext("2d");
+        mc.drawImage(stat, 0, by * dpr, W * dpr, bh * dpr, 0, 0, W * dpr, bh * dpr);
+        mc.globalCompositeOperation = "destination-in"; mc.setTransform(dpr, 0, 0, dpr, 0, 0); mc.beginPath(); mc.arc(W / 2, top + R - by, R, 0, Math.PI * 2); mc.fill();
+        L.moon = m; L.by = by; L.bh = bh;
+      }
+      const base = [[121, 252, 15], [785, 179, 13], [976, 452, 22], [894, 1046, 13], [355, 209, 0], [1005, 73, 0], [66, 675, 0], [986, 834, 0]];
+      L.sparks = base.map(([x, y, s]) => ({ x: (x / 1086) * W, y: Math.min((y / 1448) * H * 1.05, top - 40), s, p: rnd(0, 6.28), sp: rnd(0.4, 0.9) }))
+        .concat(Array.from({ length: 10 }, () => ({ x: rnd(0, W), y: rnd(20, top - 60), s: rnd(0, 1) < 0.5 ? rnd(6, 10) : 0, p: rnd(0, 6.28), sp: rnd(0.3, 0.8) })));
+      const sp = L.sparks.filter((q) => q.s > 0); L.lines = [[sp[0], sp[1]], [sp[1], sp[2]], [sp[2], sp[3]]].filter((l) => l[0] && l[1]);
+      tw = [];
   }
 
   function construir() {
@@ -131,6 +108,7 @@
     const R = Math.max(W * 0.9, (0.25 * W * W) / (0.2 * H)); E = { cx: W * 0.52, cy: H * 0.905 + R, R };
     A = { cx: W * 0.47, cy: H * 0.95, rx: W * 0.36, ry: H * 0.62 };
     construir();
+    if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
     despertar();
   }
 
@@ -141,38 +119,50 @@
 
   function dibujar(t) {
     const quieto = op.quieto();
-    if (!quieto && t - lastT < 32) { raf = requestAnimationFrame(dibujar); return; }
+    if (!quieto && t - lastT < (L ? 50 : 32)) { raf = requestAnimationFrame(dibujar); return; }
     lastT = t; const T = quieto ? 0 : t / 1000;
     ctx.drawImage(stat, 0, 0, W, H);
-    if (L) {
-      tw.forEach((s) => {
-        const a = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(T * s.s + s.p)); const k = s.r * (s.big ? 3.2 : 1.6) * a;
-        ctx.fillStyle = "rgba(106,92,196," + (0.25 + a * 0.5) + ")"; ctx.beginPath(); ctx.moveTo(s.x, s.y - k);
-        ctx.quadraticCurveTo(s.x, s.y, s.x + k, s.y); ctx.quadraticCurveTo(s.x, s.y, s.x, s.y + k); ctx.quadraticCurveTo(s.x, s.y, s.x - k, s.y);
-        ctx.quadraticCurveTo(s.x, s.y, s.x, s.y - k); ctx.fill();
-      });
-      L.planets.forEach((p) => {
-        const ang = Math.PI + ((p.a + T * p.sp) % 1) * (Math.PI / 2) * 1.0; const x = L.sx + Math.cos(ang) * p.orb, y = L.sy + Math.sin(ang) * p.orb;
-        ctx.beginPath(); ctx.arc(x + 2, y + 3, p.r, 0, 7); ctx.fillStyle = "rgba(80,70,170,0.12)"; ctx.fill();
-        const g = ctx.createRadialGradient(x - p.r * 0.4, y - p.r * 0.4, 0, x, y, p.r); g.addColorStop(0, "#ffffff"); g.addColorStop(1, p.col);
-        ctx.beginPath(); ctx.arc(x, y, p.r, 0, 7); ctx.fillStyle = g; ctx.fill();
-        if (p.ring) { ctx.beginPath(); ctx.ellipse(x, y, p.r * 2, p.r * 0.55, -0.4, 0, 7); ctx.strokeStyle = "rgba(106,92,196,0.55)"; ctx.lineWidth = 1.4; ctx.stroke(); }
-      });
-      const cyc = 18, q = quieto ? 0.5 : (T % cyc) / cyc; const ox = W * (0.05 + q * 0.75), oy = H * (0.42 - Math.sin(q * Math.PI) * 0.22);
-      const al = Math.min(1, q * 8, (1 - q) * 8);
-      ctx.save(); ctx.globalAlpha = al;
-      for (let i = 1; i <= 28; i++) {
-        const qq = Math.max(0, q - i * 0.006); const tx = W * (0.05 + qq * 0.75), ty = H * (0.42 - Math.sin(qq * Math.PI) * 0.22);
-        ctx.beginPath(); ctx.arc(tx, ty, 2.6 * (1 - i / 28), 0, 7); ctx.fillStyle = "rgba(240,150,190," + (0.5 * (1 - i / 28)) + ")"; ctx.fill();
+      if (L) {
+        const NAVY = "15,42,92";
+        const star = (x, y, k, rot, al) => { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = "rgba(" + NAVY + "," + al + ")"; ctx.beginPath(); ctx.moveTo(0, -k); ctx.quadraticCurveTo(k * 0.12, -k * 0.12, k * 0.62, 0); ctx.quadraticCurveTo(k * 0.12, k * 0.12, 0, k); ctx.quadraticCurveTo(-k * 0.12, k * 0.12, -k * 0.62, 0); ctx.quadraticCurveTo(-k * 0.12, -k * 0.12, 0, -k); ctx.fill(); ctx.restore(); };
+        // constellation lines draw in and out
+        const cl = quieto ? 1 : 0.5 - 0.5 * Math.cos(T * 0.12);
+        L.lines.forEach(([p, q]) => { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + (q.x - p.x) * cl, p.y + (q.y - p.y) * cl); ctx.strokeStyle = "rgba(" + NAVY + ",0.14)"; ctx.setLineDash([2, 5]); ctx.lineWidth = 1; ctx.stroke(); });
+        ctx.setLineDash([]);
+        L.sparks.forEach((s) => { const a = 0.5 + 0.5 * Math.sin(T * s.sp + s.p);
+          if (s.s) { star(s.x, s.y, s.s * (0.75 + 0.3 * a), Math.sin(T * 0.2 + s.p) * 0.12, 0.65 + 0.35 * a); if (a > 0.92) { ctx.beginPath(); ctx.arc(s.x, s.y, s.s * 1.4, 0, 7); ctx.fillStyle = "rgba(69,110,200," + (a - 0.92) * 1.5 + ")"; ctx.fill(); } }
+          else { ctx.beginPath(); ctx.arc(s.x, s.y, 2 + a * 0.8, 0, 7); ctx.fillStyle = "rgba(" + NAVY + "," + (0.55 + 0.4 * a) + ")"; ctx.fill(); } });
+        // satellite crossing with dashed trail
+        const sc = 38, sq = quieto ? 0.4 : (T % sc) / sc; const sx = -40 + sq * (W + 80), syy = H * 0.16 + Math.sin(sq * Math.PI) * -H * 0.06;
+        ctx.beginPath(); for (let i = 0; i <= 30; i++) { const qq = Math.max(0, sq - i * 0.006); const x = -40 + qq * (W + 80), y = H * 0.16 + Math.sin(qq * Math.PI) * -H * 0.06; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+        ctx.strokeStyle = "rgba(" + NAVY + ",0.18)"; ctx.setLineDash([3, 4]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.save(); ctx.translate(sx, syy); ctx.rotate(0.3 + T * 0.15); ctx.fillStyle = "rgba(" + NAVY + ",0.85)"; ctx.fillRect(-3, -3, 6, 6); ctx.fillRect(-15, -2, 9, 4); ctx.fillRect(6, -2, 9, 4); ctx.restore();
+        // earthrise behind the lunar horizon
+        const ec = 70, eq = quieto ? 0.6 : (T % ec) / ec; const ex = W * 0.2, er = Math.min(46, W * 0.035);
+        const hy = L.cy - Math.sqrt(Math.max(0, L.R * L.R - (ex - L.cx) * (ex - L.cx)));
+        const ey = hy + er + 6 - Math.min(1, eq / 0.7) * (er * 2 + 70); const ea = Math.min(1, (1 - eq) * 8);
+        ctx.save(); ctx.globalAlpha = ea;
+        const eg = ctx.createRadialGradient(ex, ey, er, ex, ey, er * 2.2); eg.addColorStop(0, "rgba(69,143,255,0.18)"); eg.addColorStop(1, "rgba(69,143,255,0)"); ctx.fillStyle = eg; ctx.fillRect(ex - er * 2.3, ey - er * 2.3, er * 4.6, er * 4.6);
+        ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); const eb = ctx.createRadialGradient(ex - er * 0.4, ey - er * 0.4, 0, ex, ey, er); eb.addColorStop(0, "#cfe0fa"); eb.addColorStop(1, "#7f9fd6"); ctx.fillStyle = eb; ctx.fill();
+        ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); ctx.clip(); ctx.fillStyle = "rgba(" + NAVY + ",0.45)"; const rot = (T * 3) % (er * 4);
+        [[-0.5, -0.3, 0.42, 0.3], [0.15, 0.25, 0.3, 0.4], [0.5, -0.4, 0.22, 0.18]].forEach(([u, v, rx, ry]) => { for (const off of [0, er * 4]) { ctx.beginPath(); ctx.ellipse(ex + u * er + rot - off * 0.5, ey + v * er, rx * er, ry * er, 0.4, 0, 7); ctx.fill(); } });
+        const sh = ctx.createLinearGradient(ex - er, 0, ex + er, 0); sh.addColorStop(0.45, "rgba(15,42,92,0)"); sh.addColorStop(1, "rgba(15,42,92,0.55)"); ctx.fillStyle = sh; ctx.fillRect(ex - er, ey - er, er * 2, er * 2); ctx.restore();
+        ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); ctx.strokeStyle = "rgba(" + NAVY + ",0.7)"; ctx.lineWidth = 1.2; ctx.stroke(); ctx.restore();
+        // lunar lander descending
+        const lc = 30, lq = quieto ? 0.5 : (T % lc) / lc; const lx = W * 0.72; const lhy = L.cy - Math.sqrt(Math.max(0, L.R * L.R - (lx - L.cx) * (lx - L.cx)));
+        const dq = Math.min(1, lq / 0.75); const ease = 1 - Math.pow(1 - dq, 2.4); const ly = -30 + ease * (lhy - 14 + 30); const la = Math.min(1, lq * 10, (1 - lq) * 6);
+        ctx.save(); ctx.globalAlpha = la; ctx.translate(lx, ly);
+        if (dq < 1) { const fl = 8 + 6 * Math.sin(T * 30); const fg = ctx.createLinearGradient(0, 8, 0, 8 + fl * 2); fg.addColorStop(0, "rgba(255,150,80,0.85)"); fg.addColorStop(1, "rgba(255,150,80,0)"); ctx.fillStyle = fg; ctx.beginPath(); ctx.moveTo(-3, 8); ctx.lineTo(0, 8 + fl * 2); ctx.lineTo(3, 8); ctx.fill(); }
+        ctx.fillStyle = "rgba(" + NAVY + ",0.92)"; ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(6, -4); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.lineTo(-6, -4); ctx.closePath(); ctx.fill();
+        ctx.fillRect(-4, 6, 8, 3); ctx.strokeStyle = "rgba(" + NAVY + ",0.92)"; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(-5, 6); ctx.lineTo(-10, 14); ctx.moveTo(5, 6); ctx.lineTo(10, 14); ctx.moveTo(-12, 14); ctx.lineTo(-8, 14); ctx.moveTo(8, 14); ctx.lineTo(12, 14); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, -3, 2.2, 0, 7); ctx.fillStyle = "#cfe0fa"; ctx.fill(); ctx.restore();
+        if (dq > 0.9 && dq <= 1) { const pd = lq < 0.75 ? (dq - 0.9) / 0.1 : 1 + (lq - 0.75) * 4; ctx.beginPath(); ctx.ellipse(lx, lhy + 1, 10 + pd * 28, 2 + pd * 5, 0, 0, 7); ctx.fillStyle = "rgba(120,135,170," + Math.max(0, 0.35 - pd * 0.18) * la + ")"; ctx.fill(); }
+        // shooting star (navy)
+        const ss = 14, sq2 = quieto ? 2 : (T % ss) / 1.1; if (sq2 < 1) { const x0 = W * 0.65, y0 = H * 0.05; const x = x0 - sq2 * W * 0.25, y = y0 + sq2 * H * 0.12; const g = ctx.createLinearGradient(x, y, x + W * 0.06, y - H * 0.03); g.addColorStop(0, "rgba(" + NAVY + "," + (1 - sq2) * 0.7 + ")"); g.addColorStop(1, "rgba(" + NAVY + ",0)"); ctx.strokeStyle = g; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + W * 0.06, y - H * 0.03); ctx.stroke(); }
+        if (L.moon) { ctx.drawImage(L.moon, 0, L.by, W, L.bh);
+          const glint = quieto ? 0.5 : (T * 0.03) % 1.4 - 0.2; const gg = ctx.createLinearGradient((glint - 0.15) * W, 0, (glint + 0.15) * W, 0); gg.addColorStop(0, "rgba(255,255,255,0)"); gg.addColorStop(0.5, "rgba(255,255,255,0.14)"); gg.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = gg; ctx.fillRect(Math.max(0, (glint - 0.15) * W), L.top, 0.3 * W, H - L.top); }
+        raf = quieto ? null : requestAnimationFrame(dibujar); return;
       }
-      const nx = W * (0.05 + Math.min(1, q + 0.004) * 0.75), ny = H * (0.42 - Math.sin(Math.min(1, q + 0.004) * Math.PI) * 0.22);
-      ctx.translate(ox, oy); ctx.rotate(Math.atan2(ny - oy, nx - ox));
-      ctx.beginPath(); ctx.moveTo(14, 0); ctx.bezierCurveTo(10, -5, 2, -5, -12, -4); ctx.lineTo(-12, 4); ctx.bezierCurveTo(2, 5, 10, 5, 14, 0); ctx.fillStyle = "#4a3f99"; ctx.fill();
-      ctx.beginPath(); ctx.moveTo(-6, -4); ctx.lineTo(-14, -9); ctx.lineTo(-12, -4); ctx.closePath(); ctx.moveTo(-6, 4); ctx.lineTo(-14, 9); ctx.lineTo(-12, 4); ctx.closePath();
-      ctx.fillStyle = "#8a7ed6"; ctx.fill();
-      ctx.beginPath(); ctx.arc(4, 0, 1.8, 0, 7); ctx.fillStyle = "#ffd9a8"; ctx.fill(); ctx.restore();
-      raf = quieto ? null : requestAnimationFrame(dibujar); return;
-    }
     tw.forEach((s) => {
       const a = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(T * s.s + s.p)); ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fillStyle = "rgba(244,246,255," + a + ")"; ctx.fill();
       if (s.big) {
@@ -216,6 +206,10 @@
 
   function iniciar(canvas, opciones) {
     cv = canvas; op = opciones; ctx = cv.getContext("2d");
+    moonImg = new Image();
+    moonImg.onload = () => { if (ctx && op.claro()) medir(); };
+    moonImg.onerror = () => { console.warn("[Becspace] No se pudo cargar assets/fondo-luna.png"); };
+    moonImg.src = "assets/fondo-luna.png";
     window.addEventListener("resize", medir);
     medir();
   }

@@ -48,14 +48,12 @@ CASOS = [
     ("voz cansada (señal débil)", sesion(voz={"estado_voz": "más cansada que su línea base"}), None, "amarillo",
      ["Voz más cansada de lo habitual"]),
     ("visión PERCLOS 0,3", sesion(vision={"perclos": 0.3}), None, "rojo", ["Ojos cerrados más tiempo de lo normal"]),
-    ("visión: pulso 110 con buena calidad", sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 110, "calidad_rppg": 0.8}),
-     None, "amarillo", ["Pulso en reposo alto"]),
+    ("visión: el pulso por cámara ya no cuenta (110 con buena calidad)",
+     sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 110, "calidad_rppg": 0.8}), None, "verde", []),
     ("visión: 3 bostezos en 1 min", sesion(vision={"perclos": 0.05, "bostezos": 3, "bostezos_min": 3.0}), None, "amarillo",
      ["Bostezos durante la medición"]),
     ("visión: 1 bostezo suelto no marca", sesion(vision={"perclos": 0.05, "bostezos": 1, "bostezos_min": 1.0}), None,
      "verde", []),
-    ("sensor 75 lpm manda sobre la cámara (130 con buena calidad)",
-     sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 130, "calidad_rppg": 0.9}, esp32={"pulso_lpm": 75}), None, "verde", []),
     ("sensor 110 lpm", sesion(esp32={"pulso_lpm": 110}), None, "amarillo", ["Pulso en reposo alto"]),
     ("sensor: HRV 30 % más baja que la base", sesion(esp32={"pulso_lpm": 72, "hrv_rmssd_ms": 31.5}),
      {"esp32": [{"pulso_lpm": 70, "hrv_rmssd_ms": 45}]}, "amarillo", ["Variabilidad del pulso más baja de lo habitual"]),
@@ -66,15 +64,8 @@ CASOS = [
     ("visión con lentes: los bostezos sí cuentan", sesion(vision={"perclos": 0.3, "lentes": True, "bostezos": 3,
                                                                   "bostezos_min": 3.0}), None, "amarillo",
      ["Bostezos durante la medición"]),
-    ("visión: pulso 130 con mala calidad no cuenta", sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 130, "calidad_rppg": 0.3}),
-     None, "verde", []),
     ("visión con base: +60 % parpadeos", sesion(vision={"perclos": 0.05, "parpadeos_min": 24}),
      {"vision": [{"perclos": 0.05, "parpadeos_min": 15}]}, "amarillo", ["Más parpadeos de lo habitual"]),
-    ("visión con base: pulso +20 % (base de mala calidad ignorada)",
-     sesion(vision={"perclos": 0.05, "pulso_rppg_lpm": 84, "calidad_rppg": 0.9}),
-     {"vision": [{"perclos": 0.05, "pulso_rppg_lpm": 70, "calidad_rppg": 0.9},
-                 {"perclos": 0.05, "pulso_rppg_lpm": 110, "calidad_rppg": 0.2}]},
-     "amarillo", ["Pulso en reposo más alto de lo habitual"]),
     ("solo el cuestionario (DSST omitido)", {"cuestionario": {"kss": 4, "horas_sueno": 7}}, None, "verde", []),
 ]
 
@@ -108,7 +99,7 @@ def main() -> int:
         fallas += not ok
         print(f"{'OK   ' if ok else 'FALLA'}  línea base de sebas sin la sesión evaluada: {base}")
 
-    # Aviso de SpO2: 30 s seguidos con el SpO2 bajo (con dedo y calidad >= 0,5); no cambia el color.
+    # Aviso de SpO2: 20 s seguidos con el SpO2 bajo (con dedo y calidad >= 0,5); no cambia el color.
     def lecturas(valores, desde=0.0, dedo=True, calidad=0.9):
         return [(desde + i, {"dedo": dedo, "calidad": calidad, "spo2": v}) for i, v in enumerate(valores)]
 
@@ -116,7 +107,7 @@ def main() -> int:
     cada_4 = [89 if i % 4 == 0 else None for i in range(36)]  # el sensor da el SpO2 cada ~4 s
     casos_spo2 = [
         ("sin base: 89 durante 35 s", lecturas([89] * 36), None, True),
-        ("sin base: 89 solo 25 s", lecturas([89] * 26), None, False),
+        ("sin base: 89 solo 15 s", lecturas([89] * 16), None, False),
         ("con base 97,5: 93 durante 35 s", lecturas([93] * 36), base_spo2, True),
         ("con base 97,5: 95 durante 35 s (solo 2,5 abajo)", lecturas([95] * 36), base_spo2, False),
         ("dedo afuera a la mitad corta la racha", lecturas([89] * 20) + lecturas([89], 20, dedo=False)

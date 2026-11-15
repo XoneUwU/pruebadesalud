@@ -7,3 +7,6 @@ mosquitto/passwd
 firmware/apto_esp32/secrets.h
 config.local.env
 houston/.env
+
+# Copias de ramas (git bundle): no van al repositorio
+*.bundle

@@ -43,7 +43,7 @@
     "--st-verde": "oklch(0.45 0.10 160)", "--st-verde-bg": "oklch(0.92 0.04 160)", "--st-amarillo": "oklch(0.48 0.09 70)", "--st-amarillo-bg": "oklch(0.93 0.05 85)", "--st-rojo": "oklch(0.50 0.14 25)", "--st-rojo-bg": "oklch(0.93 0.035 22)", "--ink": "#d9dcea", "--nav-bg": "rgba(240,242,250,0.78)", "--card-edge": "rgba(90,100,160,0.16)",
   };
   const ICONOS = [["ph-star-four", "Estrella"], ["ph-rocket-launch", "Cohete"], ["ph-triangle", "Triángulo"], ["ph-moon-stars", "Luna"], ["ph-diamond", "Diamante"], ["ph-hexagon", "Hexágono"], ["ph-heart", "Corazón"], ["ph-lightning", "Rayo"], ["ph-crown-simple", "Corona"], ["ph-square", "Cuadrado"]];
-  const ICONOS_DEF = { bri: "ph-star-four", danilo: "ph-rocket-launch", sebas: "ph-triangle", erick: "ph-moon-stars", adrian: "ph-diamond" };
+  const ICONOS_DEF = { bri: "ph-star-four", danilo: "ph-rocket-launch", sebas: "ph-triangle", eric: "ph-moon-stars", adrian: "ph-diamond" };
   const NAV = [
     ["dashboard", "Panel", "ph-squares-four", "Tripulación", "Panel de la misión"],
     ["evaluacion", "Evaluación", "ph-scan", "Estación", "Evaluación en curso"],
@@ -300,7 +300,9 @@
     temporizadores.clear();
   }
 
-  function pasosActivos() { return PASOS.filter((p) => p !== "simbolos" || S.conDsst); }
+  // La cámara ya no tiene paso propio: mide durante la prueba de reacción (pvtPreparar), para que nadie pase un
+  // minuto quieto mirando la cámara sin nada que hacer.
+  function pasosActivos() { return PASOS.filter((p) => p !== "camara" && (p !== "simbolos" || S.conDsst)); }
   function mover(d) {
     const l = pasosActivos();
     const i = l.indexOf(S.paso);
@@ -385,6 +387,13 @@
     }
     const s = Math.round((Date.now() - S.esp32Llegada) / 1000);
     if (s > 3) return ["aviso", `Sin datos nuevos desde hace ${s} s.`];
+    if (d.fase) {  // la placa guía la medición: mide solo durante sus 30 s y avisa en qué paso está
+      if (d.medicion_lista) return ["ok", "Medición lista: ya puedes retirar el dedo y continuar."];
+      if (d.fase === "midiendo") return ["espera", `Midiendo: quedan ${entero(d.quedan_s)} s. No retires el dedo.`];
+      if (d.fase === "cuenta") return ["espera", "Dedo detectado: la placa cuenta 3, 2, 1…"];
+      if (d.fase === "cancelada" || d.fase === "reposo") return ["aviso", "La placa canceló su medición (sin conexión o sin resultado a tiempo). Pueden omitir este paso, o cancelar la evaluación y empezar de nuevo."];
+      return ["aviso", "Coloca el dedo en el sensor: la placa cuenta 3, 2, 1 y mide 30 segundos."];
+    }
     if (d.dedo === false) return ["aviso", "Coloca el dedo en el sensor y quédate sin moverte."];
     if (d.pulso_lpm == null) return ["espera", "Dedo detectado: midiendo el pulso (unos segundos)…"];
     const calidad = d.calidad != null ? ` · calidad ${L.decimal(d.calidad)}` : "";
@@ -498,6 +507,28 @@
     if (document.activeElement) document.activeElement.blur();  // que la barra espaciadora no apriete un botón
     pvt.reloj = setInterval(pedirPintar, 250);
     pvtProgramar();
+    pedirPintar();
+  }
+
+  /** La cámara mide durante la prueba de reacción, lo mismo que dura la prueba. Se pide sin ventana y la prueba
+   *  arranca cuando el módulo de visión empieza a medir (antes revisa los lentes). Sin módulo, arranca sola. */
+  function pvtPreparar() {
+    if (S.pvt.fase !== "intro") return;
+    if (!activo("vision") || !PUEDE) { S.camConPvt = false; pvtEmpezar(); return; }
+    Object.assign(S, { vision: null, estadoVision: "", visionRestantes: null, visionMotivo: "", visionMensaje: "", camConPvt: true });
+    publicar("apto/control/orden_vision", { accion: "medir", segundos: segundosPvt(), linea_base: S.lineaBase, ventana: false });
+    S.pvt = { fase: "preparando", msg: "Preparando la cámara… mira la pantalla de frente.", cont: "", contColor: "", res: null };
+    const t0 = Date.now();
+    const reloj = cadaTanto(200, () => {
+      if (S.paso !== "reaccion" || S.pvt.fase !== "preparando") { parar(reloj); return; }
+      const e = S.estadoVision;
+      if (e === "lentes") {  // el módulo espera a que se quiten los lentes; después avisa "midiendo" solo
+        S.pvt.msg = S.visionMensaje || "Se ven lentes: quítatelos para continuar con la medición.";
+        pedirPintar();
+        return;
+      }
+      if (e === "midiendo" || e === "error" || Date.now() - t0 > 8000) { parar(reloj); pvtEmpezar(); }
+    });
     pedirPintar();
   }
 
@@ -877,6 +908,12 @@
     // panel
     tareaPanel: (t) => { S.tareaElegida = t; pedirPintar(); },
     nuevaEvaluacion: () => { if (S.paso !== "inicio") irA("inicio"); irPantalla("evaluacion"); },
+    // Corta la evaluación en curso: avisa al ESP32 (retenido, por si se reinicia) y vuelve al inicio. No publica resultado.
+    cancelarEvaluacion: () => {
+      if (S.sesion) publicar("apto/control/cancelar", { motivo: "Cancelada en la estacion" }, true);  // sin tilde: la OLED no las dibuja
+      cortarPruebasEnCurso();
+      irA("inicio");
+    },
     ultimoResultado: () => abrirResultado(ultimaEvaluada()),
     abrirTripulante: (p) => {
       if (S.evaluaciones[p]) abrirResultado(p);
@@ -894,7 +931,7 @@
     camReiniciar: () => { if (S.camFase !== "midiendo") { entrarCamara(); pedirPintar(); } },
     frase: (f) => { if (!["esperando", "grabando", "analizando"].includes(S.vozFase)) { S.fraseVoz = f; pedirPintar(); } },
     grabar: grabarVoz,
-    pvtEmpezar,
+    pvtEmpezar: pvtPreparar,
     pvt: (a, e) => { e.preventDefault(); pvtResponder(tiempoDelEvento(e)); },
     dsstEmpezar,
     dsst: (n) => dsstResponder(Number(n)),
@@ -1147,7 +1184,8 @@ ${S.modal ? vistaModal() : ""}`;
   // ================================================================== vista: Evaluación
   function botonera(primario, opciones = {}) {
     return h`<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-      <button class="btn btn-ghost" type="button" data-click="anterior" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-ghost" type="button" data-click="anterior"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-ghost" type="button" data-click="cancelarEvaluacion" style="margin-right:auto;color:var(--st-rojo)"><i class="ph ph-x-circle"></i>Cancelar evaluación</button>
       ${opciones.sinOmitir ? "" : h`<button class="btn btn-secondary" type="button" data-click="siguiente" style="padding:9px 16px">Omitir</button>`}
       ${opciones.extra || ""}
       ${primario}
@@ -1224,10 +1262,15 @@ ${S.modal ? vistaModal() : ""}`;
     const d = S.esp32;
     const [tipoEstado, textoEstado] = estadoEsp32();
     const tag = d ? (d.simulado ? "SIMULADO" : "EN VIVO") : "";
+    // Terminados los 30 s de la placa, se muestra lo medido (mediana), aunque ya se haya retirado el dedo.
+    const hecho = Boolean(d && d.medicion_lista);
+    const pulso = hecho ? d.pulso_medido_lpm : d && d.pulso_lpm;
+    const hrv = hecho ? d.hrv_medido_ms : d && d.hrv_rmssd_ms;
+    const spo2 = hecho ? d.spo2_medido : d && d.spo2;
     const tarjetas = [
-      { label: "Pulso", icon: "ph-heartbeat", valor: d ? entero(d.pulso_lpm) : "–", unidad: "latidos por minuto" },
-      { label: "HRV", icon: "ph-wave-sine", valor: d ? entero(d.hrv_rmssd_ms) : "–", unidad: "ms (RMSSD de 30 s)" },
-      { label: "SpO₂", icon: "ph-drop", valor: d && num(d.spo2) !== null ? L.decimal(d.spo2, 0) : "–", unidad: "% de oxígeno en sangre" },
+      { label: "Pulso", icon: "ph-heartbeat", valor: d ? entero(pulso) : "–", unidad: hecho ? "latidos por minuto · medido en 30 s" : "latidos por minuto" },
+      { label: "HRV", icon: "ph-wave-sine", valor: d ? entero(hrv) : "–", unidad: "ms (RMSSD de 30 s)" },
+      { label: "SpO₂", icon: "ph-drop", valor: d && num(spo2) !== null ? L.decimal(spo2, 0) : "–", unidad: "% de oxígeno en sangre" },
       { label: "Movimiento", icon: "ph-hand", valor: d ? fmt(d.movimiento) : "–", unidad: d && num(d.movimiento) !== null ? (d.movimiento > 0.05 ? "g · en movimiento" : "g · quieto") : "g" },
     ];
     const n = S.ppg.length;
@@ -1263,7 +1306,7 @@ ${S.modal ? vistaModal() : ""}`;
       <span style="font-size:12px;color:var(--color-neutral-400)">Onda ilustrativa al ritmo del pulso medido: el ESP32 envía un resumen por segundo (pulso, HRV de 30 s, SpO₂), no la señal cruda. Cuadrícula de 1 segundo.</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--color-neutral-200)" aria-live="polite"><i class="ph-fill ${iconoEstado[0]}" style="color:${iconoEstado[1]};font-size:18px"></i>${textoEstado}${d && d.simulado ? h` ${tagMono("SIMULADO")}` : ""}</div>
-    ${botonera(botonPrimario("Continuar", "siguiente", !d || d.dedo === false))}`;
+    ${botonera(botonPrimario("Continuar", "siguiente", !d || (d.fase ? !d.medicion_lista : d.dedo === false)))}`;
   }
 
   function vCamara() {
@@ -1290,18 +1333,15 @@ ${S.modal ? vistaModal() : ""}`;
         error: S.visionMotivo || "La medición con la cámara falló." }[S.camFase];
     const ventanaTexto = !abierto && !mid ? "El módulo de visión no está abierto." : lentes ? textoLentes : mid ? "Tu rostro se ve en la ventana del módulo de visión. Mírala de frente."
       : S.camFase === "listo" ? "Medición terminada. La ventana de visión ya se cerró." : "Al iniciar, el módulo de visión abre su ventana con tu rostro.";
-    const rppg = d ? num(d.pulso_rppg_lpm) : null;
-    const calR = d ? num(d.calidad_rppg) : null;
     const cards = [
       { label: "Parpadeos", valor: d ? fmt(d.parpadeos_min, 1) : "–", unidad: "por minuto", tipo: TIPOS.medido },
       { label: "PERCLOS", valor: d ? fmt(num(d.perclos) > 1 ? num(d.perclos) / 100 : d.perclos) : "–", unidad: "fracción con ojos casi cerrados", tipo: TIPOS.estimado },
       { label: "Bostezos", valor: d ? entero(d.bostezos) : "–", unidad: "boca abierta ≥ 1,5 s", tipo: TIPOS.medido },
       { label: "Bostezos tapados", valor: d && d.bostezos_tapados != null ? entero(d.bostezos_tapados) : "–", unidad: "con la mano (ya incluidos)", tipo: TIPOS.medido },
-      { label: "Pulso sin contacto", valor: !d ? "–" : rppg !== null && calR !== null && calR >= 0.5 ? entero(rppg) : "Calidad baja", unidad: d && calR !== null ? `calidad ${fmt(calR)} · se publica con calidad ≥ 0,5` : "se publica con calidad ≥ 0,5", tipo: TIPOS.estimado, gris: !(rppg !== null && calR !== null && calR >= 0.5) },
     ];
     const restante = S.camFase === "listo" || S.camFase === "error" ? 0 : Math.max(0, Math.min(SEGUNDOS_CAMARA, S.camT));
     return h`<div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:6px;margin-right:auto"><h2 style="font-size:26px;margin:0">Monitoreo con cámara</h2><p style="margin:0;color:var(--color-neutral-300);max-width:60ch">Mira a la cámara de frente durante ${SEGUNDOS_CAMARA} segundos. Mide parpadeos, ojos cerrados, bostezos y pulso sin contacto.</p></div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-right:auto"><h2 style="font-size:26px;margin:0">Monitoreo con cámara</h2><p style="margin:0;color:var(--color-neutral-300);max-width:60ch">Mira a la cámara de frente durante ${SEGUNDOS_CAMARA} segundos. Mide parpadeos, ojos cerrados y bostezos.</p></div>
       ${segOpciones("vista", "Vista de la cámara", [["ventana", "Ventana de visión", S.vista === "ventana", "ph-app-window"], ["web", "Vista web · pendiente", S.vista === "web", "ph-browser"]], "vista")}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start">
@@ -1420,13 +1460,17 @@ ${S.modal ? vistaModal() : ""}`;
     const P = S.pvt;
     const seg = segundosPvt();
     const dur = textoDuracion(seg) + (S.demo ? " (modo demo)" : "");
-    const prog = P.fase === "intro" ? `PVT-B · ${dur}` : P.fase === "activa" ? pvtRestante() : `${(P.res && P.res.n_estimulos) || 0} estímulos`;
+    const prog = P.fase === "intro" ? `PVT-B · ${dur}` : P.fase === "preparando" ? "Cámara…" : P.fase === "activa" ? pvtRestante() : `${(P.res && P.res.n_estimulos) || 0} estímulos`;
+    const camara = !S.camConPvt || P.fase !== "fin" ? ""
+      : S.vision ? alerta(ST.verde, "ph-webcam", "Cámara", "Medición de la cámara recibida: parpadeos, ojos cerrados y bostezos.", "status")
+        : S.estadoVision === "error" ? alerta(ST.amarillo, "ph-webcam", "Cámara", `La cámara no pudo medir: ${S.visionMotivo || "sin motivo"}. La evaluación sigue sin ella.`, "status")
+          : alerta(ST.amarillo, "ph-webcam", "Cámara", "Esperando los datos de la cámara…", "status");
     const msg = P.fase === "intro" ? "Toca Empezar cuando estés listo" : P.msg;
     const cont = pvt.estimuloEn !== null ? String(Math.floor(performance.now() - pvt.estimuloEn)) : P.cont;
     const r = P.res;
     const primario = P.fase === "intro" ? botonPrimario("Empezar la prueba", "pvtEmpezar", false)
       : P.fase === "fin" ? botonPrimario("Continuar", "siguiente", false) : botonPrimario("En curso…", "nada", true);
-    return h`${titulo("Prueba de reacción", `Cuando aparezca el contador, presiona la barra espaciadora o toca el recuadro lo más rápido que puedas. No te adelantes: si respondes antes, cuenta como anticipada. Dura ${dur}.`, "max-width:62ch")}
+    return h`${titulo("Prueba de reacción", `Cuando aparezca el contador, presiona la barra espaciadora o toca el recuadro lo más rápido que puedas. No te adelantes: si respondes antes, cuenta como anticipada. Dura ${dur}. Mientras tanto, la cámara mide tus ojos: mira la pantalla de frente.`, "max-width:62ch")}
     <div class="zona-prueba" role="button" tabindex="0" aria-label="Área de la prueba de reacción" data-pointer="pvt" style="position:relative;min-height:340px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 55%, var(--ink));box-shadow:var(--shadow-sm);cursor:pointer">
       <span style="position:absolute;top:14px;right:16px;${MONO};font-size:12px;color:var(--color-neutral-400)">${prog}</span>
       <span id="pvt-cont" style="${MONO};font-size:clamp(64px,12vw,140px);line-height:1;font-variant-numeric:tabular-nums;color:${P.contColor || "var(--color-text)"};min-height:1em">${cont}</span>
@@ -1439,7 +1483,8 @@ ${S.modal ? vistaModal() : ""}`;
         ${tarjetaDato("Lapsos", r.lapsos, `${L.decimal(r.lapsos_por_min)} por minuto (355 ms o más)`)}
         ${tarjetaDato("Anticipadas", r.anticipadas, `de ${r.n_estimulos} estímulos`)}
       </div>` : ""}
-    ${botonera(primario, { sinOmitir: P.fase === "activa" })}`;
+    ${camara}
+    ${botonera(primario, { sinOmitir: P.fase === "activa" || P.fase === "preparando" })}`;
   }
 
   function celdaSimbolo(d, n, extra = "") {
@@ -1511,10 +1556,10 @@ ${S.modal ? vistaModal() : ""}`;
   // ================================================================== vista: Resultados
   // Qué motivo del coordinador corresponde a cada indicador (los puntos llegan por fuente, no por indicador).
   const MOTIVO_DE = { "Pulso": /^pulso/i, "HRV (RMSSD)": /variabilidad/i, "Reacción PVT-B": /pvt/i, "Símbolos DSST": /símbolos/i,
-    "Parpadeos": /parpadeos/i, "PERCLOS": /ojos cerrados/i, "Bostezos": /bostezo/i, "Pulso sin contacto": /^pulso/i,
+    "Parpadeos": /parpadeos/i, "PERCLOS": /ojos cerrados/i, "Bostezos": /bostezo/i, "Fatiga por visión": /ojos cerrados|parpadeos|bostezo/i,
     "Cansancio en la voz": /voz/i, "Somnolencia KSS": /karolinska/i, "Horas de sueño": /horas de sueño/i };
   const FUENTE_DE = { "Pulso": "esp32", "HRV (RMSSD)": "esp32", "Reacción PVT-B": "pvt", "Símbolos DSST": "dsst", "Parpadeos": "vision",
-    "PERCLOS": "vision", "Bostezos": "vision", "Pulso sin contacto": "vision", "Cansancio en la voz": "voz", "Somnolencia KSS": "cuestionario", "Horas de sueño": "cuestionario" };
+    "PERCLOS": "vision", "Bostezos": "vision", "Fatiga por visión": "vision", "Cansancio en la voz": "voz", "Somnolencia KSS": "cuestionario", "Horas de sueño": "cuestionario" };
 
   function indicadoresDe(ev) {
     const d = S.sesiones[ev.sesion] || { esp32: [] };
@@ -1564,13 +1609,14 @@ ${S.modal ? vistaModal() : ""}`;
       const pc = num(vi.perclos) !== null && num(vi.perclos) > 1 ? num(vi.perclos) / 100 : vi.perclos;
       out.push({ tipo: "estimado", nombre: "PERCLOS", fuente: "Visión", valor: fmt(pc), unidad: "fracción", puntos: null, nota: "Tiempo con los ojos casi cerrados. Aproximación P80, sin validación clínica." });
       out.push({ tipo: "medido", nombre: "Bostezos", fuente: "Visión", valor: entero(vi.bostezos), unidad: "en la medición", puntos: null, nota: "Boca muy abierta 1,5 s o más. Uno suelto no cuenta." });
-      const cal = num(vi.calidad_rppg);
-      if (num(vi.pulso_rppg_lpm) !== null && cal !== null && cal >= 0.5) {
-        out.push({ tipo: "estimado", nombre: "Pulso sin contacto", fuente: "Visión", valor: entero(vi.pulso_rppg_lpm), unidad: "lpm", calidad: cal, puntos: null,
-          nota: validas.length ? "No cuenta: manda el pulso del sensor." : "Por cámara (rPPG); cuenta porque la calidad llegó a 0,5." });
-      } else {
-        out.push(nd("Pulso sin contacto", "Visión", cal !== null ? `No se publica: la calidad fue ${fmt(cal)} y hace falta 0,5.` : "No se publica: sin calidad suficiente.", cal));
-      }
+      // Fatiga por visión: el resumen del coordinador para la cámara (los puntos de su peor indicador: PERCLOS,
+      // parpadeos o bostezos). Si no está en las señales, la visión no se evaluó (por ejemplo, se vio poco la cara).
+      const fv = num(sen.vision);
+      const lentesTxt = vi.lentes ? " Con lentes puestos: solo cuentan los bostezos." : "";
+      out.push(fv !== null
+        ? { tipo: "estimado", nombre: "Fatiga por visión", fuente: "Visión", valor: ["Sin signos", "Leve", "Marcada"][Math.min(2, Math.max(0, Math.round(fv)))], unidad: "", puntos: null,
+            nota: "Resumen de ojos cerrados, parpadeos y bostezos: vale lo que su peor indicador." + lentesTxt }
+        : nd("Fatiga por visión", "Visión", cara !== null && cara < 50 ? "No se evaluó: la cara se vio menos del 50 % del tiempo." : "El coordinador no la evaluó en esta sesión."));
     } else out.push(nd("Visión", "Visión", "Sin medición de la cámara en esta sesión."));
     const vz = d.voz;
     if (vz && num(vz.indice_cansancio) !== null) {
@@ -1582,8 +1628,7 @@ ${S.modal ? vistaModal() : ""}`;
       out.push({ tipo: "reportado", nombre: "Somnolencia KSS", fuente: "Cuestionario", valor: entero(cu.kss), unidad: "de 9", puntos: null, nota: cu.kss_texto ? `${cu.kss_texto}.` : "Escala de Karolinska." });
       out.push({ tipo: "reportado", nombre: "Horas de sueño", fuente: "Cuestionario", valor: fmt(cu.horas_sueno, 1), unidad: "h", puntos: null, nota: "Se compara con tu línea base (sin línea base: menos de 6 h marca)." });
     } else out.push(nd("Cuestionario", "Cuestionario", "No llegó a esta pantalla."));
-    out.push(nd("Fatiga por visión", "Visión", "El algoritmo todavía no está validado. No se calcula."));
-    for (const it of out) if (it.tipo !== "no_disponible" && !(it.nombre === "Pulso sin contacto" && validas.length)) it.puntos = ptsDe(it.nombre);
+    for (const it of out) if (it.tipo !== "no_disponible") it.puntos = ptsDe(it.nombre);
     return out;
   }
 
@@ -1861,7 +1906,7 @@ ${S.modal ? vistaModal() : ""}`;
       <div style="display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px"><i class="ph ph-sun" style="font-size:16px;color:var(--color-neutral-300)"></i><span>Iluminación</span><span style="margin-left:auto;color:${luzK === "ok" ? ST.verde.fg : luzK == null ? "var(--color-neutral-400)" : ST.amarillo.fg}">${luzK == null ? "Sin medir" : { baja: "Poca luz", ok: "Adecuada", alta: "Demasiada luz" }[luzK]}</span><span style="${MONO};font-size:12px;color:var(--color-neutral-400);min-width:28px;text-align:right">${S.luz == null ? "–" : String(Math.round(S.luz))}</span></div>
         <div style="position:relative;height:6px;border-radius:3px;background:linear-gradient(to right, color-mix(in srgb, var(--st-amarillo) 35%, transparent) 0 20%, color-mix(in srgb, var(--st-verde) 30%, transparent) 20% 82%, color-mix(in srgb, var(--st-amarillo) 35%, transparent) 82%)"><span style="position:absolute;top:-3px;left:${S.luz == null ? "0%" : Math.round((S.luz / 255) * 100) + "%"};width:3px;height:12px;margin-left:-1.5px;border-radius:2px;background:var(--color-text);transition:left .4s"></span></div>
-        <span style="font-size:11px;color:var(--color-neutral-500)">Brillo medio de la imagen. La zona central es la adecuada para medir parpadeos y pulso.</span>
+        <span style="font-size:11px;color:var(--color-neutral-500)">Brillo medio de la imagen. La zona central es la adecuada para medir los ojos y la boca.</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary" type="button" data-click="pruCam" ${si(S.pCam === "pidiendo", "disabled")} style="padding:9px 16px"><i class="ph ph-play"></i>${S.pCam === "on" ? "Reiniciar" : "Probar cámara"}</button>
@@ -1918,7 +1963,7 @@ ${S.modal ? vistaModal() : ""}`;
       ["Becspace AI", `${CFG.ollama_model || "–"} · Whisper ${CFG.whisper_model || "–"}`],
       ["PVT", `${segundosPvtConfig()} s (demo ${L.PVT.DEMO_S} s)`],
       ["Base de datos", `MongoDB ${CFG.mongo_host || "127.0.0.1"} · ${CFG.mongo_db || "apto_hoy"}`],
-      ["Tierra", `retraso simulado de ${CFG.retraso_tierra_s ?? 20} s · tierra.html`],
+      ["Tierra", `retraso simulado de ${CFG.retraso_tierra_s ?? 2.6} s · tierra.html`],
     ];
     const privacidad = ["Todo corre en la laptop de la estación, sin internet.", "La imagen de la cámara no se guarda: solo los números calculados.", "MongoDB escucha solo en 127.0.0.1 y no se abre a la red.", "Las otras laptops entran con un usuario de solo lectura."];
     const temas = [["oscuro", "Oscuro", "ph-moon", "#161826", "#10121c", "#232532", "#e9e9ed", "#9184d9"], ["claro", "Claro", "ph-sun", "#e9ebf5", "#dcdff0", "#f7f7fc", "#1c1e2b", "#6a5cc4"]];
