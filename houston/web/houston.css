@@ -1,0 +1,3 @@
+/* Houston: solo lo propio sobre nocturne.css y app.css de la estación (el resto del estilo va en línea en
+ * las plantillas de houston.js, igual que en estacion.js). */
+@keyframes barridoX { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
