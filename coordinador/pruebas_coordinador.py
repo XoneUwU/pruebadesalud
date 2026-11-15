@@ -108,7 +108,7 @@ def main() -> int:
         fallas += not ok
         print(f"{'OK   ' if ok else 'FALLA'}  línea base de sebas sin la sesión evaluada: {base}")
 
-    # Aviso de SpO2: 30 s seguidos con el SpO2 bajo (con dedo y calidad >= 0,5); no cambia el color.
+    # Aviso de SpO2: 20 s seguidos con el SpO2 bajo (con dedo y calidad >= 0,5); no cambia el color.
     def lecturas(valores, desde=0.0, dedo=True, calidad=0.9):
         return [(desde + i, {"dedo": dedo, "calidad": calidad, "spo2": v}) for i, v in enumerate(valores)]
 
@@ -116,7 +116,7 @@ def main() -> int:
     cada_4 = [89 if i % 4 == 0 else None for i in range(36)]  # el sensor da el SpO2 cada ~4 s
     casos_spo2 = [
         ("sin base: 89 durante 35 s", lecturas([89] * 36), None, True),
-        ("sin base: 89 solo 25 s", lecturas([89] * 26), None, False),
+        ("sin base: 89 solo 15 s", lecturas([89] * 16), None, False),
         ("con base 97,5: 93 durante 35 s", lecturas([93] * 36), base_spo2, True),
         ("con base 97,5: 95 durante 35 s (solo 2,5 abajo)", lecturas([95] * 36), base_spo2, False),
         ("dedo afuera a la mitad corta la racha", lecturas([89] * 20) + lecturas([89], 20, dedo=False)

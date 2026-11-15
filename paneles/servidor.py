@@ -111,10 +111,15 @@ class Manejador(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB), **kwargs)
 
+    def end_headers(self):
+        # Nada se guarda en la caché del navegador: tras actualizar el proyecto, la estación siempre carga la versión
+        # nueva (con una versión vieja en caché, la página no entendía los mensajes nuevos del ESP32).
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def responder(self, cuerpo: bytes, tipo: str, extra: dict | None = None):
         self.send_response(200)
         self.send_header("Content-Type", tipo)
-        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(cuerpo)))
         for k, v in (extra or {}).items():
             self.send_header(k, v)

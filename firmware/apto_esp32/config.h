@@ -11,9 +11,10 @@
 // ---------------------------------------------------------------- pines (ESP32 Dev Module, a confirmar con la placa)
 #define PIN_SDA 21             // I2C: MAX30102 (0x57), MPU6050 (0x68) y OLED SSD1306 (0x3C)
 #define PIN_SCL 22
-#define PIN_LED_AMARILLO 25    // tres LED sueltos (cada uno con su resistencia de 220 Ω, cátodo a GND)
-#define PIN_LED_VERDE 26
-#define PIN_LED_ROJO 27        // los tres encendidos = midiendo (modo local) o sin conexión al broker
+#define PIN_LED_R 25           // LED RGB: cada canal con su resistencia de 220 Ω. Nunca se encienden los tres a la vez:
+#define PIN_LED_G 26           // verde = G, amarillo = R + G, rojo = R; azul fijo = midiendo o sin broker;
+#define PIN_LED_B 27           // azul parpadeando = repite
+#define LED_ANODO_COMUN 0      // 0 = cátodo común (el común a GND, HIGH enciende); 1 = ánodo común (común a 3V3, LOW enciende)
 #define PIN_ZUMBADOR 4         // zumbador a través de un transistor NPN (base con 1 kΩ)
 #define TONO_ZUMBADOR_HZ 2000  // tono de 2 kHz: suena con zumbador pasivo o activo; 0 = HIGH fijo (solo activo)
 

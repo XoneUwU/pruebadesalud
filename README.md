@@ -120,7 +120,7 @@ barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siet
 | Pantalla | Qué muestra (todo con datos reales de MQTT) |
 |---|---|
 | Panel | Recomendación para la tarea (la misma de `resumen_tripulacion()` del copiloto), conteo por color, una tarjeta por integrante (pulso, KSS y PVT), módulos abiertos, aviso de SpO2 y últimas respuestas del copiloto |
-| Evaluación | Paso a paso: inicio (persona, tarea, línea base, modo demo, símbolos y verificación de broker y módulos), dispositivo (pulso, HRV, SpO₂ y movimiento del ESP32), cámara (60 s, la mide el módulo de visión), voz (frase de `voz_fatiga.py`), reacción PVT-B (3 min, o 1 min con «Modo demo»), símbolos DSST (90 s, opcional), cuestionario de Karolinska y la espera del coordinador |
+| Evaluación | Paso a paso: inicio (persona, tarea, línea base, modo demo, símbolos y verificación de broker y módulos), dispositivo (pulso, HRV, SpO₂ y movimiento del ESP32), voz (frase de `voz_fatiga.py`), reacción PVT-B (1 min; **la cámara mide al mismo tiempo**, sin abrir su ventana), símbolos DSST (90 s, opcional), cuestionario de Karolinska y la espera del coordinador |
 | Pruebas | Cámara y micrófono de este navegador (imagen, luz, nivel, ruido y una grabación de 3 s), sin guardar nada |
 | Resultados | Semáforo, motivos, recomendación, aviso de SpO2, Becspace AI (el copiloto: pregunta escrita o 🎤 Hablar) e indicadores por fuente: medido, estimado, reportado o no disponible, con su calidad y sus puntos |
 | Historial | Evaluaciones guardadas por el registrador (MongoDB): gráfico por indicador, tabla, detalle, exportar CSV y el comando para reproducir la sesión |
@@ -136,7 +136,7 @@ barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siet
 - **Credenciales**: si la página se abre en la misma laptop (localhost), `/config.js` lleva `MQTT_USER` y
   `MQTT_PASS` (puede publicar). Desde otra laptop lleva `MQTT_USER_LECTURA` y `MQTT_PASS_LECTURA` (solo lee).
   Por eso la estación solo funciona en la laptop de Bri. En desarrollo todos quedan vacíos.
-- **Opciones** en `config.env`: `PVT_SEGUNDOS` (180 = PVT-B de 3 minutos; la casilla «Modo demo» de la estación
+- **Opciones** en `config.env`: `PVT_SEGUNDOS` (60, lo mismo que mide la cámara; 180 = PVT-B de 3 minutos; la casilla «Modo demo» de la estación
   la baja a 1 minuto y lo anota como `modo_demo: true`), `RETRASO_TIERRA_S` (20 s), `MQTT_WS_PORT` (9001) y
   `TRIPULACION` (los botones de la estación y las tarjetas). Si se cambian, hay que reiniciar `servidor.py`.
 - **Examen de voz con variaciones (opcional)**: en el paso de voz se elige la frase: la estándar (por defecto) o
@@ -149,9 +149,16 @@ barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siet
   (`apto/control/modulos/+`). En cada paso dice «el módulo X no está abierto» y cómo abrirlo, en vez de esperar.
   El ESP32 no es un módulo de Python: si en 10 s no llegan datos, la estación lo avisa (y recuerda que los tres
   LED encendidos significan que no llega al broker).
-- **Lentes**: si el módulo de visión ve lentes antes de medir (`estado_vision` `"lentes"`), el paso de la cámara
-  muestra «Se ven lentes: quítatelos para continuar con la medición» y la cuenta de 60 s no corre hasta que el
-  módulo empieza a medir. Los datos de la cámara incluyen los bostezos tapados con la mano.
+- **Cámara junto con la reacción**: la cámara ya no tiene paso propio. Al tocar «Empezar la prueba», la estación
+  pide la medición (`orden_vision` con `"ventana": false` y los mismos segundos que la prueba) y arranca cuando el
+  módulo empieza a medir; así nadie pasa un minuto quieto mirando la cámara. Si el módulo ve lentes
+  (`estado_vision` `"lentes"`), el pedido de quitárselos sale en el área de la prueba antes de empezar. Al terminar
+  dice si llegaron los datos de la cámara. Los parpadeos medidos durante una tarea no son comparables con líneas
+  base tomadas mirando la cámara sin hacer nada.
+- **Cancelar evaluación**: botón en todos los pasos; corta la evaluación sin publicar resultado y avisa al ESP32
+  (`apto/control/cancelar`).
+- **Sin caché**: `servidor.py` responde todo con `Cache-Control: no-store`, para que la estación cargue siempre la
+  versión nueva después de actualizar el proyecto.
 - Cada página muestra si está conectada al broker. Los datos con `"simulado": true` llevan la etiqueta SIMULADO, y
   los del coordinador provisional, PROVISIONAL. La onda del pulso en el paso del dispositivo es ILUSTRATIVA: va al
   ritmo del pulso medido, porque el ESP32 manda un resumen por segundo y no la señal cruda.
@@ -179,7 +186,7 @@ con el promedio de la persona (`datos/coordinador/linea_base.jsonl`); sin línea
 referencia del prototipo, que hay que calibrar. **Rojo** si alguna fuente tiene 2 puntos o si 3 fuentes tienen
 puntos; **amarillo** si alguna tiene puntos; **verde** si ninguna. Los motivos son frases neutras, sin sujeto
 («Somnolencia alta según la escala de Karolinska»). La voz pesa como máximo 1 punto, porque es una señal débil.
-**SpO2: aviso, no puntaje.** Si durante al menos 30 s seguidos, con dedo y calidad ≥ 0,5, el SpO2 está 4 puntos o
+**SpO2: aviso, no puntaje.** Si durante al menos 20 s seguidos (de los 30 s que mide el ESP32), con dedo y calidad ≥ 0,5, el SpO2 está 4 puntos o
 más por debajo del promedio de la línea base de la persona (o por debajo de 92 si no tiene línea base), la evaluación
 lleva `"aviso_spo2": true` y el motivo «Oxígeno más bajo de lo habitual: repetir la medición», **sin cambiar el
 color**. Sacar el dedo o una lectura normal cortan la racha. La estación lo muestra en amarillo debajo del semáforo y
@@ -344,16 +351,37 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
 ## 9. ESP32: luces y respaldo sin Wi-Fi
 
 Firmware en `firmware\apto_esp32\`. El cableado, las librerías y cómo subirlo están en `firmware/README.md`. El
-ESP32 muestra el semáforo en **3 LED sueltos**, en la pantalla OLED y con el zumbador:
-- **LED:** amarillo en GPIO 25, verde en GPIO 26 y rojo en GPIO 27, cada uno con 220 Ω y el cátodo a GND.
+ESP32 muestra el semáforo en un **LED RGB**, en la pantalla OLED y con el zumbador:
+- **LED RGB:** rojo en GPIO 25, verde en GPIO 26 y azul en GPIO 27, cada canal con 220 Ω (cátodo común a GND; con
+  ánodo común, `LED_ANODO_COMUN 1`). **Nunca se encienden los tres canales a la vez**, para no forzarlo.
 - **Zumbador:** suena con un tono de 2 kHz, así que sirve uno activo o uno pasivo; da 3 pitidos al pasar a rojo.
 
 | LED | Significa |
 |---|---|
-| Uno solo: verde, amarillo o rojo | El semáforo de la evaluación (`apto/{persona}/semaforo`) |
-| **Los tres encendidos** | **Sin conexión al broker** (con Wi-Fi configurado) o, en el modo local, **midiendo** |
-| Los tres parpadeando | Modo local: «repite» (hubo poca señal buena) |
-| Al arrancar: amarillo, verde, rojo, los tres y un pitido | Prueba del cableado |
+| Verde, amarillo (rojo + verde) o rojo | El resultado **final** de la evaluación en curso (`apto/{persona}/semaforo` de esa sesión) |
+| **Azul fijo** | Evaluación en curso (midiendo o esperando el resultado), o **sin conexión al broker** |
+| Azul parpadeando | Modo local: «repite» (hubo poca señal buena) |
+| Apagado | En reposo, o evaluación cancelada |
+| Al arrancar: rojo, verde y azul, de a uno, y un pitido | Prueba del cableado |
+
+**Con Wi-Fi, la placa sigue la evaluación de la estación** y la OLED anuncia cada paso:
+
+1. «INICIAR ANALISIS» (un pitido) cuando la estación publica una sesión nueva (`apto/control/sesion`), y después el
+   nombre de quien se evalúa.
+2. «Coloca tu dedo», cuenta 3-2-1 y **30 s de medición** con cuenta regresiva. Si se retira el dedo, «Dedo retirado:
+   repite»; si hubo menos de 10 s de señal buena, «Senal debil: repite».
+3. «MEDIDO» con el pulso, el SpO₂ y la HRV de esos 30 s: ya se puede retirar el dedo. La placa **solo publica
+   lecturas durante los 30 s**; fuera de ellos `pulso_lpm`, `hrv_rmssd_ms` y `spo2` van en `null`.
+4. El color y «Resultado final» **recién cuando el coordinador publica el semáforo de esa sesión**, con todas las
+   pruebas. Un semáforo de una sesión anterior se ignora. Queda hasta la próxima evaluación.
+
+Cada mensaje `apto/{persona}/esp32` lleva `fase` (`reposo`, `anuncio`, `nombre`, `espera`, `cuenta`, `midiendo`,
+`listo`, `resultado`, `cancelada`), `quedan_s` mientras mide y, al terminar, `medicion_lista: true` con
+`pulso_medido_lpm`, `hrv_medido_ms` y `spo2_medido`. La estación habilita «Continuar» con `medicion_lista`.
+
+**Cancelación**: «CANCELADA» y el motivo, LED apagado y vuelta a «Listo» si la estación publica
+`apto/control/cancelar` (`{"persona", "sesion", "motivo"}`, retenido; botón «Cancelar evaluación»), si la placa pasa
+20 s sin broker durante una evaluación («Sin conexion») o si pasan 15 min sin resultado final («Sin resultado»).
 
 ### Respaldo de la demo: medición sin Wi-Fi (modo local)
 
@@ -370,11 +398,11 @@ Si en la demo fallan la red o la laptop, el ESP32 puede medir solo, sin Wi-Fi ni
    | Resultado | Cuándo | LED | Zumbador |
    |---|---|---|---|
    | VERDE | Pulso de 50 a 99 | Verde | 1 pitido corto |
-   | AMARILLO | Pulso de 100 a 119 («Pulso en reposo alto») o menor que 50 («Pulso bajo: repite») | Amarillo | 1 pitido |
-   | ROJO | Pulso de 120 o más | Rojo | 3 pitidos |
+   | AMARILLO | Pulso de 100 a 119 («Pulso en reposo alto») o de 40 a 49 («Pulso bajo») | Amarillo | 1 pitido |
+   | ROJO | Pulso de 120 o más, o menor que 40 («Pulso muy bajo») | Rojo | 3 pitidos |
    | REPITE | Menos de 10 s de señal buena | Los tres parpadeando | 2 pitidos largos |
 
-   - **SpO₂:** si es menor que 92, solo agrega «Oxigeno bajo: repite» en la OLED, sin cambiar el color (la misma
+   - **SpO₂:** si es menor que 92, solo agrega «Oxigeno bajo» en la OLED, sin cambiar el color (la misma
      regla que el aviso de SpO₂ del coordinador).
    - **HRV:** se muestra, pero no se juzga, porque no hay línea base.
 5. Para otra medición, retirar el dedo y volver a ponerlo.

@@ -300,7 +300,9 @@
     temporizadores.clear();
   }
 
-  function pasosActivos() { return PASOS.filter((p) => p !== "simbolos" || S.conDsst); }
+  // La cámara ya no tiene paso propio: mide durante la prueba de reacción (pvtPreparar), para que nadie pase un
+  // minuto quieto mirando la cámara sin nada que hacer.
+  function pasosActivos() { return PASOS.filter((p) => p !== "camara" && (p !== "simbolos" || S.conDsst)); }
   function mover(d) {
     const l = pasosActivos();
     const i = l.indexOf(S.paso);
@@ -385,6 +387,13 @@
     }
     const s = Math.round((Date.now() - S.esp32Llegada) / 1000);
     if (s > 3) return ["aviso", `Sin datos nuevos desde hace ${s} s.`];
+    if (d.fase) {  // la placa guía la medición: mide solo durante sus 30 s y avisa en qué paso está
+      if (d.medicion_lista) return ["ok", "Medición lista: ya puedes retirar el dedo y continuar."];
+      if (d.fase === "midiendo") return ["espera", `Midiendo: quedan ${entero(d.quedan_s)} s. No retires el dedo.`];
+      if (d.fase === "cuenta") return ["espera", "Dedo detectado: la placa cuenta 3, 2, 1…"];
+      if (d.fase === "cancelada" || d.fase === "reposo") return ["aviso", "La placa canceló su medición (sin conexión o sin resultado a tiempo). Pueden omitir este paso, o cancelar la evaluación y empezar de nuevo."];
+      return ["aviso", "Coloca el dedo en el sensor: la placa cuenta 3, 2, 1 y mide 30 segundos."];
+    }
     if (d.dedo === false) return ["aviso", "Coloca el dedo en el sensor y quédate sin moverte."];
     if (d.pulso_lpm == null) return ["espera", "Dedo detectado: midiendo el pulso (unos segundos)…"];
     const calidad = d.calidad != null ? ` · calidad ${L.decimal(d.calidad)}` : "";
@@ -498,6 +507,28 @@
     if (document.activeElement) document.activeElement.blur();  // que la barra espaciadora no apriete un botón
     pvt.reloj = setInterval(pedirPintar, 250);
     pvtProgramar();
+    pedirPintar();
+  }
+
+  /** La cámara mide durante la prueba de reacción, lo mismo que dura la prueba. Se pide sin ventana y la prueba
+   *  arranca cuando el módulo de visión empieza a medir (antes revisa los lentes). Sin módulo, arranca sola. */
+  function pvtPreparar() {
+    if (S.pvt.fase !== "intro") return;
+    if (!activo("vision") || !PUEDE) { S.camConPvt = false; pvtEmpezar(); return; }
+    Object.assign(S, { vision: null, estadoVision: "", visionRestantes: null, visionMotivo: "", visionMensaje: "", camConPvt: true });
+    publicar("apto/control/orden_vision", { accion: "medir", segundos: segundosPvt(), linea_base: S.lineaBase, ventana: false });
+    S.pvt = { fase: "preparando", msg: "Preparando la cámara… mira la pantalla de frente.", cont: "", contColor: "", res: null };
+    const t0 = Date.now();
+    const reloj = cadaTanto(200, () => {
+      if (S.paso !== "reaccion" || S.pvt.fase !== "preparando") { parar(reloj); return; }
+      const e = S.estadoVision;
+      if (e === "lentes") {  // el módulo espera a que se quiten los lentes; después avisa "midiendo" solo
+        S.pvt.msg = S.visionMensaje || "Se ven lentes: quítatelos para continuar con la medición.";
+        pedirPintar();
+        return;
+      }
+      if (e === "midiendo" || e === "error" || Date.now() - t0 > 8000) { parar(reloj); pvtEmpezar(); }
+    });
     pedirPintar();
   }
 
@@ -877,6 +908,12 @@
     // panel
     tareaPanel: (t) => { S.tareaElegida = t; pedirPintar(); },
     nuevaEvaluacion: () => { if (S.paso !== "inicio") irA("inicio"); irPantalla("evaluacion"); },
+    // Corta la evaluación en curso: avisa al ESP32 (retenido, por si se reinicia) y vuelve al inicio. No publica resultado.
+    cancelarEvaluacion: () => {
+      if (S.sesion) publicar("apto/control/cancelar", { motivo: "Cancelada en la estacion" }, true);  // sin tilde: la OLED no las dibuja
+      cortarPruebasEnCurso();
+      irA("inicio");
+    },
     ultimoResultado: () => abrirResultado(ultimaEvaluada()),
     abrirTripulante: (p) => {
       if (S.evaluaciones[p]) abrirResultado(p);
@@ -894,7 +931,7 @@
     camReiniciar: () => { if (S.camFase !== "midiendo") { entrarCamara(); pedirPintar(); } },
     frase: (f) => { if (!["esperando", "grabando", "analizando"].includes(S.vozFase)) { S.fraseVoz = f; pedirPintar(); } },
     grabar: grabarVoz,
-    pvtEmpezar,
+    pvtEmpezar: pvtPreparar,
     pvt: (a, e) => { e.preventDefault(); pvtResponder(tiempoDelEvento(e)); },
     dsstEmpezar,
     dsst: (n) => dsstResponder(Number(n)),
@@ -1147,7 +1184,8 @@ ${S.modal ? vistaModal() : ""}`;
   // ================================================================== vista: Evaluación
   function botonera(primario, opciones = {}) {
     return h`<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-      <button class="btn btn-ghost" type="button" data-click="anterior" style="margin-right:auto"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-ghost" type="button" data-click="anterior"><i class="ph ph-arrow-left"></i>Atrás</button>
+      <button class="btn btn-ghost" type="button" data-click="cancelarEvaluacion" style="margin-right:auto;color:var(--st-rojo)"><i class="ph ph-x-circle"></i>Cancelar evaluación</button>
       ${opciones.sinOmitir ? "" : h`<button class="btn btn-secondary" type="button" data-click="siguiente" style="padding:9px 16px">Omitir</button>`}
       ${opciones.extra || ""}
       ${primario}
@@ -1224,10 +1262,15 @@ ${S.modal ? vistaModal() : ""}`;
     const d = S.esp32;
     const [tipoEstado, textoEstado] = estadoEsp32();
     const tag = d ? (d.simulado ? "SIMULADO" : "EN VIVO") : "";
+    // Terminados los 30 s de la placa, se muestra lo medido (mediana), aunque ya se haya retirado el dedo.
+    const hecho = Boolean(d && d.medicion_lista);
+    const pulso = hecho ? d.pulso_medido_lpm : d && d.pulso_lpm;
+    const hrv = hecho ? d.hrv_medido_ms : d && d.hrv_rmssd_ms;
+    const spo2 = hecho ? d.spo2_medido : d && d.spo2;
     const tarjetas = [
-      { label: "Pulso", icon: "ph-heartbeat", valor: d ? entero(d.pulso_lpm) : "–", unidad: "latidos por minuto" },
-      { label: "HRV", icon: "ph-wave-sine", valor: d ? entero(d.hrv_rmssd_ms) : "–", unidad: "ms (RMSSD de 30 s)" },
-      { label: "SpO₂", icon: "ph-drop", valor: d && num(d.spo2) !== null ? L.decimal(d.spo2, 0) : "–", unidad: "% de oxígeno en sangre" },
+      { label: "Pulso", icon: "ph-heartbeat", valor: d ? entero(pulso) : "–", unidad: hecho ? "latidos por minuto · medido en 30 s" : "latidos por minuto" },
+      { label: "HRV", icon: "ph-wave-sine", valor: d ? entero(hrv) : "–", unidad: "ms (RMSSD de 30 s)" },
+      { label: "SpO₂", icon: "ph-drop", valor: d && num(spo2) !== null ? L.decimal(spo2, 0) : "–", unidad: "% de oxígeno en sangre" },
       { label: "Movimiento", icon: "ph-hand", valor: d ? fmt(d.movimiento) : "–", unidad: d && num(d.movimiento) !== null ? (d.movimiento > 0.05 ? "g · en movimiento" : "g · quieto") : "g" },
     ];
     const n = S.ppg.length;
@@ -1263,7 +1306,7 @@ ${S.modal ? vistaModal() : ""}`;
       <span style="font-size:12px;color:var(--color-neutral-400)">Onda ilustrativa al ritmo del pulso medido: el ESP32 envía un resumen por segundo (pulso, HRV de 30 s, SpO₂), no la señal cruda. Cuadrícula de 1 segundo.</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--color-neutral-200)" aria-live="polite"><i class="ph-fill ${iconoEstado[0]}" style="color:${iconoEstado[1]};font-size:18px"></i>${textoEstado}${d && d.simulado ? h` ${tagMono("SIMULADO")}` : ""}</div>
-    ${botonera(botonPrimario("Continuar", "siguiente", !d || d.dedo === false))}`;
+    ${botonera(botonPrimario("Continuar", "siguiente", !d || (d.fase ? !d.medicion_lista : d.dedo === false)))}`;
   }
 
   function vCamara() {
@@ -1420,13 +1463,17 @@ ${S.modal ? vistaModal() : ""}`;
     const P = S.pvt;
     const seg = segundosPvt();
     const dur = textoDuracion(seg) + (S.demo ? " (modo demo)" : "");
-    const prog = P.fase === "intro" ? `PVT-B · ${dur}` : P.fase === "activa" ? pvtRestante() : `${(P.res && P.res.n_estimulos) || 0} estímulos`;
+    const prog = P.fase === "intro" ? `PVT-B · ${dur}` : P.fase === "preparando" ? "Cámara…" : P.fase === "activa" ? pvtRestante() : `${(P.res && P.res.n_estimulos) || 0} estímulos`;
+    const camara = !S.camConPvt || P.fase !== "fin" ? ""
+      : S.vision ? alerta(ST.verde, "ph-webcam", "Cámara", "Medición de la cámara recibida: parpadeos, ojos cerrados, bostezos y pulso sin contacto.", "status")
+        : S.estadoVision === "error" ? alerta(ST.amarillo, "ph-webcam", "Cámara", `La cámara no pudo medir: ${S.visionMotivo || "sin motivo"}. La evaluación sigue sin ella.`, "status")
+          : alerta(ST.amarillo, "ph-webcam", "Cámara", "Esperando los datos de la cámara…", "status");
     const msg = P.fase === "intro" ? "Toca Empezar cuando estés listo" : P.msg;
     const cont = pvt.estimuloEn !== null ? String(Math.floor(performance.now() - pvt.estimuloEn)) : P.cont;
     const r = P.res;
     const primario = P.fase === "intro" ? botonPrimario("Empezar la prueba", "pvtEmpezar", false)
       : P.fase === "fin" ? botonPrimario("Continuar", "siguiente", false) : botonPrimario("En curso…", "nada", true);
-    return h`${titulo("Prueba de reacción", `Cuando aparezca el contador, presiona la barra espaciadora o toca el recuadro lo más rápido que puedas. No te adelantes: si respondes antes, cuenta como anticipada. Dura ${dur}.`, "max-width:62ch")}
+    return h`${titulo("Prueba de reacción", `Cuando aparezca el contador, presiona la barra espaciadora o toca el recuadro lo más rápido que puedas. No te adelantes: si respondes antes, cuenta como anticipada. Dura ${dur}. Mientras tanto, la cámara mide tus ojos: mira la pantalla de frente.`, "max-width:62ch")}
     <div class="zona-prueba" role="button" tabindex="0" aria-label="Área de la prueba de reacción" data-pointer="pvt" style="position:relative;min-height:340px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 55%, var(--ink));box-shadow:var(--shadow-sm);cursor:pointer">
       <span style="position:absolute;top:14px;right:16px;${MONO};font-size:12px;color:var(--color-neutral-400)">${prog}</span>
       <span id="pvt-cont" style="${MONO};font-size:clamp(64px,12vw,140px);line-height:1;font-variant-numeric:tabular-nums;color:${P.contColor || "var(--color-text)"};min-height:1em">${cont}</span>
@@ -1439,7 +1486,8 @@ ${S.modal ? vistaModal() : ""}`;
         ${tarjetaDato("Lapsos", r.lapsos, `${L.decimal(r.lapsos_por_min)} por minuto (355 ms o más)`)}
         ${tarjetaDato("Anticipadas", r.anticipadas, `de ${r.n_estimulos} estímulos`)}
       </div>` : ""}
-    ${botonera(primario, { sinOmitir: P.fase === "activa" })}`;
+    ${camara}
+    ${botonera(primario, { sinOmitir: P.fase === "activa" || P.fase === "preparando" })}`;
   }
 
   function celdaSimbolo(d, n, extra = "") {

@@ -1492,8 +1492,10 @@ def modo_servicio(cli: ClienteMQTT, camara: str | None = None):
                 if orden.get("accion") == "medir":
                     persona = orden.get("persona") or config.get("PERSONA", "bri")
                     segundos = float(orden.get("segundos") or config.get_int("VISION_SEGUNDOS", 60))
+                    # "ventana": false = medir sin abrir la ventana (la estación mide la cámara durante la prueba de
+                    # reacción y la ventana, que queda adelante, la taparía y le quitaría el teclado).
                     evaluar(persona, segundos, bool(orden.get("linea_base", False)), cli,
-                            sesion=orden.get("sesion", ""), camara=camara)
+                            sesion=orden.get("sesion", ""), camara=camara, ventana=bool(orden.get("ventana", True)))
             time.sleep(0.1)
     except KeyboardInterrupt:
         print("\nSaliendo.")

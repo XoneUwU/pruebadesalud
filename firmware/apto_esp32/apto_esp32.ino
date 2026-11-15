@@ -1,4 +1,4 @@
-// «¿Está apto hoy?» — ESP32: pulso, HRV (RMSSD), SpO2 y movimiento; semáforo en 3 LED (amarillo, verde, rojo), OLED y zumbador.
+// «¿Está apto hoy?» — ESP32: pulso, HRV (RMSSD), SpO2 y movimiento; semáforo en un LED RGB, OLED y zumbador.
 //
 //   publica  apto/{persona}/esp32           cada 1 s: persona, sesion, pulso_lpm, hrv_rmssd_ms, spo2, dedo,
 //                                           movimiento, calidad (y "simulado": true con MODO_SIMULADO)
@@ -46,6 +46,7 @@ bool hayMpu = false;
 bool haySensor = false;
 
 const char *TEMA_SESION = "apto/control/sesion";
+const char *TEMA_CANCELAR = "apto/control/cancelar";  // {"sesion", "motivo"}, retenido: la estación cortó la evaluación
 const char *TEMA_MODULO = "apto/control/modulos/esp32";
 const char *PRESENCIA_OFF = "{\"modulo\":\"esp32\",\"activo\":false}";
 
@@ -71,8 +72,15 @@ uint32_t ultimoResumen = 0;
 bool horaPedida = false;
 
 // Medición guiada (modo local): espera el dedo, cuenta 3-2-1, mide MEDICION_S y muestra el resultado
-enum EstadoMedicion { ESPERA, CUENTA, MIDIENDO, RESULTADO };
-EstadoMedicion estado = ESPERA;
+enum EstadoMedicion { ESPERA, CUENTA, MIDIENDO, RESULTADO, REPOSO, ANUNCIO, NOMBRE, ANALIZANDO, CANCELADA };
+EstadoMedicion estado = SIN_RED ? ESPERA : REPOSO;  // con red, la secuencia empieza cuando la estación abre una evaluación
+const uint32_t ANUNCIO_MS = 2500;                    // cuánto se ve «INICIAR ANALISIS» y después el nombre
+bool medicionHecha = false;                          // con red: ya se midieron los 30 s de la sesión en curso
+String sesionCancelada = "";                         // última sesión que la estación canceló
+String motivoCancelada = "";
+uint32_t inicioSesionMs = 0, sinBrokerDesde = 0;
+const uint32_t SIN_BROKER_MAX_MS = 20000;            // evaluación en curso y 20 s sin broker: se cancela
+const uint32_t SIN_RESULTADO_MAX_MS = 15UL * 60000;  // 15 min sin resultado final: se cancela
 uint32_t inicioEstado = 0;
 String avisoEspera = "";             // p. ej. «Dedo retirado: repite»
 const int MAX_LECTURAS = MEDICION_S + 5;
@@ -83,20 +91,23 @@ String resMotivo = "";
 bool resAvisoSpo2 = false;
 
 // ================================================================ utilidades
-void escribirLed(bool amarillo, bool verde, bool rojo) {
-  digitalWrite(PIN_LED_AMARILLO, amarillo ? HIGH : LOW);
-  digitalWrite(PIN_LED_VERDE, verde ? HIGH : LOW);
-  digitalWrite(PIN_LED_ROJO, rojo ? HIGH : LOW);
+// LED RGB. Para no forzarlo, nunca se encienden los tres canales a la vez (como mucho dos: el amarillo).
+void escribirLed(bool r, bool g, bool b) {
+  if (r && g && b) b = false;
+  bool encendido = LED_ANODO_COMUN ? LOW : HIGH;
+  digitalWrite(PIN_LED_R, r ? encendido : !encendido);
+  digitalWrite(PIN_LED_G, g ? encendido : !encendido);
+  digitalWrite(PIN_LED_B, b ? encendido : !encendido);
 }
 
 void mostrarColorEnLed() {
   bool parpadeo = (millis() / 400) % 2;
   if (colorSemaforo == "verde") escribirLed(false, true, false);
-  else if (colorSemaforo == "amarillo") escribirLed(true, false, false);
-  else if (colorSemaforo == "rojo") escribirLed(false, false, true);
-  else if (colorSemaforo == "medir") escribirLed(true, true, true);                // los tres: midiendo
-  else if (colorSemaforo == "repetir") escribirLed(parpadeo, parpadeo, parpadeo);  // los tres parpadean: repite
-  else if (!SIN_RED && !mqtt.connected()) escribirLed(true, true, true);  // los tres: sin conexión al broker
+  else if (colorSemaforo == "amarillo") escribirLed(true, true, false);
+  else if (colorSemaforo == "rojo") escribirLed(true, false, false);
+  else if (colorSemaforo == "medir" || colorSemaforo == "evaluando") escribirLed(false, false, true);  // azul: midiendo
+  else if (colorSemaforo == "repetir") escribirLed(false, false, parpadeo);        // azul parpadeando: repite
+  else if (!SIN_RED && !mqtt.connected()) escribirLed(false, false, true);  // azul: sin conexión al broker
   else escribirLed(false, false, false);
 }
 
@@ -168,6 +179,9 @@ void ponerSemaforo(const String &color) {
   if (color == "rojo" && colorSemaforo != "rojo") pitar(3);  // solo al pasar a rojo, no en cada reconexión
   colorSemaforo = color;
   mostrarColorEnLed();
+  resMotivo = "Resultado final";
+  resAvisoSpo2 = false;
+  cambiarEstado(RESULTADO);  // la OLED muestra el resultado hasta la próxima evaluación
   Serial.printf("[esp32] Semaforo de %s: %s\n", persona.c_str(), color.c_str());
 }
 
@@ -186,6 +200,22 @@ void cambiarPersona(const char *nueva) {
   Serial.printf("[esp32] Persona activa: %s\n", persona.c_str());
 }
 
+// ¿Hay una evaluación en curso en la placa? (con red: desde el anuncio hasta que llega el resultado)
+bool enEvaluacion() {
+  return !SIN_RED && estado != REPOSO && estado != RESULTADO && estado != CANCELADA;
+}
+
+// Corta la evaluación: la OLED dice CANCELADA y el motivo, el LED se apaga y después vuelve a «Listo».
+void cancelarEvaluacion(const char *motivo) {
+  motivoCancelada = motivo;
+  medicionHecha = false;
+  colorSemaforo = "";
+  mostrarColorEnLed();
+  pitar(2, 300);
+  cambiarEstado(CANCELADA);
+  Serial.printf("[esp32] Evaluacion CANCELADA: %s\n", motivo);
+}
+
 void alMensaje(char *tema, byte *carga, unsigned int largo) {
   String t(tema);  // copia: el buffer de PubSubClient se reutiliza
   JsonDocument doc;
@@ -193,10 +223,32 @@ void alMensaje(char *tema, byte *carga, unsigned int largo) {
   if (t == TEMA_SESION) {
     const char *p = doc["persona"] | "";
     if (personaValida(p) && persona != p) cambiarPersona(p);
-    sesion = String((const char *)(doc["sesion"] | ""));
+    String nueva = String((const char *)(doc["sesion"] | ""));
+    if (nueva != sesion && nueva == sesionCancelada) {  // (al reconectar) esa sesión ya se había cancelado
+      sesion = nueva;
+    } else if (nueva != sesion) {  // empezó otra evaluación: el color anterior ya no vale
+      sesion = nueva;
+      inicioSesionMs = millis();
+      sinBrokerDesde = 0;
+      colorSemaforo = "evaluando";  // azul hasta que el coordinador publique el resultado de ESTA sesión
+      mostrarColorEnLed();
+      Serial.printf("[esp32] Evaluacion en curso (sesion %s): LED azul hasta el resultado\n", sesion.c_str());
+      avisoEspera = "";
+      medicionHecha = false;
+      cambiarEstado(ANUNCIO);  // OLED: INICIAR ANALISIS -> nombre -> dedo -> 3-2-1 -> 30 s -> analizando -> resultado
+      pitar(1, 200);
+    }
   } else if (t == temaSemaforo) {
+    // El color solo se muestra si es el resultado final de la sesión en curso (todas las pruebas, no solo el sensor).
+    // Un semáforo retenido de una evaluación anterior se ignora. Sin "sesion" en el mensaje (simulador), se acepta.
+    String deSesion = String((const char *)(doc["sesion"] | ""));
+    if (deSesion.length() && sesion.length() && deSesion != sesion) return;
     String color = doc["color"] | "";
     if (color == "verde" || color == "amarillo" || color == "rojo") ponerSemaforo(color);
+  } else if (t == TEMA_CANCELAR) {  // la estación cortó la evaluación
+    sesionCancelada = String((const char *)(doc["sesion"] | ""));
+    if (sesionCancelada.length() && sesionCancelada == sesion && enEvaluacion())
+      cancelarEvaluacion(doc["motivo"] | "Cancelada en la estacion");
   }
 }
 
@@ -250,6 +302,7 @@ void cuidarMqtt() {
   Serial.println("[esp32] Conectado a MQTT");
   publicarPresencia();
   mqtt.subscribe(TEMA_SESION, 1);          // retenido: llega enseguida la última sesión
+  mqtt.subscribe(TEMA_CANCELAR, 1);        // retenido: si esa sesión se canceló, no se anuncia
   mqtt.subscribe(temaSemaforo.c_str(), 1);  // retenido: llega el color actual
   mostrarColorEnLed();
 }
@@ -527,10 +580,24 @@ void publicarDatos() {
   JsonDocument doc;
   doc["persona"] = persona;
   if (sesion.length()) doc["sesion"] = sesion;
-  ponerNumero(doc, "pulso_lpm", dedo ? pulsoLpm : NAN, 1);
-  ponerNumero(doc, "hrv_rmssd_ms", dedo ? hrvMs : NAN, 1);
-  ponerNumero(doc, "spo2", dedo ? spo2 : NAN, 0);
+  // Con red, las lecturas solo valen durante los MEDICION_S de la medición guiada: fuera de ella van en null
+  // (aunque el dedo siga puesto), así el coordinador y la estación solo usan lo medido en esos 30 s.
+  bool vale = dedo && (SIN_RED || estado == MIDIENDO);
+  ponerNumero(doc, "pulso_lpm", vale ? pulsoLpm : NAN, 1);
+  ponerNumero(doc, "hrv_rmssd_ms", vale ? hrvMs : NAN, 1);
+  ponerNumero(doc, "spo2", vale ? spo2 : NAN, 0);
   doc["dedo"] = dedo;
+  if (!SIN_RED) {  // en qué paso de la medición guiada está la placa (la estación lo muestra y habilita «Continuar»)
+    const char *fases[] = {"espera", "cuenta", "midiendo", "resultado", "reposo", "anuncio", "nombre", "listo", "cancelada"};
+    doc["fase"] = fases[estado];
+    if (estado == MIDIENDO) doc["quedan_s"] = max(0, MEDICION_S - (int)((millis() - inicioEstado) / 1000));
+    if (medicionHecha) {  // resumen de los 30 s: queda disponible aunque se retire el dedo
+      doc["medicion_lista"] = true;
+      ponerNumero(doc, "pulso_medido_lpm", resPulso, 1);
+      ponerNumero(doc, "hrv_medido_ms", resHrv, 1);
+      ponerNumero(doc, "spo2_medido", resSpo2, 0);
+    }
+  }
   ponerNumero(doc, "movimiento", movimiento, 3);
   ponerNumero(doc, "calidad", calidad, 2);
   if (MODO_SIMULADO) doc["simulado"] = true;
@@ -554,7 +621,7 @@ float mediana(float *v, int n) {
 void cambiarEstado(EstadoMedicion nuevo) {
   estado = nuevo;
   inicioEstado = millis();
-  const char *nombres[] = {"ESPERA", "CUENTA", "MIDIENDO", "RESULTADO"};
+  const char *nombres[] = {"ESPERA", "CUENTA", "MIDIENDO", "RESULTADO", "REPOSO", "ANUNCIO", "NOMBRE", "ANALIZANDO", "CANCELADA"};
   Serial.printf("[esp32] Estado: %s\n", nombres[nuevo]);
 }
 
@@ -578,9 +645,13 @@ void terminarMedicion() {
     color = "amarillo";
     resMotivo = "Pulso en reposo alto";
     pitar(1, 400);
+  } else if (resPulso < 40) {  // posible pero riesgoso: se muestra, no se descarta (lo imposible ya no llega aquí:
+    color = "rojo";            // los intervalos fuera de 30 a 200 lpm se rechazan en alLatir)
+    resMotivo = "Pulso muy bajo";
+    pitar(3);
   } else if (resPulso < 50) {
     color = "amarillo";
-    resMotivo = "Pulso bajo: repite";
+    resMotivo = "Pulso bajo";
     pitar(1, 400);
   } else {
     color = "verde";
@@ -605,6 +676,15 @@ void guardarLectura() {
 bool dedoAntes = false;
 
 void cuidarMedicion() {
+  if (enEvaluacion()) {  // problemas que cortan la evaluación: sin broker 20 s, o 15 min sin resultado final
+    if (mqtt.connected()) sinBrokerDesde = 0;
+    else if (sinBrokerDesde == 0) sinBrokerDesde = millis();
+    else if (millis() - sinBrokerDesde >= SIN_BROKER_MAX_MS) {
+      sinBrokerDesde = 0;
+      cancelarEvaluacion("Sin conexion");
+    }
+    if (enEvaluacion() && millis() - inicioSesionMs >= SIN_RESULTADO_MAX_MS) cancelarEvaluacion("Sin resultado");
+  }
   uint32_t t = millis() - inicioEstado;
   bool puso = dedo && !dedoAntes;
   dedoAntes = dedo;
@@ -631,14 +711,47 @@ void cuidarMedicion() {
     case MIDIENDO:
       if (!dedo) {
         avisoEspera = "Dedo retirado: repite";
-        colorSemaforo = "";
+        colorSemaforo = SIN_RED ? "" : "evaluando";
         mostrarColorEnLed();
         cambiarEstado(ESPERA);
       } else if (t >= MEDICION_S * 1000UL) {
-        terminarMedicion();
+        if (SIN_RED) {
+          terminarMedicion();
+        } else if (nLecturasPulso < MEDICION_S / 3) {  // menos de 10 s de señal buena: no vale, se repite
+          avisoEspera = "Senal debil: repite";
+          colorSemaforo = "evaluando";
+          mostrarColorEnLed();
+          pitar(2, 500);
+          cambiarEstado(ESPERA);
+        } else {  // con red el resultado lo da el coordinador al terminar TODAS las pruebas: aquí solo se espera
+          medicionHecha = true;
+          resPulso = nLecturasPulso ? mediana(lecturasPulso, nLecturasPulso) : NAN;
+          resSpo2 = nLecturasSpo2 ? mediana(lecturasSpo2, nLecturasSpo2) : NAN;
+          resHrv = hrvMs;
+          colorSemaforo = "evaluando";
+          mostrarColorEnLed();
+          pitar(1, 300);
+          cambiarEstado(ANALIZANDO);
+        }
       }
       break;
+    case ANUNCIO:  // «INICIAR ANALISIS» y después el nombre de quien se evalúa
+      if (t >= ANUNCIO_MS) cambiarEstado(NOMBRE);
+      break;
+    case NOMBRE:
+      if (t >= ANUNCIO_MS) {
+        avisoEspera = "";
+        cambiarEstado(ESPERA);
+      }
+      break;
+    case ANALIZANDO:  // el sensor ya midió; el color llega con el semáforo de la sesión
+    case REPOSO:
+      break;
+    case CANCELADA:
+      if (t >= 6000) cambiarEstado(REPOSO);
+      break;
     case RESULTADO:
+      if (!SIN_RED) break;  // con red el resultado queda hasta la próxima evaluación
       if (puso) {  // retiró el dedo y lo volvió a poner: nueva medición
         colorSemaforo = "";
         mostrarColorEnLed();
@@ -704,6 +817,37 @@ void dibujarMedicion() {
       pantalla.fillRect(0, 60, (int)(128 * min(1.0f, t / (MEDICION_S * 1000.0f))), 4, SSD1306_WHITE);
       break;
     }
+    case ANUNCIO:
+      centrar("INICIAR", 2, 16);
+      centrar("ANALISIS", 2, 36);
+      break;
+    case NOMBRE:
+      centrar("Se evalua a", 1, 12);
+      centrar(nombreBonito(persona), 3, 28);
+      break;
+    case ANALIZANDO:
+      // Lo medido en los 30 s queda guardado y a la vista mientras siguen las demás pruebas en la estación.
+      centrar("MEDIDO", 2, 10);
+      pantalla.setTextSize(1);
+      pantalla.setCursor(0, 30);
+      if (isnan(resPulso)) pantalla.print("Pulso --");
+      else pantalla.printf("Pulso %.0f", resPulso);
+      pantalla.setCursor(66, 30);
+      if (isnan(resSpo2)) pantalla.print("SpO2 --");
+      else pantalla.printf("SpO2 %.0f%%", resSpo2);
+      pantalla.setCursor(0, 40);
+      if (!isnan(resHrv)) pantalla.printf("HRV %.0f ms", resHrv);
+      centrar("Retira el dedo y sigue", 1, 50);
+      break;
+    case CANCELADA:
+      centrar("CANCELADA", 2, 16);
+      centrar(motivoCancelada, 1, 40);
+      break;
+    case REPOSO:
+      centrar("Listo", 2, 14);
+      centrar("Inicia la evaluacion", 1, 36);
+      centrar("en la estacion", 1, 46);
+      break;
     case RESULTADO: {
       String c = colorSemaforo == "repetir" ? String("REPITE") : colorSemaforo;
       c.toUpperCase();
@@ -718,50 +862,20 @@ void dibujarMedicion() {
       pantalla.setCursor(0, 40);
       if (!isnan(resHrv)) pantalla.printf("HRV %.0f ms", resHrv);
       centrar(resMotivo, 1, 48);
-      if (resAvisoSpo2) centrar("Oxigeno bajo: repite", 1, 57);
+      if (resAvisoSpo2) centrar("Oxigeno bajo", 1, 57);  // valor posible pero bajo: se muestra como aviso
       break;
     }
+  }
+  if (!SIN_RED && (estado == REPOSO || estado == ANALIZANDO || estado == ESPERA) && !mqtt.connected()) {
+    pantalla.fillRect(0, 56, 128, 8, SSD1306_BLACK);
+    centrar(WiFi.status() == WL_CONNECTED ? "Sin broker MQTT" : "Sin Wi-Fi", 1, 56);
   }
   pantalla.display();
 }
 
 void dibujarPantalla() {
   if (!hayPantalla) return;
-  if (SIN_RED) {
-    dibujarMedicion();
-    return;
-  }
-  pantalla.clearDisplay();
-  pantalla.setTextColor(SSD1306_WHITE);
-  pantalla.setTextSize(2);
-  pantalla.setCursor(0, 0);
-  pantalla.print(nombreBonito(persona));
-  pantalla.setTextSize(1);
-  if (MODO_SIMULADO) {
-    pantalla.setCursor(110, 0);
-    pantalla.print("SIM");
-  }
-  pantalla.setCursor(0, 20);
-  if (!dedo) pantalla.print("Pon el dedo");
-  else if (isnan(pulsoLpm)) pantalla.print("Pulso: midiendo...");
-  else pantalla.printf("Pulso: %.0f lpm", pulsoLpm);
-  pantalla.setCursor(0, 31);
-  if (dedo && !isnan(spo2)) pantalla.printf("SpO2: %.0f %%", spo2);
-  else pantalla.print("SpO2: --");
-  if (dedo && !isnan(hrvMs)) {
-    pantalla.setCursor(74, 31);
-    pantalla.printf("HRV %.0f", hrvMs);
-  }
-  pantalla.setCursor(0, 43);
-  String c = colorSemaforo.length() ? colorSemaforo : String("-");
-  c.toUpperCase();
-  pantalla.print("Semaforo: ");
-  pantalla.print(c);
-  pantalla.setCursor(0, 56);
-  pantalla.print(WiFi.status() == WL_CONNECTED ? "WiFi OK" : "WiFi --");
-  pantalla.setCursor(64, 56);
-  pantalla.print(mqtt.connected() ? "MQTT OK" : "MQTT --");
-  pantalla.display();
+  dibujarMedicion();  // la misma secuencia guiada con red (la abre la estación) y sin red
 }
 
 // ================================================================ arranque y vuelta principal
@@ -769,24 +883,24 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.printf("\n[esp32] Esta apto hoy - %s\n", MODO_SIMULADO ? "MODO SIMULADO (sin sensores)" : "sensores");
-  pinMode(PIN_LED_AMARILLO, OUTPUT);
-  pinMode(PIN_LED_VERDE, OUTPUT);
-  pinMode(PIN_LED_ROJO, OUTPUT);
+  pinMode(PIN_LED_R, OUTPUT);
+  pinMode(PIN_LED_G, OUTPUT);
+  pinMode(PIN_LED_B, OUTPUT);
   pinMode(PIN_ZUMBADOR, OUTPUT);
   digitalWrite(PIN_ZUMBADOR, LOW);
-  // Prueba del cableado al arrancar: amarillo, verde, rojo, los tres y un pitido corto
+  // Prueba del cableado al arrancar: rojo, verde y azul de a uno (nunca juntos) y un pitido corto
   escribirLed(true, false, false);
   delay(400);
   escribirLed(false, true, false);
   delay(400);
   escribirLed(false, false, true);
   delay(400);
-  escribirLed(true, true, true);
+  escribirLed(false, false, false);
   zumbador(true);
   delay(150);
   zumbador(false);
   delay(200);
-  escribirLed(!SIN_RED, !SIN_RED, !SIN_RED);  // los tres (sin broker) solo si hay red configurada
+  escribirLed(false, false, !SIN_RED);  // azul (sin broker) solo si hay red configurada
   if (SIN_RED) Serial.println("[esp32] Modo local: WIFI_SSID vacio, sin Wi-Fi ni MQTT");
 
   Wire.begin(PIN_SDA, PIN_SCL);
@@ -832,21 +946,19 @@ void loop() {
   if (haySensor) leerSensor();
   cuidarMpu();
 #endif
-  if (SIN_RED) {
-    cuidarMedicion();
-    pitarCuenta();
-  }
+  cuidarMedicion();  // la secuencia guiada corre con red y sin red
+  pitarCuenta();
   cuidarZumbador();
   if (millis() - ultimaPublicacion >= CADA_PUBLICAR_MS) {
     ultimaPublicacion = millis();
     calcularLecturas();
-    if (SIN_RED) guardarLectura();
+    guardarLectura();
     if (mqtt.connected()) publicarDatos();
   }
   if (millis() - ultimaPantalla >= CADA_PANTALLA_MS) {
     ultimaPantalla = millis();
     dibujarPantalla();
-    // los tres mientras no hay conexión; en modo local, en «repite» parpadean
+    // azul mientras no hay conexión; en modo local, en «repite» parpadea
     if (!colorSemaforo.length() || colorSemaforo == "repetir") mostrarColorEnLed();
   }
   if (millis() - ultimoResumen >= 5000) {

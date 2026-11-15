@@ -35,7 +35,7 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
                 pulso: +15 % = 1, +30 % = 2 | sin base: 100 = 1, 120 = 2.
                 HRV (RMSSD): 25 % más baja que la base = 1, 50 % = 2 (solo con base).
                 SI HAY PULSO DEL SENSOR, MANDA: el de la cámara no se usa.
-                SpO2: NO suma al semáforo. Si durante al menos 30 s seguidos (lecturas con dedo y calidad >= 0,5)
+                SpO2: NO suma al semáforo. Si durante al menos 20 s seguidos (lecturas con dedo y calidad >= 0,5)
                 el SpO2 está 4 puntos o más por debajo del promedio de la línea base (o por debajo de 92 sin
                 línea base), la evaluación lleva "aviso_spo2": true y el motivo MOTIVO_SPO2, sin cambiar el color.
 Los puntos de cada fuente (pvt, dsst, cuestionario, voz, vision) son los de su peor indicador.
@@ -63,7 +63,7 @@ CALIDAD_RPPG_MIN = 0.5  # calidad_rppg (0 a 1) desde la que se cree el pulso med
 CARA_MIN_PCT = 50       # con la cara visible menos tiempo, la visión no cuenta
 CALIDAD_ESP32_MIN = 0.5  # lecturas del ESP32 con menos calidad (o sin dedo) no cuentan
 # Aviso de SpO2 (no suma al semáforo)
-SPO2_SEGUNDOS = 30          # tiempo seguido con el SpO2 bajo para avisar
+SPO2_SEGUNDOS = 20          # tiempo seguido con el SpO2 bajo para avisar (el ESP32 mide 30 s y el SpO2 tarda unos segundos)
 SPO2_PUNTOS_BAJO = 4        # puntos por debajo del promedio de la línea base
 SPO2_MINIMO_SIN_BASE = 92   # sin línea base: avisar por debajo de esto
 MOTIVO_SPO2 = "Oxígeno más bajo de lo habitual: repetir la medición"
