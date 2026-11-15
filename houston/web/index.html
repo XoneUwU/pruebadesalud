@@ -3,72 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Houston · Control de misión</title>
+  <title>Becspace · Houston</title>
+  <!-- Sistema de diseño Nocturne, íconos, fuente, logo y fondo: los mismos de la estación (paneles/web). -->
+  <link rel="stylesheet" href="nocturne.css">
+  <link rel="stylesheet" href="vendor/phosphor/regular.css">
+  <link rel="stylesheet" href="vendor/phosphor/fill.css">
+  <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="houston.css">
 </head>
-<body>
-  <header class="barra">
-    <div class="marca">
-      <span class="logo" aria-hidden="true"></span>
-      <div>
-        <strong>Houston</strong>
-        <span class="sub">Control de misión · Tierra · solo lectura</span>
-      </div>
-    </div>
-    <div class="reloj" id="reloj"></div>
-    <div id="senal" class="senal" data-estado="esperando"><span class="punto"></span><span class="texto">Esperando datos…</span></div>
-  </header>
+<body data-pagina="houston">
+  <canvas id="fondo" aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none"></canvas>
+  <div id="app"></div>
+  <noscript>Houston necesita JavaScript.</noscript>
 
-  <main>
-    <p id="aviso" class="aviso" hidden></p>
-
-    <section class="enlace panel" aria-label="Enlace con la nave">
-      <div><span class="etiqueta">Retraso de comunicación</span><span class="cifra" id="retraso">–</span></div>
-      <div><span class="etiqueta">Último dato de la nave</span><span class="cifra" id="ultimo">–</span></div>
-      <div><span class="etiqueta">Mensajes en Tierra</span><span class="cifra" id="copiados">–</span></div>
-      <div><span class="etiqueta">En camino</span><span class="cifra" id="en-camino">–</span></div>
-      <p class="nota">Houston ve cada dato cuando llega a Tierra, no cuando ocurre: la tripulación ya decidió a bordo.
-        Esta base es una réplica parcial de la base de la nave, solo para consultar.</p>
-    </section>
-
-    <section aria-label="Resumen">
-      <h2 class="titulo">Tripulación</h2>
-      <div class="conteo" id="conteo"></div>
-      <div class="tarjetas" id="tarjetas"></div>
-    </section>
-
-    <div class="dos">
-      <section aria-label="Evaluaciones">
-        <div class="titulo-fila">
-          <h2 class="titulo">Evaluaciones recibidas</h2>
-          <div class="filtros">
-            <label>Persona <select id="f-persona"><option value="">Todas</option></select></label>
-            <label>Período <select id="f-dias">
-              <option value="0">Todo</option><option value="1">Último día</option>
-              <option value="7" selected>7 días</option><option value="30">30 días</option>
-            </select></label>
-            <a id="csv" class="boton" href="api/evaluaciones.csv?dias=7">Exportar CSV</a>
-          </div>
-        </div>
-        <div class="tabla-caja">
-          <table>
-            <thead><tr><th>Llegó a Tierra</th><th>Persona</th><th>Resultado</th><th>Tarea</th><th>KSS</th><th>PVT</th><th>Pulso</th><th>Retraso</th></tr></thead>
-            <tbody id="filas"><tr><td colspan="8" class="vacio">Todavía no llegó ninguna evaluación.</td></tr></tbody>
-          </table>
-        </div>
-      </section>
-
-      <aside aria-label="Detalle">
-        <h2 class="titulo">Detalle</h2>
-        <div id="detalle" class="panel detalle"><p class="vacio">Elige una evaluación para ver sus indicadores.</p></div>
-        <h2 class="titulo">Copiloto a bordo</h2>
-        <ol id="copiloto" class="copiloto"><li class="vacio">Sin conversaciones recibidas.</li></ol>
-      </aside>
-    </div>
-  </main>
-
-  <footer class="pie">Prototipo de apoyo a la decisión, no un dispositivo médico. Houston no envía nada a la nave.</footer>
-
+  <script src="plantilla.js"></script>
+  <script src="logo.js"></script>
+  <script src="fondo.js"></script>
   <script src="houston.js"></script>
 </body>
 </html>

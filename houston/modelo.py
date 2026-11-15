@@ -149,11 +149,75 @@ def estado_enlace(estado: dict | None, ahora_ms: int, en_camino: int = 0, ultimo
     }
 
 
-def armar_tablero(docs, estado: dict | None, equipo: list[str], ahora_ms: int, ultimas: int = 30,
-                  en_camino: int = 0) -> dict:
-    """Lo que ve Houston: la última evaluación de cada tripulante, las últimas evaluaciones, el copiloto y el enlace.
+PASOS_VIVO = ("esp32", "vision", "voz", "pvt", "dsst", "cuestionario")
+VIVO_MIN = 30          # una sesión iniciada hace más de esto ya no está «en vivo»
+VIVO_RESULTADO_S = 300  # con su evaluación ya en Tierra, sigue en «En vivo» estos segundos y después se va
+DATO_VIGENTE_S = 15     # una lectura del ESP32 más vieja que esto ya no es «en vivo»
+SERIE_PULSO = 90        # lecturas de pulso para la curva
 
-    `docs` son solo los que ya llegaron a Tierra."""
+
+def en_vivo(docs, ahora_ms: int) -> list[dict]:
+    """Las sesiones en curso (iniciadas hace menos de VIVO_MIN), la más nueva por persona: qué pasos ya llegaron, la
+    última lectura del ESP32, la curva del pulso y la evaluación si ya llegó. `docs`: lo que ya está en Tierra."""
+    por_sesion: dict[str, list] = {}
+    inicios: dict[str, dict] = {}   # persona -> doc de control/sesion más nuevo
+    for d in sorted(docs, key=lambda x: _ms(x.get("recibido")) or 0):
+        datos = d.get("datos") or {}
+        sid = datos.get("sesion")
+        if not sid:
+            continue
+        por_sesion.setdefault(sid, []).append(d)
+        if d.get("tipo") == "control/sesion":
+            persona = datos.get("persona") or d.get("persona")
+            if persona:
+                inicios[persona] = d
+    vivas = []
+    for persona, inicio in inicios.items():
+        t0 = _ms(inicio.get("recibido")) or 0
+        if ahora_ms - t0 > VIVO_MIN * 60_000:
+            continue
+        sid = inicio["datos"]["sesion"]
+        sesion_docs = por_sesion.get(sid, [])
+        evs = [d for d in sesion_docs if d.get("tipo") == "evaluacion"]
+        ev = evs[-1] if evs else None
+        if ev and ahora_ms - (_ms(ev.get("llego_tierra")) or _ms(ev.get("recibido")) or 0) > VIVO_RESULTADO_S * 1000:
+            continue
+        esp = [d for d in sesion_docs if d.get("tipo") == "esp32"]
+        ult = esp[-1] if esp else None
+        ult_d = (ult or {}).get("datos") or {}
+        serie = [[_ms(d.get("recibido")), _num((d.get("datos") or {}).get("pulso_lpm"))] for d in esp[-SERIE_PULSO:]]
+        ultimo_dato = max((_ms(d.get("recibido")) or 0 for d in sesion_docs), default=t0)
+        ev_d = (ev or {}).get("datos") or {}
+        vivas.append({
+            "persona": persona, "sesion": sid, "tarea": inicio["datos"].get("tarea") or "",
+            "inicio": t0, "ultimo_dato": max(ultimo_dato, t0),
+            "pasos": {t: any(d.get("tipo") == t for d in sesion_docs) for t in PASOS_VIVO},
+            "esp32": None if not ult else {
+                "pulso_lpm": _num(ult_d.get("pulso_lpm")), "spo2": _num(ult_d.get("spo2")),
+                "hrv_rmssd_ms": _num(ult_d.get("hrv_rmssd_ms")), "movimiento": _num(ult_d.get("movimiento")),
+                "dedo": ult_d.get("dedo") is True, "calidad": _num(ult_d.get("calidad")),
+                "simulado": bool(ult_d.get("simulado")), "fecha": _ms(ult.get("recibido")),
+                # Vigente según cuándo llegó a Tierra (en la nave pasó hace «retraso» segundos más).
+                "vigente": ahora_ms - (_ms(ult.get("llego_tierra")) or _ms(ult.get("recibido")) or 0) <= DATO_VIGENTE_S * 1000,
+            },
+            "lecturas_esp32": len(esp),
+            "serie_pulso": [p for p in serie if p[1] is not None],
+            "evaluacion": None if not ev else {
+                "color": ev_d.get("color"), "puntaje": _num(ev_d.get("puntaje")), "motivos": ev_d.get("motivos") or [],
+                "llego": _ms(ev.get("llego_tierra")), "provisional": bool(ev_d.get("provisional")),
+            },
+        })
+    vivas.sort(key=lambda v: v["inicio"], reverse=True)
+    return vivas
+
+
+def armar_tablero(docs, estado: dict | None, equipo: list[str], ahora_ms: int, ultimas: int = 30,
+                  en_camino: int = 0, por_llegar: list[dict] | None = None) -> dict:
+    """Lo que ve Houston: lo que está pasando a bordo ahora, la última evaluación de cada tripulante, las últimas
+    evaluaciones, lo que viene en camino, el copiloto y el enlace.
+
+    `docs` son solo los que ya llegaron a Tierra; `por_llegar`, las evaluaciones que todavía vienen en camino
+    ({persona, sesion, llega}: sin el color, que Tierra todavía no conoce)."""
     filas = filas_de(docs)
     fechas = [m for m in (_ms(d.get("recibido")) for d in docs) if m]
     ultima: dict[str, dict] = {}
@@ -177,6 +241,8 @@ def armar_tablero(docs, estado: dict | None, equipo: list[str], ahora_ms: int, u
         "conteo": conteo,
         "tripulacion": [{"persona": p, "ultima": ultima.get(p)} for p in personas],
         "evaluaciones": list(reversed(filas))[:ultimas],
+        "en_vivo": en_vivo(docs, ahora_ms),
+        "por_llegar": sorted(por_llegar or [], key=lambda x: x.get("llega") or 0),
         "copiloto": copiloto[:8],
     }
 
@@ -211,25 +277,56 @@ def _consulta(dias: int = 0, persona: str = "", tipos=TIPOS) -> dict:
     return q
 
 
-def _docs(q: dict) -> list[dict]:
+def _docs(q: dict, limite: int = MAX_DOCUMENTOS) -> list[dict]:
+    """Los `limite` más NUEVOS que cumplen q, devueltos del más viejo al más nuevo (si sobran, se pierden los viejos)."""
     campos = {"_id": 0, "tipo": 1, "persona": 1, "recibido": 1, "llego_tierra": 1, "datos": 1}
-    return list(base()[COLECCION].find(q, campos).sort("recibido", 1).limit(MAX_DOCUMENTOS))
+    docs = list(base()[COLECCION].find(q, campos).sort("recibido", -1).limit(limite))
+    docs.reverse()
+    return docs
 
 
-def tablero() -> dict:
+SIN_ESP32 = tuple(t for t in TIPOS if t != "esp32")
+
+
+def _con_esp32(docs: list[dict], sesiones: set[str]) -> list[dict]:
+    """docs + las lecturas del ESP32 (ya en Tierra) de esas sesiones. Las lecturas son una por segundo: solo se leen
+    las de las sesiones que se van a mostrar, nunca todas."""
+    if not sesiones:
+        return docs
+    esp = _docs({"tipo": "esp32", "datos.sesion": {"$in": sorted(sesiones)}, "reproducido": {"$ne": True},
+                 "llego_tierra": {"$lte": _ahora()}})
+    return docs + esp
+
+
+def tablero(ultimas: int = 30) -> dict:
     try:
         ahora = _ahora()
-        docs = _docs(_consulta())
+        ahora_ms = int(ahora.timestamp() * 1000)
+        docs = _docs(_consulta(tipos=SIN_ESP32))
+        # Sesiones que se muestran: las últimas evaluaciones, la última de cada uno y las que están en curso.
+        filas = filas_de(docs)
+        sesiones = {f["id"] for f in filas[-ultimas:]}
+        sesiones |= {f["id"] for f in {f["persona"]: f for f in filas}.values()}
+        sesiones |= {(d.get("datos") or {}).get("sesion") for d in docs
+                     if d.get("tipo") == "control/sesion" and ahora_ms - (_ms(d.get("recibido")) or 0) <= VIVO_MIN * 60_000}
+        sesiones.discard(None)
+        docs = _con_esp32(docs, sesiones)
         estado = base()[COLECCION_ENLACE].find_one({"_id": "estado"})
         en_camino = base()[COLECCION].count_documents({"llego_tierra": {"$gt": ahora}})
+        por_llegar = [{"persona": d.get("persona"), "sesion": (d.get("datos") or {}).get("sesion"),
+                       "llega": _ms(d.get("llego_tierra"))}
+                      for d in base()[COLECCION].find({"tipo": "evaluacion", "llego_tierra": {"$gt": ahora},
+                                                       "reproducido": {"$ne": True}},
+                                                      {"_id": 0, "persona": 1, "datos.sesion": 1, "llego_tierra": 1}).limit(50)]
     except Exception as e:  # sin pymongo o sin MongoDB: la página lo muestra
         return _no_disponible(e)
-    return armar_tablero(docs, estado, tripulacion(), int(ahora.timestamp() * 1000), en_camino=en_camino)
+    return armar_tablero(docs, estado, tripulacion(), ahora_ms, ultimas, en_camino=en_camino, por_llegar=por_llegar)
 
 
 def evaluaciones(dias: int = 0, persona: str = "") -> dict:
     try:
-        docs = _docs(_consulta(dias, persona, TIPOS_FILA))
+        docs = _docs(_consulta(dias, persona, tuple(t for t in TIPOS_FILA if t != "esp32")))
+        docs = _con_esp32(docs, {f["id"] for f in filas_de(docs)})
     except Exception as e:
         return _no_disponible(e)
     return {"disponible": True, "filas": filas_de(docs)}

@@ -46,18 +46,25 @@ Sin Docker también funciona: `pip install -r houston/requirements.txt`, un Mong
 | `receptor.py` | Se suscribe a `apto/#` y guarda cada mensaje que baja a Tierra en `houston.mensajes`. Cada 2 s escribe su estado en `houston.enlace` (conectado o no, cuántos guardó). |
 | `modelo.py` | **Modelo**: consulta la base de Houston y arma las respuestas (una fila por evaluación, la última por tripulante, el resumen del ESP32, el CSV). |
 | `controlador.py` | **Controlador**: rutas `GET /api/*` → modelo → JSON o CSV; el resto, archivos de `web/`. |
-| `web/` | **Vista**: `index.html`, `houston.css` y `houston.js` (sin frameworks ni internet). Pide los datos cada 5 s. |
+| `web/` | **Vista**: `index.html` y `houston.js` (sin frameworks ni internet), con el **diseño Becspace de la estación**: `nocturne.css`, `app.css`, `plantilla.js`, el logo animado (`logo.js`), el fondo con la Tierra (`fondo.js`), los íconos Phosphor y la fuente Inter se sirven desde `paneles/web` sin copiarlos (lista cerrada en `controlador.py`). Pide los datos cada 5 s. |
 | `servidor.py` | Arranca el servidor web. |
 | `Dockerfile`, `docker-compose.yml` | Imagen (Python 3.12) y los tres servicios. |
 
-### Qué se ve
+### Qué se ve (tres pantallas, como la estación)
 
-- **Enlace**: retraso, último dato de la nave, mensajes en Tierra, mensajes en camino y si el receptor está conectado.
-- **Tripulación**: una tarjeta por integrante (`TRIPULACION`) con el color de su última evaluación, la tarea, el
-  puntaje, KSS, PVT y pulso; y el conteo por color.
-- **Evaluaciones recibidas**: tabla con filtro por persona y período, exportable a CSV.
-- **Detalle**: motivos, recomendación, cuestionario, PVT, símbolos, cámara, voz y el resumen del ESP32 de una sesión.
-- **Copiloto a bordo**: las últimas preguntas y respuestas.
+- **Panel**: el enlace (retraso, último dato de la nave, mensajes en Tierra y en camino, si hay señal), el conteo por
+  color, una tarjeta por integrante (`TRIPULACION`) con su última evaluación, las últimas recibidas, el aviso de SpO₂
+  y lo que respondió el copiloto a bordo.
+- **En vivo · a bordo** (en el Panel, se actualiza cada 2 s): cada evaluación en curso (sesión iniciada hace menos de
+  30 min) con los pasos que ya llegaron, el pulso, SpO₂ y HRV del ESP32 con su curva, y el resultado apenas llega a
+  Tierra (queda 5 min y pasa a la tripulación). Las evaluaciones que vienen en camino muestran «llega en N s». Todo
+  va con el retraso de la comunicación: con `HOUSTON_RETRASO_S=0` en `houston/.env` (y `docker compose up -d`) se ve
+  al instante.
+- **Evaluaciones**: gráfico de evolución (puntaje, PVT, KSS o sueño; con toda la tripulación, un ícono por persona),
+  tabla con filtro por periodo y persona, detalle y CSV.
+- **Resultado**: el semáforo, la recomendación, los motivos, las horas en la nave y en Tierra, y los indicadores que
+  llegaron (ESP32 resumido, PVT, símbolos, cámara, voz y cuestionario).
+- Tema oscuro o claro (botón de la barra lateral). `?pantalla=historial` abre directo una pantalla.
 
 ### API (solo GET)
 

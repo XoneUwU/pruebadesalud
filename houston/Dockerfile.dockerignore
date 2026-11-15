@@ -4,4 +4,11 @@
 !comun/
 !registrador/almacen.py
 !houston/
+!paneles/web/nocturne.css
+!paneles/web/app.css
+!paneles/web/plantilla.js
+!paneles/web/logo.js
+!paneles/web/fondo.js
+!paneles/web/vendor/phosphor/
+!paneles/web/vendor/inter/
 **/__pycache__

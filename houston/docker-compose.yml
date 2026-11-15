@@ -42,6 +42,7 @@ services:
     environment:
       HOUSTON_MONGO_URI: mongodb://mongo:27017
       MQTT_HOST: ${HOUSTON_MQTT_HOST:-host.docker.internal}
+      HOUSTON_RETRASO_S: ${HOUSTON_RETRASO_S:-}   # vacío = RETRASO_TIERRA_S (20 s); 0 = sin retraso
     depends_on:
       mongo:
         condition: service_healthy

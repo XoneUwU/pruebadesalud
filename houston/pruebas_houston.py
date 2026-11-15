@@ -101,6 +101,30 @@ def probar_modelo():
     r = modelo.resumen_esp32([d["datos"] for d in ejemplo() if d["tipo"] == "esp32"])
     revisar(r["lecturas"] == 4 and r["validas"] == 2 and r["pulso_lpm"] == 72.0, "resumen del ESP32 para el detalle", str(r))
 
+    # En vivo: Erick está evaluándose (sesión de hace 2 min, ESP32 hace 3 s, PVT ya llegó, sin evaluación todavía).
+    sv = "20261114-152800-erick"
+    vivo = ejemplo() + [
+        doc("control/sesion", "erick", 1680, {"persona": "erick", "tarea": "EVA", "sesion": sv}),
+        doc("esp32", "erick", 1790, {"sesion": sv, "dedo": True, "calidad": 0.8, "pulso_lpm": 80, "spo2": 97}),
+        doc("esp32", "erick", 1797, {"sesion": sv, "dedo": True, "calidad": 0.8, "pulso_lpm": 82, "spo2": 96}),
+        doc("pvt", "erick", 1750, {"sesion": sv, "rt_mediana_ms": 300}),
+    ]
+    ahora_v = int((T0 + timedelta(seconds=1820)).timestamp() * 1000)  # la última lectura (1797) llegó a Tierra en 1817
+    v = modelo.en_vivo(vivo, ahora_v)
+    revisar(len(v) == 1 and v[0]["persona"] == "erick" and v[0]["evaluacion"] is None,
+            "en vivo: solo la sesión en curso (las viejas no)", str([x["persona"] for x in v]))
+    revisar(v[0]["pasos"]["pvt"] and v[0]["pasos"]["esp32"] and not v[0]["pasos"]["cuestionario"], "en vivo: pasos que ya llegaron")
+    revisar(v[0]["esp32"]["pulso_lpm"] == 82 and len(v[0]["serie_pulso"]) == 2, "en vivo: última lectura del ESP32 y curva del pulso")
+    revisar(v[0]["esp32"]["vigente"], "en vivo: vigente según cuándo llegó a Tierra (hace 3 s), no cuándo se midió (hace 23 s)")
+    revisar(not modelo.en_vivo(vivo, ahora_v + 20_000)[0]["esp32"]["vigente"], "en vivo: sin lecturas nuevas en 15 s, ya no")
+    con_ev = vivo + [doc("evaluacion", "erick", 1798, {"sesion": sv, "color": "verde", "puntaje": 0.1}, llego_seg=1799)]
+    v2 = modelo.en_vivo(con_ev, ahora_v)
+    revisar(v2 and v2[0]["evaluacion"]["color"] == "verde", "en vivo: muestra el resultado apenas llega")
+    revisar(not modelo.en_vivo(con_ev, ahora_v + 10 * 60_000), "en vivo: con resultado, se va a los 5 minutos")
+    revisar(not modelo.en_vivo(vivo, ahora_v + 40 * 60_000), "en vivo: una sesión de hace más de 30 min ya no está")
+    t2 = modelo.armar_tablero(vivo, None, ["erick"], ahora_v, por_llegar=[{"persona": "a", "llega": 9}, {"persona": "b", "llega": 3}])
+    revisar([x["persona"] for x in t2["por_llegar"]] == ["b", "a"] and t2["en_vivo"], "tablero: en vivo y lo que llega primero")
+
 
 class ColeccionFalsa:
     """Lo mínimo de una colección de pymongo para probar Receptor.guardar() sin MongoDB."""
@@ -168,13 +192,24 @@ def probar_servidor():
     base = f"http://127.0.0.1:{srv.server_address[1]}"
     try:
         estado, tipo, cuerpo = pedir(base, "/")
-        revisar(estado == 200 and "html" in tipo and b"Houston" in cuerpo, "sirve la vista")
+        revisar(estado == 200 and "html" in tipo and b"Houston" in cuerpo and b"nocturne.css" in cuerpo,
+                "sirve la vista (con el diseño Nocturne)")
         estado, tipo, _ = pedir(base, "/houston.js")
         revisar(estado == 200 and "javascript" in tipo, "houston.js con el tipo correcto")
         for ruta in ("/../config.env", "/%2e%2e/config.env", "/../modelo.py"):
             estado, _, cuerpo = pedir(base, ruta)
             revisar(estado == 404 or b"MONGO" not in cuerpo and b"import" not in cuerpo, f"no sirve {ruta}")
         revisar(pedir(base, "/api/otra.json")[0] == 404, "ruta de API desconocida: 404")
+        for ruta, tipo_esperado in (("/nocturne.css", "css"), ("/plantilla.js", "javascript"), ("/logo.js", "javascript"),
+                                    ("/fondo.js", "javascript"), ("/vendor/phosphor/regular.css", "css"),
+                                    ("/vendor/phosphor/Phosphor-Fill.woff2", "woff2"),
+                                    ("/vendor/inter/inter-latin-400-normal.woff2", "woff2")):
+            estado, tipo, cuerpo = pedir(base, ruta)
+            revisar(estado == 200 and tipo_esperado in tipo and cuerpo, f"diseño de la estación: {ruta}", f"{estado} {tipo}")
+        for ruta in ("/estacion.js", "/config.js", "/vendor/mqtt.min.js", "/vendor/phosphor/../../estacion.js",
+                     "/vendor/inter/%2e%2e/%2e%2e/servidor.py"):
+            estado, _, cuerpo = pedir(base, ruta)
+            revisar(estado == 404, f"no sirve {ruta} de paneles", str(estado))
 
         # Sin MongoDB (o sin pymongo) responde igual, con disponible: false.
         modelo._cliente = None
