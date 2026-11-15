@@ -7,6 +7,7 @@ python vision\vision.py --persona bri             una medición de 60 s con vent
 python vision\vision.py --referencia 72           pulso real (otro aparato) junto al último estimado -> validacion.csv
 python vision\vision.py --servicio                espera apto/control/orden_vision (lo arranca iniciar.bat)
 python vision\pruebas_vision.py                   prueba con señales sintéticas, sin cámara
+python vision\vision.py --persona bri --diagnostico   explica también las aperturas de boca descartadas como bostezo
 ```
 
 Pulso sin contacto (POS), parpadeos y PERCLOS (EAR), bostezos (también los tapados con la mano, con MediaPipe

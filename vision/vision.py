@@ -40,9 +40,14 @@ MÉTODOS
   (mirando hacia abajo, por ejemplo a un aparato) no cuentan para los ojos: el párpado baja con la mirada y la
   cámara lo vería como cerrado. Cerrar los ojos no mueve la cabeza, así que un cierre real sí cuenta.
   Bostezos: MAR (apertura de la boca) = promedio de 3 aperturas internas de los labios / ancho entre las
-  comisuras internas. Bostezo = MAR >= 0,6 que se mantiene (hasta bajar de 0,45) al menos 1,5 s: hablar abre la
-  boca menos y por menos tiempo. Durante un bostezo los ojos se achican: esos cuadros no cuentan para los
-  parpadeos ni para el PERCLOS.
+  comisuras internas. Bostezo = MAR >= 0,6 que se mantiene (hasta bajar de 0,45) al menos 1,5 s (hablar abre la
+  boca menos y por menos tiempo) y que además muestra al menos una señal de bostezo: los ojos se entrecierran (EAR
+  < 85 % del abierto al menos 0,5 s), la boca sigue abierta 2,5 s o más, o se abrió de a poco (de MAR 0,3 a 0,6 en
+  0,4 s o más). Un gesto de boca muy abierta al hablar se abre de golpe, dura menos y no achica los ojos: en las
+  pruebas reales uno así (MAR 0,93 durante 1,56 s) contaba como bostezo. Durante un bostezo los ojos se achican:
+  esos cuadros no cuentan para los parpadeos ni para el PERCLOS. Cada bostezo se explica en la consola (duración,
+  MAR, apertura, ojos, mandíbula, mano y por qué se aceptó); con --diagnostico (o VISION_DIAGNOSTICO=1) también
+  las aperturas descartadas.
   Bostezos tapados con la mano (en Bolivia, como en otros lugares, se bosteza tapándose la boca): MediaPipe
   Hands (HandLandmarker) busca manos 1 de cada 2 cuadros; «mano en la boca» = 4 o más de sus 21 puntos dentro
   del rectángulo de la boca y la nariz. No se decide con un cuadro sino con la secuencia: por cada vez que la
@@ -134,6 +139,16 @@ BOCA_COMISURAS = (78, 308)                          # comisuras internas
 BOSTEZO_MAR = 0.6         # boca muy abierta
 BOSTEZO_FIN_MAR = 0.45    # se considera cerrada otra vez por debajo de esto (histéresis)
 BOSTEZO_MIN_S = 1.5       # hablar abre la boca menos tiempo
+# Además, una apertura así tiene que mostrar al menos UNA señal de bostezo (si no, es un gesto: en las trazas reales
+# un gesto de boca muy abierta, MAR 0,93 durante 1,56 s, contaba como bostezo). Comparadas en las trazas reales:
+#   bostezos simulados -> abiertos 2,3 a 4,8 s, abren de a poco (0,43 a 3,2 s de MAR 0,3 a 0,6), ojos < 85 % 1,4 s o más;
+#   gestos y habla     -> abiertos 0,5 a 1,6 s, abren de golpe (0,14 a 0,29 s), ojos casi siempre al 90-120 %.
+# Las señales (basta una; las tres solo crecen con el tiempo, así que el contador en vivo no baja):
+BOSTEZO_VISTO_OJOS_S = _real("BOSTEZO_VISTO_OJOS_S", 0.5)  # ojos < OJOS_BOSTEZO_FRAC del abierto este tiempo seguido
+BOSTEZO_LARGO_S = _real("BOSTEZO_LARGO_S", 2.5)            # o la boca sigue abierta este tiempo (sin mirar los ojos)
+BOSTEZO_SUBIDA_S = _real("BOSTEZO_SUBIDA_S", 0.4)          # o se abrió de a poco: de MAR_ABRIENDO a BOSTEZO_MAR
+BOSTEZO_DIAGNOSTICO_S = 0.5  # en modo diagnóstico se explican las aperturas de boca desde esta duración
+DIAGNOSTICO = config.get("VISION_DIAGNOSTICO", "0").strip() not in ("", "0")  # o --diagnostico
 # --- bostezos tapados con la mano (MediaPipe Hands)
 MODELO_MANOS = config.RAIZ / "modelos" / "hand_landmarker.task"
 URL_MODELO_MANOS = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/"
@@ -273,31 +288,127 @@ def _rellenar(t: np.ndarray, mascara, hueco_s: float) -> np.ndarray:
     return m
 
 
-def _bostezos_abiertos(t: np.ndarray, mares: np.ndarray) -> list[tuple[int, int]]:
-    """Tramos (índices) con MAR >= BOSTEZO_MAR que se mantiene (hasta bajar de BOSTEZO_FIN_MAR) BOSTEZO_MIN_S."""
+def _aperturas(t: np.ndarray, mares: np.ndarray, min_s: float = BOSTEZO_MIN_S) -> list[tuple[int, int]]:
+    """Tramos (índices) con MAR >= BOSTEZO_MAR que se mantiene (hasta bajar de BOSTEZO_FIN_MAR, o hasta perder la
+    cara) min_s o más. Un tramo que sigue abierto al final de los datos también sale (para el contador en vivo)."""
     tramos, inicio = [], None
     for i, m in enumerate(mares):
         abierta = np.isfinite(m) and (m >= BOSTEZO_MAR or (inicio is not None and m >= BOSTEZO_FIN_MAR))
         if abierta and inicio is None:
             inicio = i
         elif not abierta and inicio is not None:
-            if t[i - 1] - t[inicio] >= BOSTEZO_MIN_S:
+            if t[i - 1] - t[inicio] >= min_s:
                 tramos.append((inicio, i))
             inicio = None
-    if inicio is not None and t[-1] - t[inicio] >= BOSTEZO_MIN_S:
+    if inicio is not None and t[-1] - t[inicio] >= min_s:
         tramos.append((inicio, len(t)))
     return tramos
 
 
-def _suavizar(x, n: int = SUAVIZADO) -> np.ndarray:
-    """Mediana móvil de n cuadros (sin contar los NaN): quita el temblor de la malla sin correr los cambios."""
+def _suavizar(x, n: int = SUAVIZADO, causal: bool = False) -> np.ndarray:
+    """Mediana móvil de n cuadros (sin contar los NaN): quita el temblor de la malla sin correr los cambios.
+    `causal`: solo con los n cuadros hasta ese (no los siguientes): lo ya calculado no cambia al llegar más cuadros."""
     x = np.asarray(x, float)
     if len(x) < n:
         return x.copy()
-    ventanas = np.lib.stride_tricks.sliding_window_view(np.pad(x, n // 2, mode="edge"), n)
+    borde = (n - 1, 0) if causal else n // 2
+    ventanas = np.lib.stride_tricks.sliding_window_view(np.pad(x, borde, mode="edge"), n)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)  # ventanas sin ningún dato -> NaN
         return np.nanmedian(ventanas, axis=1)
+
+
+def _base(t: np.ndarray, valores: np.ndarray, reposo: np.ndarray, ta: float) -> float | None:
+    """Mediana del reposo de los BASE_VENTANA_S anteriores a ta (o de los primeros BASE_MIN_CUADROS de reposo)."""
+    antes = reposo & (t >= ta - BASE_VENTANA_S) & (t < ta)
+    if antes.sum() >= BASE_MIN_CUADROS:
+        return float(np.median(valores[antes]))
+    primeros = np.flatnonzero(reposo)[:BASE_MIN_CUADROS]
+    return float(np.median(valores[primeros])) if len(primeros) >= BASE_MIN_CUADROS else None
+
+
+def episodios_boca(t, mares, ears=None, manos=None, mandibulas=None,
+                   min_s: float = BOSTEZO_MIN_S) -> list[dict]:
+    """Cada apertura de boca a la vista (MAR >= BOSTEZO_MAR sostenido, ver _aperturas) de min_s o más, con lo que se
+    midió y si es un bostezo. `mares` ya sin los cuadros con la mano en la boca (NaN). Es bostezo si dura
+    BOSTEZO_MIN_S y además muestra al menos una señal de bostezo:
+      (a) ojos entrecerrados: EAR (mediana causal de 5 cuadros) < OJOS_BOSTEZO_FRAC del abierto al menos
+          BOSTEZO_VISTO_OJOS_S seguidos, desde que la boca empezó a abrirse;
+      (b) o la boca sigue abierta BOSTEZO_LARGO_S (hay quien casi no achica los ojos);
+      (c) o se abrió de a poco: de MAR < MAR_ABRIENDO a MAR >= BOSTEZO_MAR en BOSTEZO_SUBIDA_S o más (un gesto o el
+          habla abren de golpe). Si antes de abrirse no se vio la cara (o empieza la medición), no se sabe: no vale.
+    La mandíbula se mide solo para el diagnóstico (sube igual en un gesto que en un bostezo). Todo se calcula con lo
+    que pasó hasta cada cuadro, y (a), (b) y (c) solo pueden pasar de «no» a «sí»: el contador en vivo no baja."""
+    t, mares = np.asarray(t, float), np.asarray(mares, float)
+    n = len(t)
+    if len(mares) != n:  # sin la boca medida cuadro a cuadro
+        return []
+    con_ojos = ears is not None and len(ears) == n
+    ears = np.asarray(ears, float) if con_ojos else np.full(n, np.nan)
+    mano = np.asarray(manos, float) if manos is not None and len(manos) == n else np.zeros(n)
+    mand = np.asarray(mandibulas, float) if mandibulas is not None and len(mandibulas) == n else np.full(n, np.nan)
+    cerrada = np.nan_to_num(mares, nan=1.0) < BOSTEZO_FIN_MAR
+    reposo_ojos = np.isfinite(ears) & (mano != 1) & cerrada
+    reposo_mand = np.isfinite(mand) & (mano != 1) & (np.nan_to_num(mares, nan=1.0) < MAR_ABRIENDO)
+    ears_s = _suavizar(ears, causal=True)
+    salida = []
+    for a, b in _aperturas(t, mares, min_s):
+        ta, tb = float(t[a]), float(t[b - 1])
+        k = a  # desde dónde se abre: el último cuadro (con cara) con la boca casi cerrada
+        while k > 0 and np.isfinite(mares[k - 1]) and mares[k - 1] >= MAR_ABRIENDO:
+            k -= 1
+        conocida = k > 0 and np.isfinite(mares[k - 1])  # se vio la boca cerrada antes de abrirse
+        subida = ta - float(t[k - 1]) if conocida else None
+        abierto = _base(t, ears, reposo_ojos, ta) if con_ojos else None
+        ojos_pct, ojos_s = None, 0.0
+        if abierto:
+            vistos = ears_s[k:b][np.isfinite(ears_s[k:b])]
+            ojos_pct = float(vistos.min() / abierto * 100) if len(vistos) else None
+            ojos_s = _racha_s(t[k:b], np.isfinite(ears_s[k:b]) & (ears_s[k:b] < OJOS_BOSTEZO_FRAC * abierto))
+        base_mand = _base(t, mand, reposo_mand, ta)
+        tramo_mand = mand[a:b][np.isfinite(mand[a:b])]
+        mand_pct = float(tramo_mand.max() / base_mand * 100 - 100) if base_mand and len(tramo_mand) else None
+        tramo = mares[a:b]
+        dur = tb - ta
+        ep = {"inicio": ta, "fin": tb, "tramo": (a, b), "duracion_s": dur, "abierta": b == n, "subida_s": subida,
+              "mar_max": float(np.nanmax(tramo)), "mar_mediana": float(np.nanmedian(tramo)),
+              "mar_inicio": float(tramo[0]), "mar_fin": float(tramo[-1]),
+              "ojos_pct": ojos_pct, "ojos_s": ojos_s, "con_ojos": abierto is not None, "mandibula_pct": mand_pct,
+              "mano_despues": bool((mano[b:] == 1)[t[b:] <= tb + UNIR_S].any()) if b < n else False,
+              "dur_ok": dur >= BOSTEZO_MIN_S, "ojos_ok": ojos_s >= BOSTEZO_VISTO_OJOS_S,
+              "largo_ok": dur >= BOSTEZO_LARGO_S, "subida_ok": subida is not None and subida >= BOSTEZO_SUBIDA_S}
+        ep["bostezo"] = ep["dur_ok"] and (ep["ojos_ok"] or ep["largo_ok"] or ep["subida_ok"])
+        salida.append(ep)
+    return salida
+
+
+def _bostezos_abiertos(t: np.ndarray, mares: np.ndarray, ears=None, mandibulas=None,
+                       manos=None) -> list[tuple[int, int]]:
+    """Tramos (índices) de los bostezos con la boca a la vista (ver episodios_boca)."""
+    return [e["tramo"] for e in episodios_boca(t, mares, ears, manos, mandibulas) if e["bostezo"]]
+
+
+def texto_bostezo(ep: dict) -> str:
+    """Una apertura de boca explicada para la consola: lo medido, las señales y por qué se aceptó o se descartó."""
+    def num(x, fmt):
+        return "?" if x is None else format(x, fmt)
+    senales = [nombre for nombre, ok in (("ojos entrecerrados", ep["ojos_ok"]), ("boca abierta largo", ep["largo_ok"]),
+                                         ("apertura gradual", ep["subida_ok"])) if ok]
+    if ep["bostezo"]:
+        final = "BOSTEZO (" + ", ".join(senales) + ")"
+    elif not ep["dur_ok"]:
+        final = f"descartado: abierta menos de {BOSTEZO_MIN_S:g} s"
+    else:
+        final = (f"descartado: sin señal de bostezo (ojos < {OJOS_BOSTEZO_FRAC * 100:.0f} % menos de "
+                 f"{BOSTEZO_VISTO_OJOS_S:g} s{'' if ep['con_ojos'] else ' o sin ojos para comparar'}, abierta menos de "
+                 f"{BOSTEZO_LARGO_S:g} s y apertura de golpe)")
+    return (f"[vision] Boca abierta a los {ep['inicio']:.1f} s durante {ep['duracion_s']:.1f} s"
+            f"{' (sigue abierta)' if ep['abierta'] else ''} | MAR {ep['mar_inicio']:.2f} -> máx {ep['mar_max']:.2f} "
+            f"(mediana {ep['mar_mediana']:.2f}) -> {ep['mar_fin']:.2f} | se abrió en {num(ep['subida_s'], '.2f')} s (pide "
+            f"{BOSTEZO_SUBIDA_S:g}) | ojos hasta el {num(ep['ojos_pct'], '.0f')} % del abierto, {ep['ojos_s']:.1f} s bajo "
+            f"el {OJOS_BOSTEZO_FRAC * 100:.0f} % (pide {BOSTEZO_VISTO_OJOS_S:g}) | mandíbula "
+            f"{num(ep['mandibula_pct'], '+.0f')} % | mano en la boca después: {'sí' if ep['mano_despues'] else 'no'} "
+            f"-> {final}")
 
 
 def episodios_mano(t, mares, ears, manos, mandibulas) -> list[dict]:
@@ -322,14 +433,6 @@ def episodios_mano(t, mares, ears, manos, mandibulas) -> list[dict]:
     en_boca = _rellenar(t, manos == 1, MANO_HUECO_S)
     reposo_ojos = np.isfinite(ears) & ~en_boca
     reposo_mand = np.isfinite(mand) & ~en_boca & (np.nan_to_num(mares, nan=1.0) < 0.3)
-
-    def base(valores, reposo, ta):  # mediana del reposo de los BASE_VENTANA_S anteriores (o del principio)
-        antes = reposo & (t >= ta - BASE_VENTANA_S) & (t < ta)
-        if antes.sum() >= BASE_MIN_CUADROS:
-            return float(np.median(valores[antes]))
-        primeros = np.flatnonzero(reposo)[:BASE_MIN_CUADROS]
-        return float(np.median(valores[primeros])) if len(primeros) >= BASE_MIN_CUADROS else None
-
     ears_s, mand_s = _suavizar(ears), _suavizar(mand, SUAVIZADO_MANDIBULA)
     mar0 = np.nan_to_num(mares, nan=0.0)
     muy_abierta, abriendo = mar0 >= MAR_PREVIO, mar0 >= MAR_ABRIENDO
@@ -338,7 +441,7 @@ def episodios_mano(t, mares, ears, manos, mandibulas) -> list[dict]:
         ta, tb = float(t[a]), float(t[b - 1])
         if tb - ta < MANO_DIAGNOSTICO_S:
             continue
-        abierto, base_mand = base(ears, reposo_ojos, ta), base(mand, reposo_mand, ta)
+        abierto, base_mand = _base(t, ears, reposo_ojos, ta), _base(t, mand, reposo_mand, ta)
         ep = {"mano_desde": ta, "fin": tb, "mano_s": tb - ta, "pendiente": abierto is None or abierto <= 0,
               "bostezo": False, "inicio": ta}
         if ep["pendiente"]:
@@ -408,6 +511,29 @@ def texto_episodio(ep: dict, corto: bool = False) -> str:
             f"{OJOS_MUY_FRAC * 100:.0f} % (pide {OJOS_MUY_S:g} s) -> {final}")
 
 
+def explicar_bostezos(registro: "Registro", explicados: set, hasta: float, con_manos: bool = True) -> list[str]:
+    """Textos (texto_bostezo) de las aperturas de boca a la vista que ya se cerraron antes de `hasta` (con
+    hasta=inf, también la que sigue abierta al final) y aún no se explicaron: los bostezos siempre; las descartadas
+    solo en modo diagnóstico (DIAGNOSTICO o --diagnostico), para no llenar la consola."""
+    n = len(registro.t)
+    if n < 2:
+        return []
+    t, vista = np.asarray(registro.t, float), np.asarray(registro.mar, float).copy()
+    manos = np.asarray(registro.mano, float) if con_manos and len(registro.mano) == n else None
+    if manos is not None:
+        vista[manos == 1] = np.nan
+    ears = registro.ear if len(registro.ear) == n else None
+    mand = registro.mandibula if len(registro.mandibula) == n else None
+    lineas = []
+    for ep in episodios_boca(t, vista, ears, manos, mand, BOSTEZO_DIAGNOSTICO_S if DIAGNOSTICO else BOSTEZO_MIN_S):
+        clave = round(ep["inicio"], 2)
+        terminada = hasta == float("inf") or (not ep["abierta"] and ep["fin"] < hasta)
+        if terminada and clave not in explicados and (ep["bostezo"] or DIAGNOSTICO):
+            explicados.add(clave)
+            lineas.append(texto_bostezo(ep))
+    return lineas
+
+
 def _unir(tramos: list[tuple[float, float, bool]]) -> list[tuple[float, float, bool]]:
     """(inicio, fin, tapado) que se solapan o están a menos de UNIR_S -> uno solo (tapado si alguno lo fue)."""
     salida: list[tuple[float, float, bool]] = []
@@ -421,9 +547,10 @@ def _unir(tramos: list[tuple[float, float, bool]]) -> list[tuple[float, float, b
 
 
 def analizar_boca(t: np.ndarray, mares: np.ndarray, ears=None, manos=None, mandibulas=None) -> dict:
-    """Bostezos con la boca a la vista (MAR >= BOSTEZO_MAR sostenido BOSTEZO_MIN_S) y, si se dan por cuadro los
-    ojos, la mano en la boca (1, 0 o NaN) y la mandíbula, también los tapados con la mano (bostezos_tapados).
-    Los que se solapan cuentan una vez. Con la mano encima el MAR no sirve: esos cuadros no cuentan para la boca.
+    """Bostezos con la boca a la vista (MAR >= BOSTEZO_MAR sostenido BOSTEZO_MIN_S, con una señal de bostezo: ver
+    episodios_boca) y, si se dan por cuadro los ojos, la mano en la boca (1, 0 o NaN) y la mandíbula, también los
+    tapados con la mano (bostezos_tapados). Los que se solapan cuentan una vez. Con la mano encima el MAR no sirve:
+    esos cuadros no cuentan para la boca. Sin los ojos, los de boca a la vista solo cuentan si son largos o graduales.
 
     Devuelve bostezos, bostezos_tapados, bostezos_min y `durante` (máscara de los cuadros de cada bostezo)."""
     t, mares = np.asarray(t, float), np.asarray(mares, float)
@@ -432,7 +559,8 @@ def analizar_boca(t: np.ndarray, mares: np.ndarray, ears=None, manos=None, mandi
     vista = mares.copy()
     if con_manos:
         vista[np.asarray(manos, float) == 1] = np.nan
-    tramos = [(float(t[a]), float(t[b - 1]), False) for a, b in _bostezos_abiertos(t, vista)]
+    tramos = [(float(t[a]), float(t[b - 1]), False)
+              for a, b in _bostezos_abiertos(t, vista, ears, mandibulas, manos if con_manos else None)]
     if con_manos and n > 1:
         mand = mandibulas if mandibulas is not None and len(mandibulas) == n else np.full(n, np.nan)
         tramos += [(a, b, True) for a, b in bostezos_tapados(t, mares, ears, manos, mand)]
@@ -1158,6 +1286,7 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
         ultimo_aviso, vivo, ultimo_vivo, parpadeos, bostezos = -5.0, None, 0.0, None, None
         n, manos_vistas, zona, zona_t = 0, [], None, -9.0
         explicados, ultimo_episodio = set(), None  # manos en la boca ya explicadas en la consola
+        bocas_explicadas: set = set()               # aperturas de boca a la vista ya explicadas (explicar_bostezos)
         while True:
             cuadro, llegada = cam.siguiente()
             if cuadro is None:
@@ -1220,6 +1349,8 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
                                     explicados.add(clave)
                                     ultimo_episodio = ep
                                     print(texto_episodio(ep))
+                        for linea in explicar_bostezos(registro, bocas_explicadas, t - 0.6, manos is not None):
+                            print(linea)
                 mensaje = None
                 if fase == "lentes":
                     mensaje = ["SE VEN LENTES", "Quitatelos para continuar con la medicion",
@@ -1248,6 +1379,8 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
                     raise ErrorMedicion("Se cerró la ventana de la cámara.")
             if quedan is not None and quedan <= 0:
                 break
+        for linea in explicar_bostezos(registro, bocas_explicadas, float("inf"), manos is not None):
+            print(linea)  # las que faltaban (y todas, si se midió sin ventana)
     finally:
         if cam is not None:
             cam.cerrar()
@@ -1378,7 +1511,12 @@ def main():
     ap.add_argument("--camara", help="índice o URL (por defecto CAMARA de config.env)")
     ap.add_argument("--sin-ventana", action="store_true", help="mide sin abrir la ventana")
     ap.add_argument("--sin-mqtt", action="store_true", help="no conecta a MQTT (solo muestra el resultado)")
+    ap.add_argument("--diagnostico", action="store_true",
+                    help="explica en la consola también las aperturas de boca descartadas como bostezo")
     args = ap.parse_args()
+    if args.diagnostico:
+        global DIAGNOSTICO
+        DIAGNOSTICO = True
 
     if args.listar:
         listar_camaras()
