@@ -27,6 +27,9 @@ code,kbd{font-family:ui-monospace,Menlo,monospace}
 .zona-prueba{touch-action:manipulation;-webkit-user-select:none;user-select:none}
 .zona-prueba:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 .tecla-dsst:active,.tecla-dsst.pulsada{background:var(--color-accent-800) !important}
+.tecla-dsst:hover:not(:disabled){box-shadow:inset 0 0 0 1px var(--color-accent) !important}
+.tecla-dsst:active:not(:disabled){transform:scale(.95)}
+.tecla-dsst:disabled{opacity:.55}
 
 /* Preferencias de Configuración. */
 html[data-proyector="1"] #app{zoom:1.25}
