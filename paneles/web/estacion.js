@@ -43,7 +43,7 @@
     "--st-verde": "oklch(0.45 0.10 160)", "--st-verde-bg": "oklch(0.92 0.04 160)", "--st-amarillo": "oklch(0.48 0.09 70)", "--st-amarillo-bg": "oklch(0.93 0.05 85)", "--st-rojo": "oklch(0.50 0.14 25)", "--st-rojo-bg": "oklch(0.93 0.035 22)", "--ink": "#d9dcea", "--nav-bg": "rgba(240,242,250,0.78)", "--card-edge": "rgba(90,100,160,0.16)",
   };
   const ICONOS = [["ph-star-four", "Estrella"], ["ph-rocket-launch", "Cohete"], ["ph-triangle", "Triángulo"], ["ph-moon-stars", "Luna"], ["ph-diamond", "Diamante"], ["ph-hexagon", "Hexágono"], ["ph-heart", "Corazón"], ["ph-lightning", "Rayo"], ["ph-crown-simple", "Corona"], ["ph-square", "Cuadrado"]];
-  const ICONOS_DEF = { bri: "ph-star-four", danilo: "ph-rocket-launch", sebas: "ph-triangle", erick: "ph-moon-stars", adrian: "ph-diamond" };
+  const ICONOS_DEF = { bri: "ph-star-four", danilo: "ph-rocket-launch", sebas: "ph-triangle", eric: "ph-moon-stars", adrian: "ph-diamond" };
   const NAV = [
     ["dashboard", "Panel", "ph-squares-four", "Tripulación", "Panel de la misión"],
     ["evaluacion", "Evaluación", "ph-scan", "Estación", "Evaluación en curso"],

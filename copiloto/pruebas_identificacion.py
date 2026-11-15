@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from copiloto import AVISO, Copiloto, resumen_tripulacion  # noqa: E402
 
-TRIPULACION = ["bri", "danilo", "sebas", "erick", "adrian"]
+TRIPULACION = ["bri", "danilo", "sebas", "eric", "adrian"]
 TAREA = "caminata espacial"
 
 
@@ -24,7 +24,7 @@ def ev(persona: str, color: str, puntaje: float) -> dict:
 
 
 EVALUACIONES = {  # sebas no tiene evaluación, para probar «Todavía no tienes una evaluación.»
-    "bri": ev("bri", "amarillo", 0.62), "erick": ev("erick", "verde", 0.88),
+    "bri": ev("bri", "amarillo", 0.62), "eric": ev("eric", "verde", 0.88),
     "adrian": ev("adrian", "amarillo", 0.58), "danilo": ev("danilo", "rojo", 0.31),
 }
 
@@ -50,14 +50,14 @@ def nuevo_copiloto() -> Copiloto:
 # (pregunta, persona activa esperada, modo esperado, texto esperado o None, sesión publicada esperada o None)
 CASOS = [
     # --- casos pedidos
-    ("Soy Erik", "erick", "identificacion",
-     "Hola Erick. Tu último resultado es verde. Pregúntame si quieres los detalles.",
-     {"persona": "erick", "tarea": TAREA}),
+    ("Soy Erik", "eric", "identificacion",
+     "Hola Eric. Tu último resultado es verde. Pregúntame si quieres los detalles.",
+     {"persona": "eric", "tarea": TAREA}),
     ("habla Sebas", "sebas", "identificacion", "Hola Sebas. Todavía no tienes una evaluación.",
      {"persona": "sebas", "tarea": TAREA}),
     ("soy Diego", "bri", "identificacion",
-     "No reconozco ese nombre. La tripulación es: Bri, Danilo, Sebas, Erick y Adrian.", None),
-    ("Soy Erick, me falta el aire", "erick", "alarma", None, {"persona": "erick", "tarea": TAREA}),
+     "No reconozco ese nombre. La tripulación es: Bri, Danilo, Sebas, Eric y Adrian.", None),
+    ("Soy Eric, me falta el aire", "eric", "alarma", None, {"persona": "eric", "tarea": TAREA}),
     # --- casos extra
     ("Aquí Brí.", "bri", "identificacion",
      "Hola Bri. Tu último resultado es amarillo. Pregúntame si quieres los detalles.",
@@ -92,15 +92,15 @@ def main() -> int:
     print("\n--- tripulación agrupada ---")
     grupos = [
         (EVALUACIONES | {"sebas": ev("sebas", "verde", 0.81)}, "bri",
-         "La persona más apta para la caminata espacial es Erick, en verde. También está en verde Sebas. "
+         "La persona más apta para la caminata espacial es Eric, en verde. También está en verde Sebas. "
          "Tú y Adrian están en amarillo, y Danilo está en rojo."),
-        ({"erick": ev("erick", "verde", 0.88), "bri": ev("bri", "verde", 0.80), "sebas": ev("sebas", "verde", 0.81),
+        ({"eric": ev("eric", "verde", 0.88), "bri": ev("bri", "verde", 0.80), "sebas": ev("sebas", "verde", 0.81),
           "danilo": ev("danilo", "rojo", 0.31)}, "bri",
-         "La persona más apta para la caminata espacial es Erick, en verde. Tú y Sebas también están en verde. "
+         "La persona más apta para la caminata espacial es Eric, en verde. Tú y Sebas también están en verde. "
          "Danilo está en rojo."),
-        ({"erick": ev("erick", "verde", 0.88), "bri": ev("bri", "amarillo", 0.62),
+        ({"eric": ev("eric", "verde", 0.88), "bri": ev("bri", "amarillo", 0.62),
           "danilo": ev("danilo", "rojo", 0.31)}, "bri",
-         "La persona más apta para la caminata espacial es Erick, en verde. Tú estás en amarillo y Danilo está "
+         "La persona más apta para la caminata espacial es Eric, en verde. Tú estás en amarillo y Danilo está "
          "en rojo."),
     ]
     for evaluaciones, activa, esperado in grupos:

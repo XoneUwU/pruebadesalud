@@ -169,15 +169,15 @@ def probar_javascript():
         return {"persona": p, "color": c, "puntaje": pts, "tarea": tarea}
 
     escenarios = [
-        ({"bri": ev("bri", "amarillo", 0.62), "erick": ev("erick", "verde", 0.88), "sebas": ev("sebas", "verde", 0.81),
+        ({"bri": ev("bri", "amarillo", 0.62), "eric": ev("eric", "verde", 0.88), "sebas": ev("sebas", "verde", 0.81),
           "adrian": ev("adrian", "amarillo", 0.58), "danilo": ev("danilo", "rojo", 0.31)}, "caminata espacial"),
         ({"bri": ev("bri", "amarillo", 0.62), "danilo": ev("danilo", "rojo", 0.31),
           "adrian": ev("adrian", "rojo", 0.4)}, "maniobra de acoplamiento"),
-        ({"erick": ev("erick", "verde", 0.88)}, "mantenimiento externo"),
+        ({"eric": ev("eric", "verde", 0.88)}, "mantenimiento externo"),
         ({}, "caminata espacial"),
         ({"bri": ev("bri", "verde", 0.7), "sebas": ev("sebas", "amarillo", 0.6), "adrian": ev("adrian", "amarillo", 0.5),
-          "danilo": ev("danilo", "rojo", 0.3), "erick": ev("erick", "rojo", 0.2)}, ""),
-        ({"bri": ev("bri", "verde", 0.8), "erick": ev("erick", "verde", 0.8)}, "caminata espacial"),  # empate: orden de llegada
+          "danilo": ev("danilo", "rojo", 0.3), "eric": ev("eric", "rojo", 0.2)}, ""),
+        ({"bri": ev("bri", "verde", 0.8), "eric": ev("eric", "verde", 0.8)}, "caminata espacial"),  # empate: orden de llegada
     ]
     tareas = ["caminata espacial", "maniobra de acoplamiento", "mantenimiento externo", "la caminata"]
     programa = r"""
@@ -233,7 +233,7 @@ def probar_historial():
     def doc(seg, tipo, datos, persona="bri"):
         return {"recibido": t0 + timedelta(seconds=seg), "tipo": tipo, "persona": persona, "datos": datos}
 
-    s1, s2 = "20261113-120000-bri", "20261113-130000-erick"
+    s1, s2 = "20261113-120000-bri", "20261113-130000-eric"
     docs = [
         doc(0, "control/sesion", {"sesion": s1, "tarea": "caminata espacial"}),
         *[doc(1 + i, "esp32", {"sesion": s1, "dedo": True, "calidad": 0.8, "pulso_lpm": p}) for i, p in enumerate((60, 70, 80))],
@@ -244,8 +244,8 @@ def probar_historial():
         doc(31, "evaluacion", {"sesion": s1, "color": "verde", "puntaje": 1.0, "motivos": []}),
         doc(40, "evaluacion", {"sesion": s1, "color": "amarillo", "puntaje": 0.75, "motivos": ["Menos de 6 horas de sueño"],
                                "provisional": True}),  # el coordinador recalculó: vale esta
-        doc(100, "cuestionario", {"sesion": s2, "kss": 8}, "erick"),  # sesión sin evaluación: no es fila
-        doc(200, "evaluacion", {"color": "rojo"}, "erick"),  # sin sesión: no es fila
+        doc(100, "cuestionario", {"sesion": s2, "kss": 8}, "eric"),  # sesión sin evaluación: no es fila
+        doc(200, "evaluacion", {"color": "rojo"}, "eric"),  # sin sesión: no es fila
     ]
     filas = historial.filas_de(docs)
     f = filas[0] if filas else {}

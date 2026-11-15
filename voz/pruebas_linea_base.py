@@ -68,7 +68,7 @@ def main() -> int:
         filas = BASE + [
             NORMAL,                                               # no es línea base
             {**BASE[0], "voz_detectada": False},                  # línea base sin voz
-            {**BASE[0], "persona": "erick"},                      # otra persona
+            {**BASE[0], "persona": "eric"},                      # otra persona
         ]
         historial.write_text("".join(json.dumps(f, ensure_ascii=False) + "\n" for f in filas) + "línea rota\n",
                              encoding="utf-8")

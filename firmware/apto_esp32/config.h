@@ -41,5 +41,27 @@
 #define CADA_MPU_MS 20         // 50 lecturas por segundo; movimiento = desviación de |aceleración| en 1 s
 #define UMBRAL_MOVIMIENTO 0.05 // g; con más movimiento la calidad del pulso baja a la mitad
 
+// ---------------------------------------------------------------- AD8232: activación muscular (prototipo)
+// El AD8232 es un chip de ECG (filtra de 0,5 a 40 Hz): sirve para ver CUÁNDO y CUÁNTO se contrae el músculo, no es
+// una electromiografía real. Electrodos en el antebrazo (RA y LA sobre el músculo, RL en el hueso del codo).
+#define PIN_MUSCULO 34         // OUTPUT del AD8232 (ADC1: funciona con Wi-Fi). 3V3, nunca 5 V
+#define PIN_LO_MENOS 35        // LO-: en alto = electrodo despegado (GPIO 35 no tiene pull-up interno)
+#define PIN_LO_MAS 32          // LO+: en alto = electrodo despegado (con pull-up: sin el módulo también da «despegado»)
+#define MUSCULO_CADA_MS 2      // 500 lecturas por segundo, en una tarea aparte (la OLED y el MQTT no la frenan)
+#define MUSCULO_ENVOLVENTE 0.02f  // suavizado de |señal| (~100 ms a 500/s): la «fuerza» de la contracción
+#define MUSCULO_ASENTAR_MS 1000   // al pegar los electrodos, 1 s sin contar: la salida del AD8232 se está acomodando
+#define MUSCULO_DESPEGADO_MS 50   // LO+ o LO- en alto al menos 50 ms seguidos = despegado (pulsos más cortos: ruido)
+#define MUSCULO_TOPE_MV 3050     // salida >= esto o <= 100 mV: el AD8232 está en el tope (saturado), no hay señal útil
+#define MUSCULO_RED_HZ 50         // frecuencia de la red eléctrica (Bolivia: 50 Hz); se quita ella y su armónico. 0 = sin filtro
+#define MUSCULO_EN_EVALUACION 1   // 1 = después de los 30 s del dedo, la OLED guía la prueba del músculo (35 s)
+// 1 = los valores de músculo que se PUBLICAN son fingidos (suben al apretar en la prueba guiada) y van con
+// "musculo_simulado": true; los reales siguen en el monitor serie. Hasta que la señal real sirva (con la laptop
+// enchufada al cargador, el zumbido de 50 Hz la tapa).
+#define MUSCULO_FINGIDO 1
+// 1 = solo la prueba guiada del AD8232 en la OLED (sin Wi-Fi, MQTT ni pulso). También al compilar: -DPRUEBA_MUSCULO=1
+#ifndef PRUEBA_MUSCULO
+#define PRUEBA_MUSCULO 0
+#endif
+
 // ---------------------------------------------------------------- hora (si hay internet para NTP)
 #define ZONA_HORARIA_S (-4 * 3600)  // Bolivia (UTC-4); sin internet los mensajes salen sin "ts"
