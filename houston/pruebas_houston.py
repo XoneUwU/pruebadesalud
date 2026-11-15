@@ -158,6 +158,21 @@ def probar_receptor():
     d = receptor.documento("apto/bri/evaluacion", {"sesion": "s1", "color": "rojo"}, 20, T0)
     revisar(d["persona"] == "bri" and d["tipo"] == "evaluacion", "persona y tipo salen del tema")
     revisar(d["llego_tierra"] - d["recibido"] == timedelta(seconds=20), "llega a Tierra con el retraso")
+    d = receptor.documento("apto/bri/evaluacion", {"sesion": "s1"}, 2.6, T0)
+    revisar(d["llego_tierra"] - d["recibido"] == timedelta(seconds=2.6), "el retraso acepta decimales (2,6 s)")
+    import os
+    antes = {k: os.environ.get(k) for k in ("HOUSTON_RETRASO_S", "RETRASO_TIERRA_S")}
+    for valor, esperado in (("2.6", 2.6), ("2,6", 2.6), ("0", 0.0)):
+        os.environ["HOUSTON_RETRASO_S"] = valor
+        revisar(modelo.retraso_s() == esperado, f"HOUSTON_RETRASO_S={valor} -> {esperado} s",
+                f"dio {modelo.retraso_s()}")
+    os.environ["HOUSTON_RETRASO_S"], os.environ["RETRASO_TIERRA_S"] = "", "2.6"
+    revisar(modelo.retraso_s() == 2.6, "vacío: usa RETRASO_TIERRA_S con decimales", f"dio {modelo.retraso_s()}")
+    for k, v in antes.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
     revisar(receptor.documento("apto/control/sesion", {"persona": "bri", "sesion": "s1"}, 0, T0)["persona"] == "bri",
             "control/sesion baja con la persona del mensaje")
     revisar(all(receptor.documento(t, {}, 0, T0) is None for t in

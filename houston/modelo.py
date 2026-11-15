@@ -46,8 +46,23 @@ def tripulacion() -> list[str]:
     return [p.strip().lower() for p in config.get("TRIPULACION").split(",") if p.strip()]
 
 
-def retraso_s() -> int:
-    return config.get_int("HOUSTON_RETRASO_S", config.get_int("RETRASO_TIERRA_S", 20))
+def _segundos(clave: str) -> float | None:
+    """Segundos con decimales (2.6 o 2,6); None si no está o no es un número de 0 o más."""
+    try:
+        v = float(config.get(clave).replace(",", "."))
+    except ValueError:
+        return None
+    return v if v >= 0 else None
+
+
+def retraso_s() -> float:
+    """HOUSTON_RETRASO_S, o RETRASO_TIERRA_S, o 2,6 s (ida y vuelta a la Luna). Acepta decimales: con get_int,
+    «2.6» no se leía y volvía en silencio al valor por defecto."""
+    for clave in ("HOUSTON_RETRASO_S", "RETRASO_TIERRA_S"):
+        v = _segundos(clave)
+        if v is not None:
+            return v
+    return 2.6
 
 
 # ---------------------------------------------------------------- utilidades

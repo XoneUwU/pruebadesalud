@@ -37,7 +37,7 @@ from modelo import COLECCION, COLECCION_ENLACE, TIPOS, retraso_s  # noqa: E402
 CADA_S = 2
 
 
-def documento(tema: str, datos, retraso: int, ahora: datetime | None = None) -> dict | None:
+def documento(tema: str, datos, retraso: float, ahora: datetime | None = None) -> dict | None:
     """Mensaje MQTT -> documento de Houston, o None si ese tipo no baja a Tierra."""
     if not isinstance(datos, dict):
         datos = {"valor": datos}
@@ -59,7 +59,7 @@ def clave_retenido(doc: dict) -> dict:
 
 
 class Receptor:
-    def __init__(self, coleccion, estado, retraso: int):
+    def __init__(self, coleccion, estado, retraso: float):
         self.col = coleccion
         self.estado = estado
         self.retraso = retraso
@@ -134,7 +134,8 @@ def cliente_mqtt(receptor: Receptor):
 
 def main():
     ap = argparse.ArgumentParser(description="Receptor de Houston: Mosquitto -> MongoDB de Houston")
-    ap.add_argument("--retraso", type=int, default=None, help="segundos de retraso (por defecto HOUSTON_RETRASO_S)")
+    ap.add_argument("--retraso", type=lambda s: float(s.replace(",", ".")), default=None,
+                    help="segundos de retraso, con decimales (por defecto HOUSTON_RETRASO_S)")
     args = ap.parse_args()
 
     from pymongo import MongoClient

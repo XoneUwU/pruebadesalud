@@ -628,7 +628,7 @@
     const propios = (f.motivos || []).filter((m) => !esAvisoSpo2(m));
     const motivos = propios.length ? propios : ["Señales en el rango habitual."];
     const indicadores = s && s.disponible ? indicadoresDe(s) : [];
-    const retraso = f.llego && f.fecha ? Math.round((f.llego - f.fecha) / 1000) : null;
+    const retraso = f.llego && f.fecha ? Math.round((f.llego - f.fecha) / 100) / 10 : null;  // con un decimal: 2.6 s, no 3
     return h`<div data-k="res-${f.id}" style="display:contents">
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:stretch">
     <section style="position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:22px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">

@@ -83,7 +83,7 @@ Si MongoDB no responde, la API devuelve `{"disponible": false, "motivo"}` y la p
 - No baja: las órdenes (`control/orden_*`), los estados de los módulos (`control/estado_*`, `control/modulos`), las
   preguntas a la estación ni el `semaforo` (el color está en la evaluación).
 - Cada documento tiene la forma del registrador (`recibido`, `tema`, `persona`, `tipo`, `simulado`, `reproducido`,
-  `datos`) y además `llego_tierra` = `recibido` + `HOUSTON_RETRASO_S` (por defecto `RETRASO_TIERRA_S`, 20 s). Se guarda
+  `datos`) y además `llego_tierra` = `recibido` + `HOUSTON_RETRASO_S` (por defecto `RETRASO_TIERRA_S`, 2,6 s: ida y vuelta a la Luna; acepta decimales). Se guarda
   apenas llega, pero la página solo muestra lo que ya «llegó»: un reinicio no pierde lo que viene en camino.
 - Al conectarse, el broker entrega los mensajes retenidos (la última evaluación de cada uno, la sesión activa): se
   guardan una sola vez y cuentan como ya llegados.
