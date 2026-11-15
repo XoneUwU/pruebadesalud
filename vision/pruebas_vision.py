@@ -7,6 +7,9 @@
 - Un EAR con parpadeos conocidos tiene que contarlos bien (los de 1 cuadro no cuentan) y dar el PERCLOS esperado.
 - Bostezos tapados con la mano: boca abierta y ojos entrecerrados antes de la mano, o mandíbula que baja con la mano
   encima; la tos, la mano quieta y la mano en el mentón al hablar no cuentan; uno visto y tapado cuenta una vez.
+- Falsos positivos (regresión): hablar, abrir la boca un momento y mantenerla abierta por un gesto (como el
+  falso positivo real) no son bostezos; tres bostezos simulados, cada señal por separado, tapados y vistos y
+  tapados sí, una vez; los parpadeos no cambian, el contador en vivo no baja y la cara perdida no cuenta.
 - Lentes: el puente de la montura sube el puntaje (también con la cabeza ladeada); piel lisa o una sombra suave no.
 - Avisos de luz, cara, fps y pulso; regiones de la cara; la ventana se dibuja sin errores.
 Muestra OK o FALLA por cada caso y termina con código 1 si alguno falla.
@@ -54,6 +57,239 @@ def piel(lpm, segundos=60.0, semilla=0, amplitud=0.004, ruido=0.5):
     for inicio in (300, 1100):  # dos huecos de ~1 s sin cara
         rgb[inicio:inicio + 30] = np.nan
     return t, rgb
+
+
+# ---------------------------------------------------------------- bostezos: regresión de falsos positivos
+# Sesiones sintéticas con las formas medidas en las trazas reales (sin publicarlas): boca cerrada con MAR ~0,01, ojos
+# abiertos con EAR ~0,25 y largo de la cara ~1,22. Un bostezo se abre de a poco (0,4 a 3 s), queda muy abierto 2 a
+# 5 s y achica los ojos; un gesto (abrir grande la boca al hablar) se abre en ~0,15 s, dura 0,5 a 1,6 s y los ojos
+# quedan igual o más abiertos. La mandíbula sube ~+25 % en los dos.
+EAR0, MAND0 = 0.25, 1.22
+
+
+def sesion(segundos=60.0, semilla=0):
+    rng = np.random.default_rng(semilla)
+    t = np.arange(0, segundos, 1 / 30) + rng.normal(0, 0.002, int(round(segundos * 30)))
+    return (rng, t, 0.01 + np.abs(rng.normal(0, 0.005, len(t))), EAR0 + rng.normal(0, 0.006, len(t)),
+            MAND0 + rng.normal(0, 0.004, len(t)), np.zeros(len(t)))
+
+
+def abrir(t, mares, mand, inicio, subida, meseta, bajada, mar_max):
+    """Abre la boca de 0,02 a mar_max en `subida` s, la mantiene `meseta` s y la cierra en `bajada` s. Devuelve
+    la fracción de apertura (0 a 1) por cuadro; la mandíbula sube +25 % a boca abierta."""
+    x = t - inicio
+    frac = np.clip(np.minimum(x / max(subida, 1e-6), (subida + meseta + bajada - x) / max(bajada, 1e-6)), 0, 1)
+    frac[(x < 0) | (x > subida + meseta + bajada)] = 0
+    abierta = frac > 0
+    mares[abierta] = 0.02 + (mar_max - 0.02) * frac[abierta]
+    mand[abierta] = MAND0 * (1 + 0.25 * frac[abierta])
+    return frac
+
+
+def bostezo(t, mares, ears, mand, inicio, subida=1.5, meseta=2.5, bajada=0.6, mar_max=0.95, ojos=0.5):
+    """Bostezo a la vista: los ojos bajan a `ojos` (fracción del abierto) mientras la boca está muy abierta."""
+    frac = abrir(t, mares, mand, inicio, subida, meseta, bajada, mar_max)
+    ears[frac > 0.7] = EAR0 * ojos  # con la boca bien abierta (dentro del bostezo que se cuenta)
+
+
+def gesto(t, mares, ears, mand, inicio, dur, mar_max=0.93, ojos=1.15):
+    """Abrir grande la boca sin bostezar (como el falso positivo real: MAR 0,93 1,56 s, ojos al 99-118 %)."""
+    frac = abrir(t, mares, mand, inicio, 0.12, dur, 0.1, mar_max)
+    ears[frac > 0.5] = EAR0 * ojos
+
+
+def hablar(t, mares, a, b, rng, amp_max=0.75):
+    """Sílabas a ~4,5 por segundo, cada una con su apertura (algunas muy abiertas); entre sílabas se cierra."""
+    en = (t >= a) & (t < b)
+    silaba = np.floor((t[en] - a) * 4.5).astype(int)
+    amp = rng.uniform(0.15, amp_max, silaba.max() + 1)[silaba]
+    mares[en] = 0.02 + amp * np.sin(np.pi * 4.5 * (t[en] - a)) ** 2 + np.abs(rng.normal(0, 0.01, en.sum()))
+
+
+def parpadear(t, ears, horas):
+    for h in horas:
+        i = int(np.searchsorted(t, h))
+        ears[i:i + 4] = 0.06  # 4 cuadros con los ojos cerrados
+
+
+def registro_de(t, mares, ears, manos, mand):
+    reg = v.Registro()
+    reg.t, reg.rgb, reg.mar = list(t), [[np.nan] * 3] * len(t), list(mares)
+    reg.ear, reg.ear_der, reg.ear_izq = list(ears), list(ears), list(ears)
+    reg.mano, reg.mandibula = list(manos), list(mand)
+    return reg
+
+
+def regresion_bostezos():
+    print("\n--- bostezos: falsos positivos (regresión) ---")
+    en = lambda t, a, b: (t >= a) & (t < b)  # noqa: E731
+
+    # 1. Hablar normalmente 15 s (algunas sílabas muy abiertas) y con vocales abiertas seguidas 2 s (la boca no
+    #    baja de 0,45: con la histéresis sola, eso duraba más de 1,5 s).
+    rng, t, mares, ears, mand, manos = sesion(semilla=21)
+    hablar(t, mares, 10, 25, rng)
+    gesto(t, mares, ears, mand, 30, 0.1, ojos=1.0)            # para tener una apertura brusca antes
+    vocales = en(t, 35, 37.0)
+    mares[vocales] = 0.70 + 0.22 * np.sin(2 * np.pi * 4 * t[vocales])
+    r = v.analizar_boca(t, mares, ears, manos, mand)
+    revisar(r["bostezos"] == 0, f"hablar 15 s y encadenar vocales abiertas 2 s: {r['bostezos']} bostezos (esperados 0)")
+
+    # 2. Abrir la boca brevemente (0,8 s), varias veces.
+    rng, t, mares, ears, mand, manos = sesion(semilla=22)
+    for h in (10, 20, 30, 40):
+        gesto(t, mares, ears, mand, h, 0.8, ojos=1.0)
+    r = v.analizar_boca(t, mares, ears, manos, mand)
+    revisar(r["bostezos"] == 0, f"abrir la boca 0,8 s cuatro veces: {r['bostezos']} bostezos (esperados 0)")
+
+    # 3. Mantener la boca muy abierta por un gesto: la reproducción del falso positivo real (1,56 s, se abre en 0,14 s,
+    #    ojos al 115 %, mandíbula +25 %) y otros dos de 1,2 y 2,2 s con los ojos normales, hablando entre medio.
+    rng, t, mares, ears, mand, manos = sesion(semilla=23)
+    hablar(t, mares, 5, 20, rng)
+    gesto(t, mares, ears, mand, 25, 1.46)                      # 1,56 s con MAR >= 0,6
+    gesto(t, mares, ears, mand, 35, 1.2, ojos=1.0)
+    gesto(t, mares, ears, mand, 45, 2.2, ojos=0.95)
+    eps = v.episodios_boca(t, mares, ears, manos, mand)
+    r = v.analizar_boca(t, mares, ears, manos, mand)
+    real = next((e for e in eps if abs(e["inicio"] - 25) < 1), None)
+    revisar(r["bostezos"] == 0 and real is not None and real["dur_ok"] and not real["bostezo"],
+            f"gestos con la boca muy abierta 1,2 a 2,4 s (uno igual al falso positivo real): {r['bostezos']} bostezos "
+            f"(esperados 0; el de 1,56 s pasa la duración pero no muestra ninguna señal de bostezo)")
+    if real is not None:
+        revisar("descartado: sin señal de bostezo" in v.texto_bostezo(real) and "MAR" in v.texto_bostezo(real),
+                f"el diagnóstico dice por qué se descartó: {v.texto_bostezo(real)}")
+
+    # 4. Tres bostezos simulados con un patrón consistente (se abren de a poco, 2,5 s abiertos, ojos al 50 %).
+    rng, t, mares, ears, mand, manos = sesion(semilla=24)
+    hablar(t, mares, 2, 8, rng)
+    for h in (10, 30, 48):
+        bostezo(t, mares, ears, mand, h)
+    r = v.analizar_boca(t, mares, ears, manos, mand)
+    eps = [e for e in v.episodios_boca(t, mares, ears, manos, mand) if e["bostezo"]]
+    revisar(r["bostezos"] == 3 and all(abs(e["inicio"] - h - 1) < 1 for e, h in zip(eps, (10, 30, 48))),
+            f"tres bostezos simulados: {r['bostezos']} (esperados 3, a los 10, 30 y 48 s)")
+    # Cada señal sola alcanza: (a) ojos entrecerrados aunque se abra de golpe y dure 1,8 s; (b) largo (3 s) sin achicar
+    # los ojos ni abrir de a poco; (c) se abre de a poco (0,8 s) sin achicar los ojos y dura 1,8 s.
+    rng, t, mares, ears, mand, manos = sesion(semilla=25)
+    bostezo(t, mares, ears, mand, 10, subida=0.15, meseta=1.8, bajada=0.1, ojos=0.7)
+    bostezo(t, mares, ears, mand, 25, subida=0.15, meseta=3.0, bajada=0.1, ojos=1.0)
+    bostezo(t, mares, ears, mand, 40, subida=1.6, meseta=1.2, bajada=0.3, ojos=1.0)
+    eps = v.episodios_boca(t, mares, ears, manos, mand)
+    revisar([e["bostezo"] for e in eps] == [True, True, True]
+            and eps[0]["ojos_ok"] and not eps[0]["largo_ok"] and not eps[0]["subida_ok"]
+            and eps[1]["largo_ok"] and not eps[1]["ojos_ok"] and not eps[1]["subida_ok"]
+            and eps[2]["subida_ok"] and not eps[2]["ojos_ok"] and not eps[2]["largo_ok"],
+            "cada señal sola alcanza: ojos entrecerrados, boca abierta largo o apertura gradual "
+            f"({[(round(e['inicio']), e['bostezo']) for e in eps]})")
+    # Quien casi no achica los ojos (al 90 %) y bosteza 2 s abriendo de a poco: cuenta.
+    rng, t, mares, ears, mand, manos = sesion(semilla=26)
+    bostezo(t, mares, ears, mand, 20, subida=1.6, meseta=1.2, bajada=0.4, ojos=0.9)
+    revisar(v.analizar_boca(t, mares, ears, manos, mand)["bostezos"] == 1,
+            "bostezo de 2 s con los ojos casi sin achicar (90 %) pero abierto de a poco: cuenta")
+
+    # 5. Bostezo tapado con la mano (tapa antes de que se vea la boca; la malla dibuja la boca cerrada debajo).
+    # 6. Mano apoyada en la boca o el mentón sin bostezar, también hablando.
+    # 7. Bostezo que se ve y después se tapa: cuenta una vez (también si la parte vista ya era un bostezo).
+    rng, t, mares, ears, mand, manos = sesion(70, semilla=27)
+    manos[en(t, 10, 14)], mares[en(t, 10, 14)] = 1, 0.02                       # 5: tapado
+    mand[en(t, 10.5, 12.5)], ears[en(t, 10.5, 12.5)] = MAND0 * 1.15, EAR0 * 0.6
+    manos[en(t, 20, 25)] = 1                                                    # 6: mano quieta
+    hablar(t, mares, 30, 36, rng)                                               # 6: mano en el mentón hablando
+    manos[en(t, 30, 36)] = 1
+    mand[en(t, 30, 36)] = MAND0 * (1 + 0.12 * np.abs(np.sin(2 * np.pi * 3 * t[en(t, 30, 36)])))
+    bostezo(t, mares, ears, mand, 42, subida=0.8, meseta=3.0, bajada=0.5)        # 7a: se ve 1,2 s y se tapa
+    manos[en(t, 43.6, 47)], mares[en(t, 43.6, 47)] = 1, 0.02
+    bostezo(t, mares, ears, mand, 55, subida=0.8, meseta=4.0, bajada=0.5)        # 7b: se ve 2,9 s y se tapa
+    manos[en(t, 58.5, 61)], mares[en(t, 58.5, 61)] = 1, 0.02
+    manos[rng.random(len(t)) < 0.05] = np.nan
+    r = v.analizar_boca(t, mares, ears, manos, mand)
+    tapados = v.bostezos_tapados(t, mares, ears, manos, mand)
+    vistos = v._bostezos_abiertos(t, np.where(manos == 1, np.nan, mares), ears, mand, manos)
+    revisar(r["bostezos"] == 3 and r["bostezos_tapados"] == 3 and len(vistos) == 1,
+            f"tapado (10 s), mano quieta y mano hablando (no), visto y tapado dos veces: {r['bostezos']} bostezos, "
+            f"{r['bostezos_tapados']} tapados (esperados 3 y 3; el de 55 s se ve como bostezo y se tapa: uno solo)")
+    eps = {round(e["mano_desde"]): e for e in v.episodios_mano(t, mares, ears, manos, mand)}
+    revisar(eps.get(10, {}).get("bostezo") and not eps[20]["bostezo"] and not eps[30]["bostezo"],
+            "la mano quieta y la mano en el mentón hablando no son bostezos; la que tapa el bostezo sí")
+
+    # 8. Los parpadeos durante el habla y los gestos no cambian (antes, el gesto contado como bostezo los tapaba).
+    rng, t, mares, ears, mand, manos = sesion(semilla=28)
+    hablar(t, mares, 10, 25, rng)
+    gesto(t, mares, ears, mand, 30, 1.46)
+    gesto(t, mares, ears, mand, 40, 1.4, ojos=1.0)
+    horas_parpadeo = [3, 8, 12, 15.5, 19, 22, 27, 30.7, 34, 38, 40.8, 45, 50, 54, 58]  # 2 durante los gestos
+    parpadear(t, ears, horas_parpadeo)
+    res = registro_de(t, mares, ears, manos, mand).resultado()
+    revisar(res["bostezos"] == 0 and res["parpadeos"] == len(horas_parpadeo)
+            and res["parpadeos"] == v.analizar_ojos(t, ears)["parpadeos"],
+            f"parpadeos mientras habla y gesticula: {res['parpadeos']} (esperados {len(horas_parpadeo)}, también los de "
+            f"durante los gestos) y {res['bostezos']} bostezos")
+    rng, t, mares, ears, mand, manos = sesion(semilla=29)
+    for h in (10, 30):
+        bostezo(t, mares, ears, mand, h)
+    parpadear(t, ears, [5, 20, 40, 50])
+    res = registro_de(t, mares, ears, manos, mand).resultado()
+    revisar(res["bostezos"] == 2 and res["parpadeos"] == 4 and abs(res["perclos"] - 4 * 4 / len(t)) < 0.003,
+            f"con 2 bostezos y 4 parpadeos: {res['bostezos']} bostezos, {res['parpadeos']} parpadeos, PERCLOS "
+            f"{res['perclos']} (el entrecerrar de los bostezos sigue sin contar)")
+
+    # 9. El contador en vivo no baja: sesión con habla, gestos, bostezos (vistos, tapados y vistos y tapados) y una
+    #    apertura que sigue al final; se recalcula cada 0,5 s con lo que hay hasta ahí.
+    rng, t, mares, ears, mand, manos = sesion(70, semilla=30)
+    hablar(t, mares, 2, 9, rng)
+    gesto(t, mares, ears, mand, 10, 1.46)
+    bostezo(t, mares, ears, mand, 14)
+    bostezo(t, mares, ears, mand, 22, subida=0.15, meseta=1.8, bajada=0.1, ojos=0.7)
+    bostezo(t, mares, ears, mand, 30, subida=0.8, meseta=4.0, bajada=0.5)
+    manos[en(t, 33.5, 36)], mares[en(t, 33.5, 36)] = 1, 0.02
+    manos[en(t, 40, 44)], mares[en(t, 40, 44)] = 1, 0.02
+    mand[en(t, 40.5, 42.5)], ears[en(t, 40.5, 42.5)] = MAND0 * 1.15, EAR0 * 0.6
+    gesto(t, mares, ears, mand, 50, 2.2, ojos=1.0)
+    bostezo(t, mares, ears, mand, 66, subida=1.0, meseta=5.0)                     # sigue abierto al terminar
+    cuentas = [v.analizar_boca(t[:k], mares[:k], ears[:k], manos[:k], mand[:k])["bostezos"]
+               for k in np.searchsorted(t, np.arange(2, t[-1], 0.5))]
+    final = v.analizar_boca(t, mares, ears, manos, mand)["bostezos"]
+    revisar(all(b >= a for a, b in zip(cuentas, cuentas[1:])) and cuentas[-1] == final == 5,
+            f"contador en vivo: nunca baja y termina en {cuentas[-1]} como el final ({final}; esperados 5)")
+
+    # 10. Eventos incompletos o con la cara perdida: no cuentan.
+    rng, t, mares, ears, mand, manos = sesion(semilla=31)
+    gesto(t, mares, ears, mand, 10, 2.2, ojos=1.0)
+    mares[en(t, 11.0, 11.3)] = ears[en(t, 11.0, 11.3)] = np.nan   # se pierde la cara a la mitad: dos de ~1 s
+    mares[en(t, 19.5, 20)] = ears[en(t, 19.5, 20)] = np.nan       # entra a cuadro ya con la boca abierta 2 s
+    gesto(t, mares, ears, mand, 19.8, 1.9, ojos=1.0)
+    mares[en(t, 19.5, 20)] = np.nan
+    mares[en(t, 30, 32)] = np.where(np.arange(en(t, 30, 32).sum()) % 2, np.nan, 0.9)  # malla perdida cuadro por medio
+    gesto(t, mares, ears, mand, 58.9, 2.0, ojos=1.0)                 # empieza y la medición termina a los 1,1 s
+    ears[:30] = np.nan                                               # el primer segundo sin ojos
+    mares[:30] = np.nan
+    r = v.analizar_boca(t, mares, ears, manos, mand)
+    revisar(r["bostezos"] == 0, f"cara perdida a la mitad, boca ya abierta al entrar, malla cuadro por medio y "
+                                f"apertura cortada por el final: {r['bostezos']} bostezos (esperados 0)")
+    rng, t, mares, ears, mand, manos = sesion(semilla=32)
+    mares[:], ears[:] = np.nan, np.nan
+    bostezo(t, mares, ears, mand, 0.5)                               # sin nada de reposo antes para comparar
+    mares[:15] = np.nan
+    r = v.analizar_boca(t, mares, ears, manos, mand)
+    revisar(r["bostezos"] == 1, f"bostezo largo sin reposo antes (no hay ojos para comparar): cuenta por largo "
+                                f"({r['bostezos']})")
+
+    # Diagnóstico: el bostezo se explica siempre; el descartado, solo en modo diagnóstico.
+    rng, t, mares, ears, mand, manos = sesion(semilla=33)
+    gesto(t, mares, ears, mand, 10, 1.46)
+    bostezo(t, mares, ears, mand, 30)
+    reg = registro_de(t, mares, ears, manos, mand)
+    antes = v.DIAGNOSTICO
+    try:
+        v.DIAGNOSTICO = False
+        normal = v.explicar_bostezos(reg, set(), float("inf"))
+        v.DIAGNOSTICO = True
+        vistas = set()
+        diag = v.explicar_bostezos(reg, vistas, 20.0) + v.explicar_bostezos(reg, vistas, float("inf"))
+    finally:
+        v.DIAGNOSTICO = antes
+    revisar(len(normal) == 1 and "BOSTEZO (" in normal[0] and "a los 3" in normal[0]
+            and len(diag) == 2 and "descartado" in diag[0] and diag[1] == normal[0],
+            f"consola: sin diagnóstico solo el bostezo ({normal}); con diagnóstico también el gesto, una vez cada uno")
 
 
 def main() -> int:
@@ -238,9 +474,13 @@ def main() -> int:
             and not episodios[90]["bostezo"] and not episodios[100]["bostezo"]
             and v.texto_episodio(episodios[16], corto=True).endswith("BOSTEZO"),
             f"diagnóstico: dice qué faltó ({v.texto_episodio(quieta) if quieta else 'sin la mano quieta'})")
-    sin_manos = v.analizar_boca(t, mares)
+    # Sin detección de manos (como en Registro.resultado con sin_manos: los ojos se pasan igual).
+    sin_manos = v.analizar_boca(t, mares, ears_m)
     revisar(sin_manos["bostezos"] == 2, f"sin detección de manos solo cuentan los de boca a la vista: {sin_manos['bostezos']} "
                                         f"(esperados 2: F y G)")
+    # Sin los ojos tampoco: F se ve 1,7 s y se abre de golpe (como un gesto) y no hay con qué confirmarlo; G sí (largo).
+    sin_ojos = v.analizar_boca(t, mares)
+    revisar(sin_ojos["bostezos"] == 1, f"sin manos ni ojos solo cuenta el bostezo largo (G): {sin_ojos['bostezos']}")
     mano_tarde = manos.copy()
     mano_tarde[en(10.0, 12.5)] = 0
     mano_tarde[en(11.2, 12.5)] = 1  # en A la mano llega 1,2 s después de cerrar la boca: ya no es «justo antes»
@@ -289,6 +529,8 @@ def main() -> int:
     revisar(res["bostezos"] == 7 and res["bostezos_tapados"] == 6 and res["parpadeos"] == 1,
             f"en el resultado: {res['bostezos']} bostezos, {res['bostezos_tapados']} tapados y {res['parpadeos']} parpadeo "
             f"(el entrecerrar de los bostezos no cuenta; el de la tos sí, como 1 parpadeo)")
+
+    regresion_bostezos()
 
     print("\n--- avisos ---")
     reg = v.Registro()

@@ -273,8 +273,20 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
   Por eso, durante la medición conviene mirar la ventana de frente.
 - **Bostezos**: MAR (apertura de la boca) = promedio de 3 aperturas internas de los labios / ancho entre las
   comisuras internas. Bostezo = MAR ≥ 0,6 que se mantiene (hasta bajar de 0,45) al menos 1,5 s; hablar abre la
-  boca menos y por menos tiempo. Mientras dura un bostezo los ojos se achican: esos cuadros no cuentan para los
-  parpadeos ni el PERCLOS. La ventana muestra el contador y avisa cuando la boca está muy abierta.
+  boca menos y por menos tiempo. Además tiene que mostrar **al menos una señal de bostezo**: los ojos se
+  entrecierran (EAR suavizado < 85 % del abierto al menos 0,5 s seguidos), la boca sigue abierta 2,5 s o más, o se
+  abrió de a poco (de MAR 0,3 a 0,6 en 0,4 s o más). En las trazas reales, los bostezos simulados quedaron
+  abiertos de 2,3 a 4,8 s, se abrieron en 0,43 a 3,2 s y achicaron los ojos 1,4 s o más. Los gestos de boca muy
+  abierta al hablar se abrieron de golpe (0,14 a 0,29 s), duraron de 0,5 a 1,6 s y casi nunca achicaron los ojos.
+  Uno de ellos (MAR 0,93 durante 1,56 s, ojos al 99-118 %) contaba antes como bostezo. La mandíbula no sirve para
+  distinguirlos: sube igual (+25 %) en los dos. Las tres señales se calculan con lo que pasó hasta cada cuadro y solo
+  pueden pasar de «no» a «sí», así que el contador en vivo no baja. **Límite conocido**: un gesto que mantenga la
+  boca muy abierta 2,5 s o más todavía cuenta. Mientras dura un bostezo los ojos se achican: esos cuadros no
+  cuentan para los parpadeos ni el PERCLOS. La ventana muestra el contador y avisa cuando la boca está muy abierta.
+  Cada bostezo con la boca a la vista se explica en la consola (momento, duración, MAR al empezar, máximo, mediana y
+  al terminar, tiempo de apertura, ojos, mandíbula, si después llegó la mano y qué señales lo hicieron bostezo).
+  Con `--diagnostico` (o `VISION_DIAGNOSTICO=1`) también salen las aperturas descartadas y el motivo. Se ajustan en
+  `config.local.env`: `BOSTEZO_VISTO_OJOS_S` (0,5), `BOSTEZO_LARGO_S` (2,5) y `BOSTEZO_SUBIDA_S` (0,4).
 - **Bostezos tapados con la mano** (en Bolivia, como en otros lugares, se bosteza tapándose la boca, y entonces
   el MAR no sirve): MediaPipe Hands (`hand_landmarker.task`, 1 de cada 2 cuadros, a media resolución) marca
   «mano en la boca» cuando 4 o más de los 21 puntos de una mano caen en el rectángulo de la boca y la nariz.
@@ -326,7 +338,8 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
   `python vision\vision.py --referencia <lpm>`. `validacion.csv` guarda el estimado, la referencia, el error,
   la calidad, los fps y la cara detectada, para calcular el error medio después.
 - **Prueba**: `python vision\pruebas_vision.py` (señales sintéticas: pulso de 72 lpm → 72 ± 3, parpadeos
-  conocidos, PERCLOS, bostezos tapados, lentes, avisos y ventana).
+  conocidos, PERCLOS, bostezos tapados, falsos positivos de bostezo al hablar o gesticular, lentes, avisos y
+  ventana).
 
 ## 9. ESP32: luces y respaldo sin Wi-Fi
 
