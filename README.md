@@ -11,7 +11,7 @@ de Mosquitto, un simulador y los scripts de Windows.
 | **Bri** | Voz (fatiga en la voz) y copiloto por voz; la laptop de la estación (broker e integración) |
 | **Danilo** | Coordinador (calcula el semáforo; mientras tanto corre el coordinador provisional) y firmware del ESP32 (3 LED, zumbador, modo local sin Wi-Fi) |
 | **Sebas** | Paneles (estación, tripulación y Tierra) y prueba de reacción (PVT) |
-| **Erick** | Visión (cámara: pulso sin contacto, parpadeos, PERCLOS y bostezos) |
+| **Erick** | Visión (cámara: parpadeos, PERCLOS y bostezos) |
 | **Adrian** | ESP32 (firmware: pulso, HRV, SpO2, movimiento y semáforo) |
 
 ```
@@ -28,7 +28,7 @@ apto-hoy/
 ├── registrador/          guarda todo apto/# en MongoDB, exporta a CSV y reproduce sesiones
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
 ├── mosquitto/            configuración del broker (evento y desarrollo)
-├── vision/               pulso sin contacto, parpadeos y PERCLOS por cámara (MediaPipe)
+├── vision/               parpadeos, PERCLOS y bostezos por cámara (MediaPipe)
 ├── firmware/             ESP32 (apto_esp32): pulso, HRV, SpO2, movimiento y semáforo (ver firmware/README.md)
 └── datos/                grabaciones e historial (no se sube a Git)
 ```
@@ -57,7 +57,7 @@ Abrir una terminal en la carpeta del proyecto (`.venv\Scripts\activate` primero)
 | Paneles web | `python paneles\servidor.py` y abrir http://localhost:8080 | Estación, tripulación y Tierra (ver la sección 5) |
 | Coordinador provisional | `python coordinador\coordinador_provisional.py` | Calcula el semáforo al terminar el cuestionario de la estación (sección 6) |
 | Registrador | `python registrador\mongo_local.py` y `python registrador\registrador.py` | Guarda cada mensaje en MongoDB (sección 7) |
-| Visión | `python vision\vision.py --ver` (vista previa) o `--persona bri` (una medición) | Malla del rostro, regiones del pulso, pulso y EAR en vivo (sección 8) |
+| Visión | `python vision\vision.py --ver` (vista previa) o `--persona bri` (una medición) | Malla del rostro, EAR, parpadeos y bostezos en vivo (sección 8) |
 | Todo junto | `iniciar.bat dev` | Una ventana por módulo: broker, MongoDB, registrador, voz, copiloto, coordinador provisional, visión y paneles |
 
 Opciones útiles del copiloto: `--sin-llm` (sin Ollama, responde con las fichas), `--sin-voz` (solo texto),
@@ -99,7 +99,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/control/estado_voz` | Voz | Panel | `{"persona", "estado": "grabando" o "listo"}` |
 | `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta", "sesion"}`: pregunta escrita desde la estación |
 | `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador, estación | Cada 1 s: `persona`, `sesion`, `pulso_lpm`, `hrv_rmssd_ms` (RMSSD de 30 s), `spo2`, `dedo`, `movimiento` (g), `calidad` (0 a 1); sin dedo, pulso, HRV y SpO2 en `null`; `"simulado": true` con `MODO_SIMULADO`. El coordinador usa la mediana de las lecturas con dedo y calidad ≥ 0,5: su pulso manda sobre el de la cámara, y la HRV se compara con la línea base. Ver `firmware/README.md` |
-| `apto/{persona}/vision` | Visión (Erick) | Coordinador | `perclos` (fracción de 0 a 1 con los ojos cerrados; acepta también porcentaje), `parpadeos_min`, `bostezos` y `bostezos_min` (incluyen los tapados con la mano), `bostezos_tapados`, `lentes` (true si se midió con lentes puestos: los ojos no cuentan), `pulso_rppg_lpm` (null si la calidad es baja) y `calidad_rppg` (0 a 1), `ear_abierto`, `cabeza_inclinada_pct`, `cara_detectada_pct`, `fps`, `duracion_s`, `avisos`, `linea_base` y la `sesion` de la orden. El coordinador provisional usa el pulso solo si `calidad_rppg` ≥ 0,5, y los parpadeos solo contra la línea base. El módulo usa `ClienteMQTT("vision")` para que la estación lo vea activo. |
+| `apto/{persona}/vision` | Visión (Erick) | Coordinador | `perclos` (fracción de 0 a 1 con los ojos cerrados; acepta también porcentaje), `parpadeos_min`, `bostezos` y `bostezos_min` (incluyen los tapados con la mano), `bostezos_tapados`, `lentes` (true si se midió con lentes puestos: los ojos no cuentan), `ear_abierto`, `cabeza_inclinada_pct`, `cara_detectada_pct`, `fps`, `duracion_s`, `avisos`, `linea_base` y la `sesion` de la orden. El coordinador provisional usa los parpadeos solo contra la línea base. El pulso por cámara (rPPG) se quitó: el pulso es solo el del ESP32. El módulo usa `ClienteMQTT("vision")` para que la estación lo vea activo. |
 | `apto/{persona}/voz` | Voz (Bri) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | PVT-B en el navegador: `rt_media_ms`, `rt_mediana_ms`, `lapsos` (355 ms o más, o sin respuesta en 30 s), `anticipadas` (antes del estímulo o en menos de 100 ms), `lapsos_por_min` y `anticipadas_por_min` (para comparar 3 min con 1 min), `n_estimulos`, `duracion_s`, `linea_base`, `modo_demo` (true = 1 minuto) |
 | `apto/{persona}/dsst` | Panel (Sebas) | Coordinador | Prueba de símbolos (DSST, 90 s, opcional): `correctas`, `incorrectas`, `por_minuto` (correctas por minuto), `duracion_s`, `linea_base` || `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | `kss` (escala de somnolencia de Karolinska, 1 a 9), `kss_texto`, `horas_sueno` (de 0 a 16, de media en media hora), `linea_base` |
@@ -192,9 +192,10 @@ lleva `"aviso_spo2": true` y el motivo «Oxígeno más bajo de lo habitual: repe
 color**. Sacar el dedo o una lectura normal cortan la racha. La estación lo muestra en amarillo debajo del semáforo y
 el copiloto lo dice al final del resumen. Para probarlo: `python herramientas\simulador.py --persona bri --esp32 40
 --spo2 89` durante una sesión, antes del cuestionario.
-**Pulso: manda el sensor.** Si llegan lecturas del ESP32 en la sesión (una por segundo; se usa su mediana), su
-pulso es el que cuenta y el de la cámara (rPPG) no se usa; sin sensor, el de la cámara solo cuenta si
-`calidad_rppg` ≥ 0,5.
+**Pulso: solo el del sensor.** Se usa la mediana de las lecturas del ESP32 de la sesión (una por segundo). El pulso
+por cámara (rPPG) se quitó porque con la luz de la estación no llegaba a la calidad mínima; si un mensaje viejo trae
+`pulso_rppg_lpm`, no se usa. En la pantalla de resultados, «Fatiga por visión» resume la cámara: vale lo que su
+peor indicador (ojos cerrados, parpadeos o bostezos): sin signos, leve o marcada.
 
 **Cómo lo reemplaza Danilo:**
 1. Crear `coordinador\coordinador.py` con `ClienteMQTT("coordinador")`: con ese nombre la estación lo ve como
@@ -233,7 +234,7 @@ Guarda cada mensaje de `apto/#` para validar el sistema después y como respaldo
   es lo que impide que se abra a la red. En la laptop de Bri no se usa porque la máquina virtual de Docker ocupa
   unos 2 GB de RAM que necesitan Ollama y Whisper.
 
-## 8. Visión (pulso sin contacto, parpadeos y PERCLOS)
+## 8. Visión (parpadeos, PERCLOS y bostezos)
 
 `vision\vision.py` (MediaPipe 1.2, API Tasks `FaceLandmarker` y `HandLandmarker`; los modelos `face_landmarker.task`
 y `hand_landmarker.task` van en `modelos\`: los baja `instalar.bat`, o el módulo la primera vez).
@@ -243,7 +244,7 @@ Cámara en `config.env`: `CAMARA=0` (índice; `--listar` muestra las disponibles
 **Con el celular (DroidCam)**: abrir la app en el celular, conectado al mismo Wi-Fi que la laptop; la app muestra
 «WiFi IP» y el puerto 4747. Poner `CAMARA=http://ESA_IP:4747/video` y reiniciar el servicio de visión. No hace falta
 el programa DroidCam de Windows (si se usa, su cámara virtual aparece en `--listar` solo cuando está conectado).
-La cámara del celular suele dar más cuadros por segundo y mejor imagen que la de la laptop, y eso mejora el pulso.
+La cámara del celular suele dar más cuadros por segundo y mejor imagen que la de la laptop, y eso mejora la malla del rostro.
 Solo un programa a la vez puede recibir la imagen de DroidCam.
 
 **DroidCam por cable USB** (Android; no depende del Wi-Fi): activar en el celular las opciones de desarrollador
@@ -255,19 +256,13 @@ de Android SDK Platform-Tools; si está en otro lugar, poner su ruta en `ADB=`.
 | Modo | Qué hace |
 |---|---|
 | `--listar` | Lista las cámaras |
-| `--ver` | Vista previa en vivo (sin medir ni publicar): malla del rostro, regiones del pulso (frente y mejillas), pulso estimado y EAR. `q` o `Esc` para salir |
-| `--persona bri` | Una medición con ventana; `--linea-base`, `--sin-ventana`, `--sin-mqtt`, `--referencia 72` |
-| `--referencia 72` (solo) | Guarda el pulso medido con otro aparato junto al último estimado, en `datos\vision\validacion.csv` |
+| `--ver` | Vista previa en vivo (sin medir ni publicar): malla del rostro, zonas donde se mide la luz (frente y mejillas), EAR, parpadeos y bostezos. `q` o `Esc` para salir |
+| `--persona bri` | Una medición con ventana; `--linea-base`, `--sin-ventana`, `--sin-mqtt`, `--diagnostico` |
 | `--servicio` | Espera `apto/control/orden_vision`. Al recibir la orden **abre sola la ventana** mientras mide (la estación le dice a la persona que ahí ve su rostro), publica `estado_vision` (`midiendo` con los segundos que faltan cada 5 s, y `listo` o `error` con el motivo), cierra la ventana y suelta la cámara. Se anuncia como `ClienteMQTT("vision")` |
 
 Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada medición en
-`datos\vision\historial.jsonl` (con el pulso aunque sea dudoso, para validar).
+`datos\vision\historial.jsonl`.
 
-- **Pulso (rPPG)**: promedio RGB de la frente y las mejillas en cada cuadro, con su hora; se vuelve a muestrear
-  a 30 Hz; método POS (ventanas de 1,6 s); filtro de banda en el espectro de 0,7 a 3 Hz (42 a 180 lpm); el
-  pico da el pulso. **Calidad** = relación señal/ruido del pico (potencia a ±0,1 Hz del pico y de su armónico
-  contra el resto de la banda) llevada a 0..1: `(SNR dB + 3) / 12`. Si es menor que 0,5, **no se publica el
-  número**: va un aviso.
 - **Ojos**: EAR con 6 puntos por ojo. Para los parpadeos y el PERCLOS cuenta el ojo **más abierto** de los dos: un
   parpadeo o un cierre son con los dos ojos, y cerrar uno solo (un guiño) no cuenta. Para los bostezos se usa el
   promedio de los dos. EAR de ojo abierto = mediana de los primeros 5 s.
@@ -319,7 +314,7 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
   condiciones solo pueden pasar de «no» a «sí». Así una decisión tomada no cambia y el contador en vivo nunca
   baja; antes se recalculaba todo con el promedio de la sesión y bajaba al moverse o al cambiar de persona.
   Se publica `bostezos` (todos) y `bostezos_tapados`. Con la mano en la cara,
-  esos cuadros no cuentan para el pulso. Si no se puede usar la detección de manos, se mide igual y va un aviso.
+  esos cuadros no cuentan para medir la luz. Si no se puede usar la detección de manos, se mide igual y va un aviso.
   **Diagnóstico**: cada vez que la mano se va de la boca, la consola explica qué se midió y qué faltó (por
   ejemplo «ojos hasta el 88 % del abierto… los ojos casi no se entrecerraron»); en `--ver` también sale en la
   ventana, y al cerrar se guardan las series (sin imágenes) en `datos\vision\trazas\ver-*.npz`. Los umbrales se
@@ -339,12 +334,9 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
   no detectarse. **Ajuste**: con `--ver` la ventana muestra el puntaje (arriba a la derecha); mirarlo con y sin
   lentes y poner `LENTES_UMBRAL` entre los dos en `config.local.env`. `LENTES_REVISAR=0` lo apaga.
 - **Avisos de calidad**: poca luz (brillo de la piel < 60 de 255), demasiada luz o reflejos (> 210, o más del
-  5 % de la piel saturada), cara no detectada más del 20 % del tiempo, menos de 15 cuadros por segundo y pulso
-  poco confiable. La ventana muestra los de luz en vivo.
-- **Validación**: medir con la cámara y, al mismo tiempo, con otro aparato (oxímetro o reloj); luego
-  `python vision\vision.py --referencia <lpm>`. `validacion.csv` guarda el estimado, la referencia, el error,
-  la calidad, los fps y la cara detectada, para calcular el error medio después.
-- **Prueba**: `python vision\pruebas_vision.py` (señales sintéticas: pulso de 72 lpm → 72 ± 3, parpadeos
+  5 % de la piel saturada), cara no detectada más del 20 % del tiempo, y menos de 15 cuadros por segundo.
+  La ventana muestra los de luz en vivo.
+- **Prueba**: `python vision\pruebas_vision.py` (señales sintéticas: parpadeos
   conocidos, PERCLOS, bostezos tapados, falsos positivos de bostezo al hablar o gesticular, lentes, avisos y
   ventana).
 

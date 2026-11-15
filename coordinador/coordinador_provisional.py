@@ -25,8 +25,6 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
   Voz           "más cansada que su línea base" (de voz_fatiga.py) = 1 (señal débil: nunca 2)
   Visión        PERCLOS (0 a 1): +0,05 = 1, +0,10 = 2     | sin base: 0,15 = 1, 0,25 = 2
                 parpadeos por minuto: +50 % = 1 (solo con base: lo normal varía mucho entre personas; nunca 2)
-                pulso por cámara (pulso_rppg_lpm), SOLO si calidad_rppg >= CALIDAD_RPPG_MIN (0 a 1):
-                +15 % = 1, +30 % = 2                       | sin base: 100 lpm = 1, 120 lpm = 2
                 bostezos (desde 2 en la medición, también los tapados con la mano): 2 por minuto = 1 |
                 con base: 2 por minuto más = 1 (nunca 2)
                 si cara_detectada_pct < CARA_MIN_PCT (50), la visión no cuenta
@@ -34,7 +32,7 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
   ESP32         solo lecturas con dedo y calidad >= 0,5; se usa la mediana de las de la sesión.
                 pulso: +15 % = 1, +30 % = 2 | sin base: 100 = 1, 120 = 2.
                 HRV (RMSSD): 25 % más baja que la base = 1, 50 % = 2 (solo con base).
-                SI HAY PULSO DEL SENSOR, MANDA: el de la cámara no se usa.
+                Es el único pulso: el de la cámara (pulso_rppg_lpm) ya no se mide y, si llega, no se usa.
                 SpO2: NO suma al semáforo. Si durante al menos 20 s seguidos (lecturas con dedo y calidad >= 0,5)
                 el SpO2 está 4 puntos o más por debajo del promedio de la línea base (o por debajo de 92 sin
                 línea base), la evaluación lleva "aviso_spo2": true y el motivo MOTIVO_SPO2, sin cambiar el color.
@@ -59,7 +57,6 @@ from comun.mqtt_cliente import ClienteMQTT, persona_de_tema, tema  # noqa: E402
 TIPOS = ("pvt", "dsst", "cuestionario", "voz", "vision", "esp32")
 ARCHIVO_BASE = config.RAIZ / "datos" / "coordinador" / "linea_base.jsonl"
 ESPERA_S = 1.5  # tras el cuestionario, para juntar los mensajes que todavía vienen en camino
-CALIDAD_RPPG_MIN = 0.5  # calidad_rppg (0 a 1) desde la que se cree el pulso medido por la cámara
 CARA_MIN_PCT = 50       # con la cara visible menos tiempo, la visión no cuenta
 CALIDAD_ESP32_MIN = 0.5  # lecturas del ESP32 con menos calidad (o sin dedo) no cuentan
 # Aviso de SpO2 (no suma al semáforo)
@@ -104,7 +101,7 @@ def _escala(valor, uno, dos) -> int:
     return 2 if valor >= dos else 1 if valor >= uno else 0
 
 
-def _indicadores(tipo: str, m: dict, base: list[dict], hay_pulso_sensor: bool = False) -> list[tuple[int, str]]:
+def _indicadores(tipo: str, m: dict, base: list[dict]) -> list[tuple[int, str]]:
     """(puntos, motivo) de cada indicador de una fuente."""
     r = []
     if tipo == "esp32":
@@ -189,20 +186,7 @@ def _indicadores(tipo: str, m: dict, base: list[dict], hay_pulso_sensor: bool = 
             r.append((1 if bm - bm_b >= 2 else 0, "Más bostezos de lo habitual"))
         elif bm is not None:
             r.append((1 if bm >= 2 else 0, "Bostezos durante la medición"))
-        if rppg_confiable(m) and not hay_pulso_sensor:  # el pulso del sensor manda sobre el de la cámara
-            hr = _num(m.get("pulso_rppg_lpm"))
-            hr_b = _promedio(_num(b.get("pulso_rppg_lpm")) for b in base if rppg_confiable(b))
-            if hr is not None and hr_b:
-                r.append((_escala(hr / hr_b - 1, 0.15, 0.30), "Pulso en reposo más alto de lo habitual"))
-            elif hr is not None:
-                r.append((_escala(hr, 100, 120), "Pulso en reposo alto"))
     return r
-
-
-def rppg_confiable(m: dict) -> bool:
-    """El pulso por cámara solo cuenta si su calidad llega al mínimo (sin calidad, no cuenta)."""
-    calidad = _num(m.get("calidad_rppg"))
-    return calidad is not None and calidad >= CALIDAD_RPPG_MIN and _num(m.get("pulso_rppg_lpm")) is not None
 
 
 def evaluar_spo2(lecturas: list[tuple[float, dict]], base_esp32: list[dict] | None = None) -> tuple[bool, float]:
@@ -238,11 +222,10 @@ def evaluar(datos: dict[str, dict], base: dict[str, list[dict]] | None = None, a
     El aviso de SpO2 agrega MOTIVO_SPO2 pero no cambia el color ni el puntaje."""
     base = base or {}
     senales, motivos = {}, []
-    hay_pulso_sensor = _num((datos.get("esp32") or {}).get("pulso_lpm")) is not None
     for tipo in TIPOS:
         if tipo not in datos:
             continue
-        ind = _indicadores(tipo, datos[tipo], base.get(tipo, []), hay_pulso_sensor)
+        ind = _indicadores(tipo, datos[tipo], base.get(tipo, []))
         if not ind:
             continue  # nada medible (voz sin línea base, visión sin PERCLOS): no cuenta como fuente evaluada
         senales[tipo] = max(p for p, _ in ind)

@@ -1333,18 +1333,15 @@ ${S.modal ? vistaModal() : ""}`;
         error: S.visionMotivo || "La medición con la cámara falló." }[S.camFase];
     const ventanaTexto = !abierto && !mid ? "El módulo de visión no está abierto." : lentes ? textoLentes : mid ? "Tu rostro se ve en la ventana del módulo de visión. Mírala de frente."
       : S.camFase === "listo" ? "Medición terminada. La ventana de visión ya se cerró." : "Al iniciar, el módulo de visión abre su ventana con tu rostro.";
-    const rppg = d ? num(d.pulso_rppg_lpm) : null;
-    const calR = d ? num(d.calidad_rppg) : null;
     const cards = [
       { label: "Parpadeos", valor: d ? fmt(d.parpadeos_min, 1) : "–", unidad: "por minuto", tipo: TIPOS.medido },
       { label: "PERCLOS", valor: d ? fmt(num(d.perclos) > 1 ? num(d.perclos) / 100 : d.perclos) : "–", unidad: "fracción con ojos casi cerrados", tipo: TIPOS.estimado },
       { label: "Bostezos", valor: d ? entero(d.bostezos) : "–", unidad: "boca abierta ≥ 1,5 s", tipo: TIPOS.medido },
       { label: "Bostezos tapados", valor: d && d.bostezos_tapados != null ? entero(d.bostezos_tapados) : "–", unidad: "con la mano (ya incluidos)", tipo: TIPOS.medido },
-      { label: "Pulso sin contacto", valor: !d ? "–" : rppg !== null && calR !== null && calR >= 0.5 ? entero(rppg) : "Calidad baja", unidad: d && calR !== null ? `calidad ${fmt(calR)} · se publica con calidad ≥ 0,5` : "se publica con calidad ≥ 0,5", tipo: TIPOS.estimado, gris: !(rppg !== null && calR !== null && calR >= 0.5) },
     ];
     const restante = S.camFase === "listo" || S.camFase === "error" ? 0 : Math.max(0, Math.min(SEGUNDOS_CAMARA, S.camT));
     return h`<div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:6px;margin-right:auto"><h2 style="font-size:26px;margin:0">Monitoreo con cámara</h2><p style="margin:0;color:var(--color-neutral-300);max-width:60ch">Mira a la cámara de frente durante ${SEGUNDOS_CAMARA} segundos. Mide parpadeos, ojos cerrados, bostezos y pulso sin contacto.</p></div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-right:auto"><h2 style="font-size:26px;margin:0">Monitoreo con cámara</h2><p style="margin:0;color:var(--color-neutral-300);max-width:60ch">Mira a la cámara de frente durante ${SEGUNDOS_CAMARA} segundos. Mide parpadeos, ojos cerrados y bostezos.</p></div>
       ${segOpciones("vista", "Vista de la cámara", [["ventana", "Ventana de visión", S.vista === "ventana", "ph-app-window"], ["web", "Vista web · pendiente", S.vista === "web", "ph-browser"]], "vista")}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start">
@@ -1465,7 +1462,7 @@ ${S.modal ? vistaModal() : ""}`;
     const dur = textoDuracion(seg) + (S.demo ? " (modo demo)" : "");
     const prog = P.fase === "intro" ? `PVT-B · ${dur}` : P.fase === "preparando" ? "Cámara…" : P.fase === "activa" ? pvtRestante() : `${(P.res && P.res.n_estimulos) || 0} estímulos`;
     const camara = !S.camConPvt || P.fase !== "fin" ? ""
-      : S.vision ? alerta(ST.verde, "ph-webcam", "Cámara", "Medición de la cámara recibida: parpadeos, ojos cerrados, bostezos y pulso sin contacto.", "status")
+      : S.vision ? alerta(ST.verde, "ph-webcam", "Cámara", "Medición de la cámara recibida: parpadeos, ojos cerrados y bostezos.", "status")
         : S.estadoVision === "error" ? alerta(ST.amarillo, "ph-webcam", "Cámara", `La cámara no pudo medir: ${S.visionMotivo || "sin motivo"}. La evaluación sigue sin ella.`, "status")
           : alerta(ST.amarillo, "ph-webcam", "Cámara", "Esperando los datos de la cámara…", "status");
     const msg = P.fase === "intro" ? "Toca Empezar cuando estés listo" : P.msg;
@@ -1559,10 +1556,10 @@ ${S.modal ? vistaModal() : ""}`;
   // ================================================================== vista: Resultados
   // Qué motivo del coordinador corresponde a cada indicador (los puntos llegan por fuente, no por indicador).
   const MOTIVO_DE = { "Pulso": /^pulso/i, "HRV (RMSSD)": /variabilidad/i, "Reacción PVT-B": /pvt/i, "Símbolos DSST": /símbolos/i,
-    "Parpadeos": /parpadeos/i, "PERCLOS": /ojos cerrados/i, "Bostezos": /bostezo/i, "Pulso sin contacto": /^pulso/i,
+    "Parpadeos": /parpadeos/i, "PERCLOS": /ojos cerrados/i, "Bostezos": /bostezo/i, "Fatiga por visión": /ojos cerrados|parpadeos|bostezo/i,
     "Cansancio en la voz": /voz/i, "Somnolencia KSS": /karolinska/i, "Horas de sueño": /horas de sueño/i };
   const FUENTE_DE = { "Pulso": "esp32", "HRV (RMSSD)": "esp32", "Reacción PVT-B": "pvt", "Símbolos DSST": "dsst", "Parpadeos": "vision",
-    "PERCLOS": "vision", "Bostezos": "vision", "Pulso sin contacto": "vision", "Cansancio en la voz": "voz", "Somnolencia KSS": "cuestionario", "Horas de sueño": "cuestionario" };
+    "PERCLOS": "vision", "Bostezos": "vision", "Fatiga por visión": "vision", "Cansancio en la voz": "voz", "Somnolencia KSS": "cuestionario", "Horas de sueño": "cuestionario" };
 
   function indicadoresDe(ev) {
     const d = S.sesiones[ev.sesion] || { esp32: [] };
@@ -1612,13 +1609,14 @@ ${S.modal ? vistaModal() : ""}`;
       const pc = num(vi.perclos) !== null && num(vi.perclos) > 1 ? num(vi.perclos) / 100 : vi.perclos;
       out.push({ tipo: "estimado", nombre: "PERCLOS", fuente: "Visión", valor: fmt(pc), unidad: "fracción", puntos: null, nota: "Tiempo con los ojos casi cerrados. Aproximación P80, sin validación clínica." });
       out.push({ tipo: "medido", nombre: "Bostezos", fuente: "Visión", valor: entero(vi.bostezos), unidad: "en la medición", puntos: null, nota: "Boca muy abierta 1,5 s o más. Uno suelto no cuenta." });
-      const cal = num(vi.calidad_rppg);
-      if (num(vi.pulso_rppg_lpm) !== null && cal !== null && cal >= 0.5) {
-        out.push({ tipo: "estimado", nombre: "Pulso sin contacto", fuente: "Visión", valor: entero(vi.pulso_rppg_lpm), unidad: "lpm", calidad: cal, puntos: null,
-          nota: validas.length ? "No cuenta: manda el pulso del sensor." : "Por cámara (rPPG); cuenta porque la calidad llegó a 0,5." });
-      } else {
-        out.push(nd("Pulso sin contacto", "Visión", cal !== null ? `No se publica: la calidad fue ${fmt(cal)} y hace falta 0,5.` : "No se publica: sin calidad suficiente.", cal));
-      }
+      // Fatiga por visión: el resumen del coordinador para la cámara (los puntos de su peor indicador: PERCLOS,
+      // parpadeos o bostezos). Si no está en las señales, la visión no se evaluó (por ejemplo, se vio poco la cara).
+      const fv = num(sen.vision);
+      const lentesTxt = vi.lentes ? " Con lentes puestos: solo cuentan los bostezos." : "";
+      out.push(fv !== null
+        ? { tipo: "estimado", nombre: "Fatiga por visión", fuente: "Visión", valor: ["Sin signos", "Leve", "Marcada"][Math.min(2, Math.max(0, Math.round(fv)))], unidad: "", puntos: null,
+            nota: "Resumen de ojos cerrados, parpadeos y bostezos: vale lo que su peor indicador." + lentesTxt }
+        : nd("Fatiga por visión", "Visión", cara !== null && cara < 50 ? "No se evaluó: la cara se vio menos del 50 % del tiempo." : "El coordinador no la evaluó en esta sesión."));
     } else out.push(nd("Visión", "Visión", "Sin medición de la cámara en esta sesión."));
     const vz = d.voz;
     if (vz && num(vz.indice_cansancio) !== null) {
@@ -1630,8 +1628,7 @@ ${S.modal ? vistaModal() : ""}`;
       out.push({ tipo: "reportado", nombre: "Somnolencia KSS", fuente: "Cuestionario", valor: entero(cu.kss), unidad: "de 9", puntos: null, nota: cu.kss_texto ? `${cu.kss_texto}.` : "Escala de Karolinska." });
       out.push({ tipo: "reportado", nombre: "Horas de sueño", fuente: "Cuestionario", valor: fmt(cu.horas_sueno, 1), unidad: "h", puntos: null, nota: "Se compara con tu línea base (sin línea base: menos de 6 h marca)." });
     } else out.push(nd("Cuestionario", "Cuestionario", "No llegó a esta pantalla."));
-    out.push(nd("Fatiga por visión", "Visión", "El algoritmo todavía no está validado. No se calcula."));
-    for (const it of out) if (it.tipo !== "no_disponible" && !(it.nombre === "Pulso sin contacto" && validas.length)) it.puntos = ptsDe(it.nombre);
+    for (const it of out) if (it.tipo !== "no_disponible") it.puntos = ptsDe(it.nombre);
     return out;
   }
 
@@ -1909,7 +1906,7 @@ ${S.modal ? vistaModal() : ""}`;
       <div style="display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px"><i class="ph ph-sun" style="font-size:16px;color:var(--color-neutral-300)"></i><span>Iluminación</span><span style="margin-left:auto;color:${luzK === "ok" ? ST.verde.fg : luzK == null ? "var(--color-neutral-400)" : ST.amarillo.fg}">${luzK == null ? "Sin medir" : { baja: "Poca luz", ok: "Adecuada", alta: "Demasiada luz" }[luzK]}</span><span style="${MONO};font-size:12px;color:var(--color-neutral-400);min-width:28px;text-align:right">${S.luz == null ? "–" : String(Math.round(S.luz))}</span></div>
         <div style="position:relative;height:6px;border-radius:3px;background:linear-gradient(to right, color-mix(in srgb, var(--st-amarillo) 35%, transparent) 0 20%, color-mix(in srgb, var(--st-verde) 30%, transparent) 20% 82%, color-mix(in srgb, var(--st-amarillo) 35%, transparent) 82%)"><span style="position:absolute;top:-3px;left:${S.luz == null ? "0%" : Math.round((S.luz / 255) * 100) + "%"};width:3px;height:12px;margin-left:-1.5px;border-radius:2px;background:var(--color-text);transition:left .4s"></span></div>
-        <span style="font-size:11px;color:var(--color-neutral-500)">Brillo medio de la imagen. La zona central es la adecuada para medir parpadeos y pulso.</span>
+        <span style="font-size:11px;color:var(--color-neutral-500)">Brillo medio de la imagen. La zona central es la adecuada para medir los ojos y la boca.</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary" type="button" data-click="pruCam" ${si(S.pCam === "pidiendo", "disabled")} style="padding:9px 16px"><i class="ph ph-play"></i>${S.pCam === "on" ? "Reiniciar" : "Probar cámara"}</button>
