@@ -10,7 +10,46 @@
   const DURACION_MS = 8000;
   let uid = 0;
 
-  // Luces de ciudades: siempre las mismas (semilla fija).
+  // Contenido geográfico de Claude Design: las ciudades tienen longitud y latitud reales.
+  const CIUDADES = [[-74.0,40.7],[-118.2,34.1],[-87.6,41.9],[-95.4,29.8],[-80.2,25.8],[-77.0,38.9],[-122.4,37.8],[-79.4,43.7],[-73.6,45.5],[-99.1,19.4],[-84.4,33.7],[-96.8,32.8],[-112.1,33.4],[-104.9,39.7],[-90.2,38.6],[-74.1,4.7],[-79.5,9.0],[-77.0,-12.0],[-78.5,-0.2],[-66.9,10.5],[-70.6,-33.4],[-58.4,-34.6],[-46.6,-23.5],[-43.2,-22.9],[-47.9,-15.8],[-38.5,-12.97],[-34.9,-8.05],[-56.2,-34.9],[-57.6,-25.3],[-68.1,-16.5],[-63.2,-17.8],[-0.1,51.5],[2.35,48.9],[-3.7,40.4],[12.5,41.9],[13.4,52.5],[-9.1,38.7],[4.9,52.4],[16.4,48.2],[3.4,6.5],[31.2,30.0],[-7.6,33.6],[-17.4,14.7],[18.4,-33.9],[28.0,-26.2],[36.8,-1.3]];
+  const CODIGO_BOLIVIA = "068";
+  const GEO_REMOTO = "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json";
+  let geometria = null;
+  let cargaGeo = null;
+  const estadoGeo = new WeakMap();
+
+  // Conserva los continentes antiguos si no hay Internet / fallan las dependencias.
+  async function obtenerGeometria() {
+    if (geometria) return geometria;
+    if (!window.d3 || !window.topojson) return null;
+    if (!cargaGeo) cargaGeo = (async () => {
+      const cargar = async (url) => {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`Geografía no disponible: ${url} (${r.status})`);
+        return r.json();
+      };
+      let topo;
+      try {
+        topo = await cargar("vendor/countries-110m.json");
+      } catch {
+        topo = await cargar(GEO_REMOTO);
+      }
+      const paises = window.topojson.feature(topo, topo.objects.countries);
+      geometria = {
+        tierra: window.topojson.feature(topo, topo.objects.land),
+        fronteras: window.topojson.mesh(topo, topo.objects.countries, (a, b) => a !== b),
+        bolivia: paises.features.find((f) => String(f.id).padStart(3, "0") === CODIGO_BOLIVIA),
+      };
+      return geometria;
+    })().catch((err) => {
+      console.warn("[BeCspace] No se pudo cargar la geografía; se conserva el mapa anterior.", err);
+      cargaGeo = null;
+      return null;
+    });
+    return cargaGeo;
+  }
+
+  // Luces del mapa original: quedan únicamente como respaldo si falla la carga geográfica.
   const LUCES = (() => {
     let s = 11;
     const r = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
@@ -41,7 +80,7 @@
   function html(variante, tono) {
     const u = "bx" + ++uid;
     const id = { ocean: u + "o", shade: u + "s", silver: u + "t", trail: u + "r", body: u + "b", flash: u + "f",
-      glow: u + "g", soft: u + "q", earth: u + "e", text: u + "x", rocket: u + "k" };
+      glow: u + "g", soft: u + "q", earth: u + "e", bglow: u + "w", text: u + "x", rocket: u + "k" };
     const claro = tono === "light";
     const tx = claro
       ? { s0: "#F5F7FA", s1: "#E4E9EE", s2: "#C8D2D9", s3: "#9AA7B2", shadow: "#000", edge: "#000000", ew: "6", eo: "1", og: "#1f6b45", ol: "#165a38" }
@@ -58,6 +97,7 @@
     <linearGradient id="${id.body}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5F7FA"></stop><stop offset="0.55" stop-color="#C8D2D9"></stop><stop offset="1" stop-color="#7d8a95"></stop></linearGradient>
     <radialGradient id="${id.flash}"><stop offset="0" stop-color="#E9FFF0" stop-opacity="1"></stop><stop offset="0.35" stop-color="#6CFF8F" stop-opacity="0.85"></stop><stop offset="1" stop-color="#00C896" stop-opacity="0"></stop></radialGradient>
     <filter id="${id.glow}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"></feGaussianBlur></filter>
+    <filter id="${id.bglow}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2"></feGaussianBlur></filter>
     <filter id="${id.soft}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"></feGaussianBlur></filter>
     <clipPath id="${id.earth}"><circle cx="300" cy="200" r="128"></circle></clipPath>
     <clipPath id="${id.text}"><text ${texto} style="${fuente}">Becspace</text></clipPath>
@@ -79,8 +119,19 @@
   <circle cx="300" cy="200" r="134" style="fill:#00C896;opacity:.38" filter="url(#${id.glow})"></circle>
   <circle cx="300" cy="200" r="128" fill="url(#${id.ocean})"></circle>
   <g clip-path="url(#${id.earth})">
-    <g data-k="land">${TIERRA(0)}${TIERRA(300)}</g>
-    <g data-k="clouds" style="opacity:.18">${NUBES(0, id.soft)}${NUBES(300, id.soft)}</g>
+    <g data-k="legacy-land">${TIERRA(0)}${TIERRA(300)}</g>
+    <g data-k="legacy-clouds" style="opacity:.18">${NUBES(0, id.soft)}${NUBES(300, id.soft)}</g>
+    <g data-k="geo" style="opacity:0">
+      <path data-k="land" style="fill:#2a7a45;stroke:#5ee08f;stroke-width:.6;stroke-opacity:.6"></path>
+      <path data-k="borders" style="fill:none;stroke:#62e39a;stroke-width:.45;stroke-opacity:.45"></path>
+      ${CIUDADES.map((c, i) => `<circle data-city="${i}" r="${i % 5 === 0 ? 1.5 : 1}" style="fill:#d9ff6a;opacity:0"></circle>`).join("")}
+      <g data-k="bolivia" style="opacity:0">
+        <path data-k="bol-glow" filter="url(#${id.bglow})" style="fill:#2bff8a;fill-opacity:.55;stroke:#6CFF8F;stroke-width:3"></path>
+        <path data-k="bol" style="fill:#3cf28c;fill-opacity:.42;stroke:#b9ffd0;stroke-width:.9;stroke-linejoin:round"></path>
+        <circle data-k="cbba-halo" r="5" style="fill:#6CFF8F;opacity:.45" filter="url(#${id.soft})"></circle>
+        <circle data-k="cbba" r="1.8" style="fill:#F4FFF7"></circle>
+      </g>
+    </g>
     <circle cx="300" cy="200" r="128" fill="url(#${id.shade})"></circle>
   </g>
   <path d="M206 108 A128 128 0 0 1 404 124" style="fill:none;stroke:#6CFF8F;stroke-width:3;opacity:.9" filter="url(#${id.soft})"></path>
@@ -108,6 +159,59 @@
   }
 
   const inicio = new WeakMap();
+  // Precarga asíncrona; SVG original sigue funcionando mientras llegan los datos.
+  obtenerGeometria();
+
+  function actualizarGeografia(svg, t, reducido, t0, q) {
+    if (!geometria || !window.d3) return false;
+    let st = estadoGeo.get(svg);
+    if (!st) {
+      const proyeccion = window.d3.geoOrthographic()
+        .translate([300, 200]).scale(128).clipAngle(90).precision(0.6);
+      st = { proyeccion, ruta: window.d3.geoPath(proyeccion), ultimo: -Infinity, primera: false,
+        ciudades: svg.querySelectorAll("[data-city]") };
+      estadoGeo.set(svg, st);
+    }
+    if (!st.primera || (!reducido && t - st.ultimo >= 85)) {
+      st.primera = true; st.ultimo = t;
+      const sec = (t - t0) / 1000;
+      const lam = 62 + (reducido ? 0 : sec * 6);
+      st.proyeccion.rotate([lam, -12, 0]);
+      const p = st.ruta;
+      q("land").setAttribute("d", p(geometria.tierra) || "");
+      q("borders").setAttribute("d", p(geometria.fronteras) || "");
+      const centro = [-lam, 12];
+      const bolC = [-64.7, -16.3];
+      const dist = window.d3.geoDistance(bolC, centro);
+      const vis = Math.max(0, Math.min(1, (1.45 - dist) / 0.35));
+      const bolGroup = q("bolivia");
+      if (vis > 0 && geometria.bolivia) {
+        const d = p(geometria.bolivia) || "";
+        q("bol").setAttribute("d", d);
+        q("bol-glow").setAttribute("d", d);
+        const pulso = reducido ? 0.85 : 0.72 + 0.28 * Math.sin(sec * 2.2);
+        bolGroup.style.opacity = (d ? vis * pulso : 0).toFixed(3);
+        const cb = st.proyeccion([-66.16, -17.39]);
+        if (cb) {
+          for (const k of ["cbba", "cbba-halo"]) {
+            q(k).setAttribute("cx", cb[0]); q(k).setAttribute("cy", cb[1]);
+          }
+        }
+      } else bolGroup.style.opacity = 0;
+      st.ciudades.forEach((n, i) => {
+        const c = CIUDADES[i]; const dd = window.d3.geoDistance(c, centro);
+        if (dd > 1.5) { n.style.opacity = 0; return; }
+        const pos = st.proyeccion(c);
+        if (!pos) { n.style.opacity = 0; return; }
+        n.setAttribute("cx", pos[0]); n.setAttribute("cy", pos[1]);
+        n.style.opacity = (Math.min(1, (1.5 - dd) / 0.4) * 0.85).toFixed(2);
+      });
+      q("legacy-land").style.display = "none";
+      q("legacy-clouds").style.display = "none";
+      q("geo").style.opacity = 1;
+    }
+    return true;
+  }
 
   function cuadro(svg, t, reducido) {
     if (!inicio.has(svg)) inicio.set(svg, t);
@@ -132,10 +236,12 @@
       sp.setAttribute("cy", y + Math.sin((ang * Math.PI) / 180) * 18);
       sp.style.opacity = enTexto ? 0.55 + 0.45 * Math.sin(t / 40) : 0;
     }
-    const seg = (t - t0) / 1000;
-    const tierra = q("land"), nubes = q("clouds");
-    if (tierra) tierra.setAttribute("transform", `translate(${(reducido ? 0 : -((seg * 2.2) % 300)).toFixed(2)} 0)`);
-    if (nubes) nubes.setAttribute("transform", `translate(${(reducido ? 0 : -((seg * 3.4) % 300)).toFixed(2)} 0)`);
+    if (!actualizarGeografia(svg, t, reducido, t0, q)) {
+      const seg = (t - t0) / 1000;
+      const tierra = q("legacy-land"), nubes = q("legacy-clouds");
+      if (tierra) tierra.setAttribute("transform", `translate(${(reducido ? 0 : -((seg * 2.2) % 300)).toFixed(2)} 0)`);
+      if (nubes) nubes.setAttribute("transform", `translate(${(reducido ? 0 : -((seg * 3.4) % 300)).toFixed(2)} 0)`);
+    }
   }
 
   function bucle(t) {
