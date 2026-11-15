@@ -137,7 +137,7 @@ barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siet
   `MQTT_PASS` (puede publicar). Desde otra laptop lleva `MQTT_USER_LECTURA` y `MQTT_PASS_LECTURA` (solo lee).
   Por eso la estación solo funciona en la laptop de Bri. En desarrollo todos quedan vacíos.
 - **Opciones** en `config.env`: `PVT_SEGUNDOS` (60, lo mismo que mide la cámara; 180 = PVT-B de 3 minutos; la casilla «Modo demo» de la estación
-  la baja a 1 minuto y lo anota como `modo_demo: true`), `RETRASO_TIERRA_S` (20 s), `MQTT_WS_PORT` (9001) y
+  la baja a 1 minuto y lo anota como `modo_demo: true`), `RETRASO_TIERRA_S` (2,6 s: ida y vuelta a la Luna; acepta decimales), `MQTT_WS_PORT` (9001) y
   `TRIPULACION` (los botones de la estación y las tarjetas). Si se cambian, hay que reiniciar `servidor.py`.
 - **Examen de voz con variaciones (opcional)**: en el paso de voz se elige la frase: la estándar (por defecto) o
   variaciones de menos a más difícil hasta un trabalenguas. Cada frase tiene su **propia línea base** (una

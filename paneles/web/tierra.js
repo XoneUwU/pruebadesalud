@@ -7,7 +7,7 @@
   const L = Logica;
   const $ = (id) => document.getElementById(id);
 
-  const RETRASO_S = Number.isFinite(Number(CFG.retraso_tierra_s)) ? Number(CFG.retraso_tierra_s) : 20;
+  const RETRASO_S = Number.isFinite(Number(CFG.retraso_tierra_s)) ? Number(CFG.retraso_tierra_s) : 2.6;
   const RETRASO_MS = RETRASO_S * 1000;
   const MAX_TRANSMISIONES = 30;
 

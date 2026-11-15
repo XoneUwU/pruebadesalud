@@ -1963,7 +1963,7 @@ ${S.modal ? vistaModal() : ""}`;
       ["Becspace AI", `${CFG.ollama_model || "–"} · Whisper ${CFG.whisper_model || "–"}`],
       ["PVT", `${segundosPvtConfig()} s (demo ${L.PVT.DEMO_S} s)`],
       ["Base de datos", `MongoDB ${CFG.mongo_host || "127.0.0.1"} · ${CFG.mongo_db || "apto_hoy"}`],
-      ["Tierra", `retraso simulado de ${CFG.retraso_tierra_s ?? 20} s · tierra.html`],
+      ["Tierra", `retraso simulado de ${CFG.retraso_tierra_s ?? 2.6} s · tierra.html`],
     ];
     const privacidad = ["Todo corre en la laptop de la estación, sin internet.", "La imagen de la cámara no se guarda: solo los números calculados.", "MongoDB escucha solo en 127.0.0.1 y no se abre a la red.", "Las otras laptops entran con un usuario de solo lectura."];
     const temas = [["oscuro", "Oscuro", "ph-moon", "#161826", "#10121c", "#232532", "#e9e9ed", "#9184d9"], ["claro", "Claro", "ph-sun", "#e9ebf5", "#dcdff0", "#f7f7fc", "#1c1e2b", "#6a5cc4"]];
