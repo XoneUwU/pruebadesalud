@@ -240,20 +240,20 @@ def probar_historial():
         doc(4, "esp32", {"sesion": s1, "dedo": False, "calidad": 0.9, "pulso_lpm": 150}),  # sin dedo: no cuenta
         doc(10, "pvt", {"sesion": s1, "rt_mediana_ms": 312}),
         doc(20, "vision", {"sesion": s1, "perclos": 8}),  # en porcentaje
-        doc(30, "cuestionario", {"sesion": s1, "kss": 6, "horas_sueno": 5.5}),
+        doc(30, "cuestionario", {"sesion": s1, "horas_sueno": 5.5, "horas_sueno_previa": 6}),
         doc(31, "evaluacion", {"sesion": s1, "color": "verde", "puntaje": 1.0, "motivos": []}),
         doc(40, "evaluacion", {"sesion": s1, "color": "amarillo", "puntaje": 0.75, "motivos": ["Menos de 6 horas de sueño"],
                                "provisional": True}),  # el coordinador recalculó: vale esta
-        doc(100, "cuestionario", {"sesion": s2, "kss": 8}, "eric"),  # sesión sin evaluación: no es fila
+        doc(100, "cuestionario", {"sesion": s2, "horas_sueno": 4, "horas_sueno_previa": 4}, "eric"),  # sesión sin evaluación: no es fila
         doc(200, "evaluacion", {"color": "rojo"}, "eric"),  # sin sesión: no es fila
     ]
     filas = historial.filas_de(docs)
     f = filas[0] if filas else {}
     revisar(len(filas) == 1 and f["id"] == s1 and f["color"] == "amarillo" and f["puntaje"] == 0.75 and f["provisional"],
             f"una fila por sesión con evaluación, con la última evaluación: {[(x['id'], x['color']) for x in filas]}")
-    revisar(f.get("pulso_lpm") == 70 and f.get("pvt_mediana") == 312 and f.get("kss") == 6 and f.get("horas_sueno") == 5.5
+    revisar(f.get("pulso_lpm") == 70 and f.get("pvt_mediana") == 312 and f.get("horas_sueno_48h") == 11.5 and f.get("horas_sueno") == 5.5
             and f.get("perclos") == 0.08 and f.get("tarea") == "caminata espacial",
-            f"pulso = mediana con dedo, PVT, KSS, sueño, PERCLOS en fracción y tarea de la sesión: {f}")
+            f"pulso = mediana con dedo, PVT, sueño de anoche y de 48 h, PERCLOS en fracción y tarea de la sesión: {f}")
     csv_texto = historial.a_csv(filas)
     revisar(csv_texto.startswith("fecha,persona,sesion") and s1 in csv_texto and "Menos de 6 horas de sueño" in csv_texto,
             "a_csv: encabezado, sesión y motivos")

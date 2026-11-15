@@ -11,6 +11,22 @@ code,kbd{font-family:ui-monospace,Menlo,monospace}
 @keyframes barrido{from{transform:translateY(-100%)}to{transform:translateY(100%)}}
 @keyframes brillo{0%{background-position:-200px 0}100%{background-position:200px 0}}
 
+/* Botones con fondo, como en el diseño (nocturne.css los deja transparentes). El menú de la izquierda (.hv-nav) no
+   usa .btn y sigue transparente. */
+.btn{transition:background-color .15s,border-color .15s,color .15s,transform .1s}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn-primary{background:var(--color-accent-800);color:var(--color-accent-100);border-color:var(--color-accent-500)}
+.btn-primary:hover:not(:disabled){background:var(--color-accent-700)}
+.btn-primary:active:not(:disabled){background:var(--color-accent-600)}
+.btn-secondary{background:var(--color-neutral-800);color:var(--color-text);border-color:var(--color-neutral-700)}
+.btn-secondary:hover:not(:disabled){background:var(--color-neutral-700)}
+.btn-secondary:active:not(:disabled){background:var(--color-neutral-600)}
+.btn-ghost{background:var(--color-accent-900);color:var(--color-accent-300);border-color:var(--color-accent-800);padding-inline:10px}
+.btn-ghost:hover:not(:disabled){background:var(--color-accent-800)}
+.btn-ghost:active:not(:disabled){background:var(--color-accent-700)}
+/* Selectores de opciones (tarea, frase, vista, periodo...): con fondo sólido. */
+.seg{background:var(--card-solid)}
+
 /* Estados hover del diseño (style-hover): van con !important porque el estilo base está en línea. */
 .hv-nav:hover,.hv-tab:hover{background:color-mix(in srgb, var(--color-text) 6%, transparent) !important}
 .hv-crew:hover{background:color-mix(in srgb, var(--color-surface) 80%, var(--color-neutral-700)) !important;transform:translateX(3px)}

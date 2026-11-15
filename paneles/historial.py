@@ -24,7 +24,7 @@ TIPOS_FILA = ("evaluacion", "cuestionario", "pvt", "esp32", "vision", "control/s
 TIPOS_SESION = ("evaluacion", "cuestionario", "pvt", "dsst", "esp32", "vision", "voz")
 CALIDAD_ESP32_MIN = 0.5  # como el coordinador: solo lecturas con dedo y calidad >= 0,5
 MAX_DOCUMENTOS = 200_000
-COLUMNAS_CSV = ["fecha", "persona", "sesion", "tarea", "color", "puntaje", "kss", "horas_sueno", "pvt_mediana_ms",
+COLUMNAS_CSV = ["fecha", "persona", "sesion", "tarea", "color", "puntaje", "horas_sueno_48h", "horas_sueno", "pvt_mediana_ms",
                 "pulso_lpm", "perclos", "aviso_spo2", "simulado", "provisional", "motivos"]
 
 _cliente = None
@@ -46,6 +46,14 @@ def _num(x):
     except (TypeError, ValueError):
         return None
     return v if v == v else None  # sin NaN
+
+
+def horas_48h(cu: dict):
+    """Sueño de las últimas 48 h del cuestionario: el total enviado o anoche + la noche anterior."""
+    total = _num(cu.get("horas_sueno_48h"))
+    if total is None and _num(cu.get("horas_sueno")) is not None and _num(cu.get("horas_sueno_previa")) is not None:
+        total = _num(cu.get("horas_sueno")) + _num(cu.get("horas_sueno_previa"))
+    return total
 
 
 def _ms(fecha) -> int:
@@ -96,7 +104,7 @@ def filas_de(docs) -> list[dict]:
             "id": sid, "persona": doc.get("persona") or ev.get("persona"), "fecha": _ms(doc.get("recibido")),
             "color": ev.get("color"), "puntaje": _num(ev.get("puntaje")), "motivos": ev.get("motivos") or [],
             "accion": ev.get("accion"), "tarea": ev.get("tarea") or se.get("tarea") or "",
-            "kss": _num(cu.get("kss")), "horas_sueno": _num(cu.get("horas_sueno")),
+            "horas_sueno_48h": horas_48h(cu), "horas_sueno": _num(cu.get("horas_sueno")),
             "pvt_mediana": _num(pv.get("rt_mediana_ms")),
             "pulso_lpm": round(statistics.median(pulsos), 1) if pulsos else None,
             "perclos": perclos / 100 if perclos is not None and perclos > 1 else perclos,

@@ -411,7 +411,7 @@
               ${enCurso.has(p) ? h`<span class="tag tag-accent" style="${MONO};font-size:10px;gap:5px"><i class="ph-fill ph-circle" style="font-size:7px;animation:pulso 1.4s ease-in-out infinite"></i>EVALUANDO AHORA</span>` : ""}
               <span style="margin-left:auto;display:flex;gap:16px;flex-wrap:wrap;${MONO};font-size:13px;color:var(--color-neutral-200);font-variant-numeric:tabular-nums">
                 <span title="Pulso">${entero(f && f.pulso_lpm)}<span style="color:var(--color-neutral-500);font-size:11px"> lpm</span></span>
-                <span title="Somnolencia KSS">KSS ${entero(f && f.kss)}</span>
+                <span title="Sueño en las últimas 48 h">${fmt(f && f.horas_sueno_48h, 1)}<span style="color:var(--color-neutral-500);font-size:11px"> h/48 h</span></span>
                 <span title="Mediana PVT">${entero(f && f.pvt_mediana)}<span style="color:var(--color-neutral-500);font-size:11px"> ms</span></span>
               </span>
             </span>
@@ -459,7 +459,7 @@
     const vals = filas.map((f) => num(f[k])).filter((v) => v !== null);
     const lo = vals.length ? Math.min(...vals) : null, hi = vals.length ? Math.max(...vals) : null;
     if (k === "puntaje") return ["Puntaje", 0, Math.max(1, hi === null ? 1 : Math.ceil(hi)), Math.max(1, hi === null ? 1 : Math.ceil(hi)) > 1 ? 1 : 0.25, ""];
-    if (k === "kss") return ["Somnolencia KSS", 1, 9, 2, ""];
+    if (k === "horas_sueno_48h") return ["Sueño en 48 h", Math.min(6, lo === null ? 6 : Math.floor(lo)), Math.max(18, hi === null ? 18 : Math.ceil(hi)), 3, " h"];
     if (k === "pvt_mediana") return ["Reacción mediana", Math.min(200, lo === null ? 200 : Math.floor(lo / 50) * 50), Math.max(450, hi === null ? 450 : Math.ceil(hi / 50) * 50), 50, " ms"];
     return ["Horas de sueño", Math.min(3, lo === null ? 3 : Math.floor(lo)), Math.max(9, hi === null ? 9 : Math.ceil(hi)), 2, " h"];
   }
@@ -478,7 +478,7 @@
     const nPag = Math.max(1, Math.ceil(rows.length / POR_PAGINA)); const pag = Math.min(S.hPag, nPag - 1);
     const todos = S.hPersona === "todos";
     const claro = S.tema === "claro";
-    const SER = ["puntaje", "pvt_mediana", "kss", "horas_sueno"];
+    const SER = ["puntaje", "pvt_mediana", "horas_sueno_48h", "horas_sueno"];
     const grid = Array.from({ length: Math.floor((mx - mn) / stp + 1e-9) + 1 }, (_, i) => mn + i * stp);
     const estadoReg = H.estado === "cargando" ? ["ph-circle-notch", "Cargando…"] : H.estado === "ok" ? ["ph-database", `MongoDB de Houston · ${H.filas.length} evaluaciones`] : ["ph-database", "Base de Houston sin respuesta"];
     const vacio = H.estado === "error" ? h`<div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:32px 8px"><i class="ph ph-plugs" style="font-size:28px;color:var(--color-neutral-500)"></i><b style="font-weight:500">No se pudo leer la base</b><span style="font-size:13px;color:var(--color-neutral-400)">${H.motivo}</span><button class="btn btn-secondary" type="button" data-click="recargar" style="margin-top:4px"><i class="ph ph-arrow-clockwise"></i>Reintentar</button></div>`
@@ -522,7 +522,7 @@
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:20px;align-items:start">
     <section style="overflow-x:auto;grid-column:span ${S.w >= 1200 ? 2 : 1}">
       <table class="table" style="min-width:640px">
-        <thead><tr><th>Llegó a Tierra</th><th>Persona</th><th>Estado</th><th>Tarea</th><th style="text-align:right">Puntaje</th><th style="text-align:right">KSS</th><th style="text-align:right">PVT</th><th style="text-align:right">Pulso</th></tr></thead>
+        <thead><tr><th>Llegó a Tierra</th><th>Persona</th><th>Estado</th><th>Tarea</th><th style="text-align:right">Puntaje</th><th style="text-align:right">Sueño 48 h</th><th style="text-align:right">PVT</th><th style="text-align:right">Pulso</th></tr></thead>
         <tbody>
           ${rows.slice(pag * POR_PAGINA, pag * POR_PAGINA + POR_PAGINA).map((f) => { const st = ST[f.color] || ST.sin; return h`<tr data-click="hSel" data-arg="${f.id}" style="cursor:pointer;background-color:${f.id === S.hSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent"}">
               <td style="${MONO};font-size:12px;white-space:nowrap">${fechaCorta(f.llego || f.fecha)} ${horaLarga(f.llego || f.fecha)}</td>
@@ -530,7 +530,7 @@
               <td><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:5px;background:${st.bg};color:${st.fg};${MONO};font-size:11px;font-weight:600"><i class="ph-fill ${st.icon}"></i>${st.word}</span></td>
               <td style="font-size:13px;color:var(--color-neutral-300)">${f.tarea ? cap(f.tarea) : "–"}</td>
               <td style="text-align:right;${MONO}">${fmt(f.puntaje)}</td>
-              <td style="text-align:right;${MONO}">${entero(f.kss)}</td>
+              <td style="text-align:right;${MONO}">${fmt(f.horas_sueno_48h, 1)}</td>
               <td style="text-align:right;${MONO}">${entero(f.pvt_mediana)}</td>
               <td style="text-align:right;${MONO}">${entero(f.pulso_lpm)}</td>
             </tr>`; })}
@@ -553,7 +553,7 @@
           <dt style="color:var(--color-neutral-400)">En Tierra</dt><dd style="margin:0;${MONO}">${cuando(sel.llego || sel.fecha)}:${dd(new Date(sel.llego || sel.fecha).getSeconds())}</dd>
           <dt style="color:var(--color-neutral-400)">Tarea</dt><dd style="margin:0">${sel.tarea ? cap(sel.tarea) : "–"}</dd>
           <dt style="color:var(--color-neutral-400)">Puntaje</dt><dd style="margin:0;${MONO}">${fmt(sel.puntaje)}</dd>
-          <dt style="color:var(--color-neutral-400)">KSS</dt><dd style="margin:0;${MONO}">${entero(sel.kss)} de 9</dd>
+          <dt style="color:var(--color-neutral-400)">Sueño 48 h</dt><dd style="margin:0;${MONO}">${fmt(sel.horas_sueno_48h, 1)} h</dd>
           <dt style="color:var(--color-neutral-400)">Sueño</dt><dd style="margin:0;${MONO}">${fmt(sel.horas_sueno, 1)} h</dd>
           <dt style="color:var(--color-neutral-400)">PVT mediana</dt><dd style="margin:0;${MONO}">${entero(sel.pvt_mediana)} ms</dd>
           <dt style="color:var(--color-neutral-400)">Pulso</dt><dd style="margin:0;${MONO}">${entero(sel.pulso_lpm)} lpm</dd>
@@ -605,7 +605,8 @@
     } else out.push(nd("Cansancio en la voz", "Voz", vz ? "Sin línea base de voz." : "No llegó a Tierra."));
     const cu = ult.cuestionario;
     if (cu) {
-      out.push({ tipo: "reportado", nombre: "Somnolencia KSS", fuente: "Cuestionario", valor: entero(cu.kss), unidad: "de 9", nota: cu.kss_texto ? `${cu.kss_texto}.` : "Escala de Karolinska." });
+      const s48 = num(cu.horas_sueno_48h) !== null ? num(cu.horas_sueno_48h) : num(cu.horas_sueno) !== null && num(cu.horas_sueno_previa) !== null ? num(cu.horas_sueno) + num(cu.horas_sueno_previa) : null;
+      out.push({ tipo: "reportado", nombre: "Sueño en 48 h", fuente: "Cuestionario", valor: fmt(s48, 1), unidad: "h", nota: "Anoche y la noche anterior; menos de 12 h marca (modelo de sueño previo)." });
       out.push({ tipo: "reportado", nombre: "Horas de sueño", fuente: "Cuestionario", valor: fmt(cu.horas_sueno, 1), unidad: "h", nota: "Reportado por la persona." });
     } else out.push(nd("Cuestionario", "Cuestionario", "No llegó a Tierra."));
     return out;

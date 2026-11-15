@@ -14,7 +14,7 @@ from coordinador_provisional import MOTIVO_SPO2, evaluar, evaluar_spo2, guardar_
 
 PVT_BIEN = {"rt_media_ms": 280, "lapsos": 0, "anticipadas": 0, "duracion_s": 180, "lapsos_por_min": 0, "anticipadas_por_min": 0}
 DSST_BIEN = {"correctas": 60, "incorrectas": 1, "por_minuto": 40, "duracion_s": 90}
-CUEST_BIEN = {"kss": 3, "horas_sueno": 7.5}
+CUEST_BIEN = {"horas_sueno": 7.5, "horas_sueno_previa": 7.5}
 
 
 def sesion(**cambios) -> dict:
@@ -32,9 +32,15 @@ BASE = {"pvt": [{"rt_media_ms": 250, "lapsos_por_min": 0}, {"rt_media_ms": 250, 
 # (nombre, datos, línea base, color esperado, motivos que deben estar)
 CASOS = [
     ("todo normal, sin línea base", sesion(), None, "verde", []),
-    ("Karolinska 7", sesion(cuestionario={"kss": 7}), None, "amarillo", ["Somnolencia alta según la escala de Karolinska"]),
+    ("48 h: 11 h de sueño (1 punto)", sesion(cuestionario={"horas_sueno": 6, "horas_sueno_previa": 5}), None, "amarillo",
+     ["Menos de 12 horas de sueño en las últimas 48 horas"]),
+    ("48 h: 7,5 h de sueño (2 puntos)", sesion(cuestionario={"horas_sueno": 6, "horas_sueno_previa": 1.5}), None, "rojo",
+     ["Muy poco sueño en las últimas 48 horas"]),
+    ("48 h: el total enviado manda", sesion(cuestionario={"horas_sueno_48h": 11}), None, "amarillo",
+     ["Menos de 12 horas de sueño en las últimas 48 horas"]),
     ("3,5 h de sueño (2 puntos)", sesion(cuestionario={"horas_sueno": 3.5}), None, "rojo", ["Menos de 4 horas de sueño"]),
-    ("3 fuentes moderadas", sesion(pvt={"rt_media_ms": 360}, dsst={"por_minuto": 22}, cuestionario={"kss": 7}), None, "rojo",
+    ("3 fuentes moderadas", sesion(pvt={"rt_media_ms": 360}, dsst={"por_minuto": 22},
+     cuestionario={"horas_sueno": 6, "horas_sueno_previa": 5}), None, "rojo",
      ["Reacción lenta en la prueba PVT", "Pocos aciertos en la prueba de símbolos"]),
     ("PVT modo demo: 2 lapsos en 1 min", sesion(pvt={"lapsos": 2, "duracion_s": 60, "lapsos_por_min": 2}), None, "amarillo",
      ["Varios lapsos de atención en la prueba PVT"]),
@@ -66,7 +72,7 @@ CASOS = [
      ["Bostezos durante la medición"]),
     ("visión con base: +60 % parpadeos", sesion(vision={"perclos": 0.05, "parpadeos_min": 24}),
      {"vision": [{"perclos": 0.05, "parpadeos_min": 15}]}, "amarillo", ["Más parpadeos de lo habitual"]),
-    ("solo el cuestionario (DSST omitido)", {"cuestionario": {"kss": 4, "horas_sueno": 7}}, None, "verde", []),
+    ("solo el cuestionario (DSST omitido)", {"cuestionario": {"horas_sueno": 7, "horas_sueno_previa": 7}}, None, "verde", []),
 ]
 
 
@@ -148,7 +154,7 @@ def main() -> int:
     for _ in range(3):  # sin dedo o con mala calidad: no cuentan
         coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": 130, "dedo": False, "calidad": 0})
         coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": 130, "dedo": True, "calidad": 0.2})
-    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s9", "kss": 3, "horas_sueno": 8})
+    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s9", "horas_sueno": 8, "horas_sueno_previa": 8})
     s = coord.sesiones[("sebas", "s9")]
     s["timer"].cancel()
     coord._publicar("sebas", "s9")
@@ -163,7 +169,7 @@ def main() -> int:
     coord._al_sesion("apto/control/sesion", {"persona": "sebas", "tarea": "caminata espacial", "sesion": "s10"})
     for _ in range(40):
         coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "pulso_lpm": 72, "spo2": 89, "dedo": True, "calidad": 0.9})
-    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s10", "kss": 3, "horas_sueno": 8})
+    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s10", "horas_sueno": 8, "horas_sueno_previa": 8})
     s10 = coord.sesiones[("sebas", "s10")]
     s10["timer"].cancel()
     s10["esp32"] = [(1000.0 + i, m) for i, (_, m) in enumerate(s10["esp32"])]
@@ -227,7 +233,7 @@ def main() -> int:
                                             "calidad": 0.9, "fase": "midiendo"})
     for m in prueba_musculo():
         coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "sesion": "s11", **m})
-    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s11", "kss": 3, "horas_sueno": 8})
+    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s11", "horas_sueno": 8, "horas_sueno_previa": 8})
     s11 = coord.sesiones[("sebas", "s11")]
     s11["timer"].cancel()
     coord._publicar("sebas", "s11")

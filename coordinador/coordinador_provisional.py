@@ -20,8 +20,10 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
                 anticipadas por minuto: 2 o más = 1
   Símbolos      aciertos por minuto: -10 % = 1, -20 % = 2 | sin base: menos de 25 = 1, menos de 15 = 2
                 errores: 3 más que la base = 1            | sin base: 5 o más = 1
-  Cuestionario  Karolinska: 7 = 1, 8 o 9 = 2 (escala absoluta, sin base)
-                horas de sueño: 1,5 h menos = 1, 3 h menos = 2 | sin base: menos de 6 = 1, menos de 4 = 2
+  Cuestionario  sueño en las últimas 48 h (anoche + la noche anterior): menos de 12 = 1, menos de 8 = 2
+                (escala absoluta, sin base; 12 h en 48 h es el mínimo del modelo de sueño previo de Dawson y
+                McCulloch, usado en la gestión del riesgo de fatiga; el 8 es del prototipo y hay que calibrarlo)
+                horas de sueño anoche: 1,5 h menos = 1, 3 h menos = 2 | sin base: menos de 6 = 1, menos de 4 = 2
   Voz           "más cansada que su línea base" (de voz_fatiga.py) = 1 (señal débil: nunca 2)
   Visión        PERCLOS (0 a 1): +0,05 = 1, +0,10 = 2     | sin base: 0,15 = 1, 0,25 = 2
                 parpadeos por minuto: +50 % = 1 (solo con base: lo normal varía mucho entre personas; nunca 2)
@@ -150,10 +152,12 @@ def _indicadores(tipo: str, m: dict, base: list[dict]) -> list[tuple[int, str]]:
         else:
             r.append((1 if (inc or 0) >= 5 else 0, "Varios errores en la prueba de símbolos"))
     elif tipo == "cuestionario":
-        kss = _num(m.get("kss"))
-        if kss is not None:
-            r.append((2, "Somnolencia muy alta según la escala de Karolinska") if kss >= 8 else
-                     (1 if kss >= 7 else 0, "Somnolencia alta según la escala de Karolinska"))
+        h48 = _num(m.get("horas_sueno_48h"))
+        if h48 is None and _num(m.get("horas_sueno")) is not None and _num(m.get("horas_sueno_previa")) is not None:
+            h48 = _num(m.get("horas_sueno")) + _num(m.get("horas_sueno_previa"))
+        if h48 is not None:
+            r.append((2, "Muy poco sueño en las últimas 48 horas") if h48 < 8 else
+                     (1 if h48 < 12 else 0, "Menos de 12 horas de sueño en las últimas 48 horas"))
         h, h_b = _num(m.get("horas_sueno")), _promedio(_num(b.get("horas_sueno")) for b in base)
         if h is not None and h_b is not None:
             falta = h_b - h

@@ -3,14 +3,14 @@
  *  Panel           evaluaciones de apto/+/evaluacion (retenidas), recomendación de logica.js, módulos activos,
  *                  aviso de SpO2 y últimas respuestas del copiloto
  *  Evaluación      inicio, dispositivo (ESP32), voz (orden al módulo de voz), reacción PVT-B con la cámara al
- *                  costado (orden al módulo de visión, sin ventana), símbolos DSST (opcional), cuestionario de
- *                  Karolinska y espera del coordinador (trayectoria del cohete)
+ *                  costado (orden al módulo de visión, sin ventana), símbolos DSST (obligatoria), cuestionario de
+ *                  sueño (anoche y la noche anterior: sueño en 48 h) y espera del coordinador (trayectoria del cohete)
  *  Pruebas         cámara y micrófono de este navegador (getUserMedia), sin guardar imagen ni audio
  *  Resultados      semáforo, motivos, aviso de SpO2, copiloto (pregunta escrita o por voz) e indicadores
  *  Historial       /historial.json de servidor.py (MongoDB del registrador)
  *  Configuración   íconos, tema, preferencias visuales y datos de config.env
  *
- * Atajos para probar: estacion.html?pantalla=historial · estacion.html?paso=reaccion&persona=bri (&demo=1, &dsst=1).
+ * Atajos para probar: estacion.html?pantalla=historial · estacion.html?paso=reaccion&persona=bri (&demo=1).
  * Con ?paso= no se publica la sesión. */
 (function () {
   "use strict";
@@ -35,13 +35,13 @@
     reportado: { label: "Reportado", icon: "ph-chat-centered-text", fg: "var(--color-neutral-300)", help: "Lo responde la persona en el cuestionario." },
     no_disponible: { label: "No disponible", icon: "ph-prohibit", fg: "var(--color-neutral-500)", help: "No se calcula o la calidad no alcanzó; nunca se muestra un número." },
   };
-  const THEME_DARK = { "--color-bg": "#060913", "--color-surface": "rgba(22,28,48,0.82)", "--color-text": "#F4F6FF", "--color-neutral-300": "#A7B3CC", "--color-divider": "rgba(125,145,210,0.16)", "--nav-bg": "rgba(8,14,34,0.74)", "--card-edge": "rgba(125,145,210,0.18)", "--shadow-sm": "0 0 0 1px rgba(125,145,210,0.18), 0 12px 36px rgba(0,0,0,0.22)", "--st-verde": "oklch(0.80 0.10 160)", "--st-verde-bg": "oklch(0.32 0.045 160)", "--st-amarillo": "oklch(0.85 0.10 85)", "--st-amarillo-bg": "oklch(0.34 0.05 80)", "--st-rojo": "oklch(0.76 0.11 25)", "--st-rojo-bg": "oklch(0.32 0.06 22)", "--ink": "black" };
+  const THEME_DARK = { "--color-bg": "#060913", "--color-surface": "#161c30", "--color-text": "#F4F6FF", "--color-neutral-300": "#A7B3CC", "--color-divider": "rgba(125,145,210,0.16)", "--nav-bg": "rgba(8,14,34,0.74)", "--card-edge": "rgba(125,145,210,0.18)", "--shadow-sm": "0 0 0 1px rgba(125,145,210,0.18), 0 12px 36px rgba(0,0,0,0.22)", "--st-verde": "oklch(0.80 0.10 160)", "--st-verde-bg": "oklch(0.32 0.045 160)", "--st-amarillo": "oklch(0.85 0.10 85)", "--st-amarillo-bg": "oklch(0.34 0.05 80)", "--st-rojo": "oklch(0.76 0.11 25)", "--st-rojo-bg": "oklch(0.32 0.06 22)", "--ink": "black", "--card-solid": "#151b2e" };
   const THEME_LIGHT = {
     "--color-bg": "#e9ebf5", "--color-surface": "#f7f7fc", "--color-text": "#1c1e2b", "--color-accent": "#6a5cc4", "--color-divider": "color-mix(in srgb, #1c1e2b 14%, transparent)",
     "--color-neutral-100": "#1f2129", "--color-neutral-200": "#2f3240", "--color-neutral-300": "#454857", "--color-neutral-400": "#5a5e6e", "--color-neutral-500": "#6e7285", "--color-neutral-600": "#9397ab", "--color-neutral-700": "#b2b6ca", "--color-neutral-800": "#d3d6e4", "--color-neutral-900": "#e2e4ef",
     "--color-accent-100": "#1e1a3a", "--color-accent-200": "#2b2560", "--color-accent-300": "#4a3f99", "--color-accent-400": "#5d50b5", "--color-accent-500": "#6a5cc4", "--color-accent-600": "#8a7ed6", "--color-accent-700": "#c4bdf5", "--color-accent-800": "#ddd8fb", "--color-accent-900": "#ecebfd",
     "--shadow-sm": "0 0 0 1px #d3d6e4, 0 1px 3px rgba(30,30,70,0.06)", "--shadow-md": "0 0 0 1px #c9cde0, 0 6px 18px rgba(30,30,70,0.12)", "--shadow-lg": "0 0 0 1px #b2b6ca, 0 16px 40px rgba(30,30,70,0.18)",
-    "--st-verde": "oklch(0.45 0.10 160)", "--st-verde-bg": "oklch(0.92 0.04 160)", "--st-amarillo": "oklch(0.48 0.09 70)", "--st-amarillo-bg": "oklch(0.93 0.05 85)", "--st-rojo": "oklch(0.50 0.14 25)", "--st-rojo-bg": "oklch(0.93 0.035 22)", "--ink": "#d9dcea", "--nav-bg": "rgba(240,242,250,0.78)", "--card-edge": "rgba(90,100,160,0.16)",
+    "--st-verde": "oklch(0.45 0.10 160)", "--st-verde-bg": "oklch(0.92 0.04 160)", "--st-amarillo": "oklch(0.48 0.09 70)", "--st-amarillo-bg": "oklch(0.93 0.05 85)", "--st-rojo": "oklch(0.50 0.14 25)", "--st-rojo-bg": "oklch(0.93 0.035 22)", "--ink": "#d9dcea", "--card-solid": "#f7f8fc", "--nav-bg": "rgba(240,242,250,0.78)", "--card-edge": "rgba(90,100,160,0.16)",
   };
   const ICONOS = [["ph-star-four", "Estrella"], ["ph-rocket-launch", "Cohete"], ["ph-triangle", "Triángulo"], ["ph-moon-stars", "Luna"], ["ph-diamond", "Diamante"], ["ph-hexagon", "Hexágono"], ["ph-heart", "Corazón"], ["ph-lightning", "Rayo"], ["ph-crown-simple", "Corona"], ["ph-square", "Cuadrado"]];
   const ICONOS_DEF = { bri: "ph-star-four", danilo: "ph-rocket-launch", sebas: "ph-triangle", eric: "ph-moon-stars", adrian: "ph-diamond" };
@@ -116,19 +116,19 @@
     conexion: "conectando", conexionTexto: "Conectando…",
     modulos: {},
     evaluaciones: {},     // persona -> última evaluación (en orden de llegada, como el copiloto)
-    ultimas: {},          // persona -> {pulso, pulsoLlegada, kss, pvt}
+    ultimas: {},          // persona -> {pulso, pulsoLlegada, sueno48, pvt}
     sesiones: {},         // id de sesión -> {esp32: [...], vision, voz, pvt, dsst, cuestionario}
     copiloto: [],         // respuestas del copiloto, la más nueva primero
     pendientes: [],       // preguntas sin respuesta todavía: {persona, pregunta, desde}
     tareaSesion: "", tareaElegida: "",
     // evaluación
-    paso: "inicio", persona: "", tarea: "", lineaBase: false, demo: false, conDsst: false, sesion: "", inicio: 0,
+    paso: "inicio", persona: "", tarea: "", lineaBase: false, demo: false, sesion: "", inicio: 0,
     esp32: null, esp32Llegada: 0, esp32Tarde: false, ppg: [], latido: 0, musculo: [],
     vision: null, estadoVision: "", visionRestantes: null, visionMotivo: "", visionMensaje: "", camFase: "lista", camInicio: 0, camT: SEGUNDOS_CAMARA, vista: "ventana",
     fraseVoz: "estandar", vozFase: "inicio", vozMsg: "", vozInicio: 0, vozPct: 0, voz: null,
     pvt: { fase: "intro", msg: "", cont: "", contColor: "", res: null },
     dsst: { fase: "intro", res: null, clave: [], actual: 0 },
-    kss: null, horas: 7,
+    horas: 7, horasPrevia: 7,
     anal: { t0: 0, comparando: false, vencida: false, listo: false },
     // resultados
     resPersona: "", chat: { persona: "", sesion: "" }, escuchando: false, escuchaTexto: "",
@@ -256,7 +256,7 @@
     }
     const u = S.ultimas[persona] || (S.ultimas[persona] = {});
     if (tipo === "esp32" && num(datos.pulso_lpm) !== null) { u.pulso = num(datos.pulso_lpm); u.pulsoLlegada = Date.now(); u.pulsoSimulado = datos.simulado; }
-    if (tipo === "cuestionario" && num(datos.kss) !== null) u.kss = num(datos.kss);
+    if (tipo === "cuestionario" && L.horasSueno48(datos) !== null) u.sueno48 = L.horasSueno48(datos);
     if (tipo === "pvt" && num(datos.rt_mediana_ms) !== null) u.pvt = num(datos.rt_mediana_ms);
 
     if (tipo === "evaluacion") {
@@ -309,7 +309,7 @@
 
   // La cámara ya no tiene paso propio: mide durante la prueba de reacción (pvtPreparar), para que nadie pase un
   // minuto quieto mirando la cámara sin nada que hacer.
-  function pasosActivos() { return PASOS.filter((p) => p !== "camara" && (p !== "simbolos" || S.conDsst)); }
+  function pasosActivos() { return PASOS.filter((p) => p !== "camara"); }  // la prueba de símbolos es obligatoria
   function mover(d) {
     const l = pasosActivos();
     const i = l.indexOf(S.paso);
@@ -342,7 +342,7 @@
     Object.assign(S, {
       persona: "", tarea: "", lineaBase: false, sesion: "", inicio: 0, esp32: null, esp32Llegada: 0, esp32Tarde: false,
       vision: null, estadoVision: "", visionRestantes: null, visionMotivo: "", visionMensaje: "", camFase: "lista", camT: SEGUNDOS_CAMARA,
-      voz: null, vozFase: "inicio", vozMsg: "", vozPct: 0, fraseVoz: "estandar", kss: null, horas: 7,
+      voz: null, vozFase: "inicio", vozMsg: "", vozPct: 0, fraseVoz: "estandar", horas: 7, horasPrevia: 7,
       pvt: { fase: "intro", msg: "", cont: "", contColor: "", res: null }, dsst: { fase: "intro", res: null, clave: [], actual: 0 },
       anal: { t0: 0, comparando: false, vencida: false, listo: false },
     });
@@ -691,9 +691,8 @@
 
   // Cuestionario y espera del coordinador ----------------------
   function enviarCuestionario() {
-    if (S.kss === null) return;
-    const texto = (L.KSS.find(([n]) => n === S.kss) || [])[1];
-    publicar(`apto/${S.persona}/cuestionario`, { kss: S.kss, kss_texto: texto, horas_sueno: S.horas, linea_base: S.lineaBase });
+    publicar(`apto/${S.persona}/cuestionario`, { horas_sueno: S.horas, horas_sueno_previa: S.horasPrevia,
+      horas_sueno_48h: S.horas + S.horasPrevia, linea_base: S.lineaBase });
     irA("resultado");
   }
 
@@ -714,11 +713,10 @@
     despues(700, () => {
       limpiarTemporizadores();
       abrirResultado(persona, sesion);
-      const demo = S.demo, dsstOn = S.conDsst;
-      entrarInicio();  // la próxima vez, Evaluación empieza de cero (modo demo y símbolos quedan como estaban)
+      const demo = S.demo;
+      entrarInicio();  // la próxima vez, Evaluación empieza de cero (el modo demo queda como estaba)
       S.paso = "inicio";
       S.demo = demo;
-      S.conDsst = dsstOn;
     });
   }
 
@@ -807,13 +805,13 @@
     });
   }
 
-  /** Con el historial, el Panel muestra pulso, KSS y PVT de la última evaluación aunque la página se haya abierto después. */
+  /** Con el historial, el Panel muestra pulso, sueño en 48 h y PVT de la última evaluación aunque la página se haya abierto después. */
   function completarUltimas(filas) {
     const porPersona = {};
     for (const f of filas) if (!porPersona[f.persona] || porPersona[f.persona].fecha < f.fecha) porPersona[f.persona] = f;
     for (const [p, f] of Object.entries(porPersona)) {
       const u = S.ultimas[p] || (S.ultimas[p] = {});
-      if (u.kss == null && f.kss != null) u.kss = f.kss;
+      if (u.sueno48 == null && f.horas_sueno_48h != null) u.sueno48 = f.horas_sueno_48h;
       if (u.pvt == null && f.pvt_mediana != null) u.pvt = f.pvt_mediana;
       if (u.pulso == null && f.pulso_lpm != null) u.pulso = f.pulso_lpm;
     }
@@ -951,8 +949,8 @@
     pvt: (a, e) => { e.preventDefault(); pvtResponder(tiempoDelEvento(e)); },
     dsstEmpezar,
     dsst: (n) => dsstResponder(Number(n)),
-    kss: (n) => { S.kss = Number(n); pedirPintar(); },
     horas: (d) => { S.horas = Math.max(0, Math.min(16, S.horas + Number(d))); pedirPintar(); },
+    horasPrevia: (d) => { S.horasPrevia = Math.max(0, Math.min(16, S.horasPrevia + Number(d))); pedirPintar(); },
     enviarCuestionario,
     // resultados
     preguntar: (a, e, form) => { const i = form.querySelector("input"); preguntar(i.value); i.value = ""; },
@@ -1007,7 +1005,7 @@
   const alerta = (st, icono, titulo, texto, rol = "status") => h`<div role="${rol}" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:var(--radius-md);background:${st.bg}">
       <i class="ph ${icono}" style="font-size:18px;color:${st.fg};flex:none"></i>
       <span style="display:flex;flex-direction:column;gap:2px"><b style="font-weight:500;color:${st.fg}">${titulo}</b><span style="font-size:13px;color:var(--color-neutral-200)">${texto}</span></span></div>`;
-  const nota = (icono, texto) => h`<div style="display:flex;gap:10px;align-items:center;padding:14px 16px;border-radius:var(--radius-md);box-shadow:inset 0 0 0 1px var(--color-neutral-800)"><i class="ph ${icono}" style="font-size:18px;color:var(--color-neutral-400);flex:none"></i><span style="font-size:13px;color:var(--color-neutral-300);text-wrap:pretty">${texto}</span></div>`;
+  const nota = (icono, texto) => h`<div style="display:flex;gap:10px;align-items:center;padding:14px 16px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge)"><i class="ph ${icono}" style="font-size:18px;color:var(--color-neutral-400);flex:none"></i><span style="font-size:13px;color:var(--color-neutral-300);text-wrap:pretty">${texto}</span></div>`;
   const cmd = (texto) => h`<code style="${MONO};font-size:11px;color:var(--color-neutral-500);word-break:break-all">${texto}</code>`;
   const segOpciones = (nombre, aria, opciones, accion, extra = "") => h`<div class="seg" role="radiogroup" aria-label="${aria}" style="flex-wrap:wrap;${extra}">
       ${opciones.map(([valor, label, on, icono]) => h`<label class="seg-opt"><input type="radio" name="${nombre}" ${si(on, "checked")} data-change="${accion}" data-arg="${valor}">${icono ? h`<i class="ph ${icono}"></i>` : ""}<span>${label}</span></label>`)}
@@ -1152,7 +1150,7 @@ ${S.modal ? vistaModal() : ""}`;
               ${e && e.simulado ? tagMono("SIMULADO") : ""}
               <span style="margin-left:auto;display:flex;gap:16px;flex-wrap:wrap;${MONO};font-size:13px;color:var(--color-neutral-200);font-variant-numeric:tabular-nums">
                 <span title="${vivo ? "Pulso en vivo" : "Pulso"}">${vivo ? h`<i class="ph-fill ph-heart" style="color:var(--st-rojo);font-size:11px;animation:pulso 1.4s ease-in-out infinite"></i> ` : ""}${entero(u.pulso)}<span style="color:var(--color-neutral-500);font-size:11px"> lpm</span></span>
-                <span title="Somnolencia KSS">KSS ${entero(u.kss)}</span>
+                <span title="Sueño en las últimas 48 h">${fmt(u.sueno48, 1)}<span style="color:var(--color-neutral-500);font-size:11px"> h/48 h</span></span>
                 <span title="Mediana PVT">${entero(u.pvt)}<span style="color:var(--color-neutral-500);font-size:11px"> ms</span></span>
               </span>
             </span>
@@ -1180,7 +1178,7 @@ ${S.modal ? vistaModal() : ""}`;
           <span style="font-size:13px;color:var(--color-neutral-200)">Es un aviso, no cambia el color. Repetir la medición con el sensor antes de la tarea.</span>
         </div>
       </section>` : ""}
-      <section style="display:flex;gap:12px;padding:14px 16px;border-radius:var(--radius-md);box-shadow:inset 0 0 0 1px var(--color-neutral-800)">
+      <section style="display:flex;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge)">
         <i class="ph ph-info" style="font-size:20px;color:var(--color-neutral-400);flex:none"></i>
         <span style="font-size:13px;color:var(--color-neutral-300);text-wrap:pretty">Indicadores orientativos para apoyar la decisión. No es un diagnóstico médico ni una certificación de aptitud.</span>
       </section>
@@ -1214,7 +1212,7 @@ ${S.modal ? vistaModal() : ""}`;
     const pl = pasosActivos();
     const cur = pl.indexOf(S.paso);
     const wide = S.w >= 900;
-    const vistas = { inicio: vInicio, dispositivo: vDispositivo, camara: vCamara, voz: vVoz, reaccion: vPvt, simbolos: vDsst, cuestionario: vKss, resultado: vAnalizando };
+    const vistas = { inicio: vInicio, dispositivo: vDispositivo, camara: vCamara, voz: vVoz, reaccion: vPvt, simbolos: vDsst, cuestionario: vCuestionario, resultado: vAnalizando };
     return h`<div data-k="eval-${S.paso}" style="display:contents">
   <ol aria-label="Pasos de la evaluación" style="display:flex;gap:4px;margin:0;padding:0;list-style:none;overflow-x:auto;scrollbar-width:none">
     ${pl.map((p, i) => h`<li aria-current="${i === cur ? "step" : "false"}" style="flex:1 0 auto;display:flex;align-items:center;gap:7px;padding:8px 10px 0;border-top:2px solid ${i === cur ? "var(--color-accent)" : i < cur ? "var(--color-accent-700)" : "var(--color-neutral-800)"};color:${i === cur ? "var(--color-text)" : i < cur ? "var(--color-neutral-300)" : "var(--color-neutral-500)"};font-size:12px;white-space:nowrap">
@@ -1235,7 +1233,6 @@ ${S.modal ? vistaModal() : ""}`;
     const opciones = [
       ["lineaBase", "Medición de línea base", "Márcala si hoy descansaste bien: esta medición servirá para comparar las siguientes."],
       ["demo", `Modo demo (${L.PVT.DEMO_S} s)`, `La reacción (con la cámara) dura ${textoDuracion(L.PVT.DEMO_S)} en vez de ${textoDuracion(segundosPvtConfig())}, y los símbolos ${textoDuracion(L.DSST_DEMO_S)} en vez de ${textoDuracion(L.DSST_SEGUNDOS)}. Queda anotado en el resultado.`],
-      ["conDsst", `Prueba de símbolos (${segundosDsst()} s)`, "Además de la de reacción: emparejar símbolos con números lo más rápido posible."],
     ];
     const crew = CFG.tripulacion || [];
     return h`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:24px;align-items:start">
@@ -1323,7 +1320,7 @@ ${S.modal ? vistaModal() : ""}`;
       <span style="font-size:12px;color:var(--color-neutral-400)">Onda ilustrativa al ritmo del pulso medido: el ESP32 envía un resumen por segundo (pulso, HRV de 30 s, SpO₂), no la señal cruda. Cuadrícula de 1 segundo.</span>
     </div>
     ${vMusculo(d)}
-    <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--color-neutral-200)" aria-live="polite"><i class="ph-fill ${iconoEstado[0]}" style="color:${iconoEstado[1]};font-size:18px"></i>${textoEstado}${d && d.simulado ? h` ${tagMono("SIMULADO")}` : ""}</div>
+    <div style="display:flex;align-items:center;gap:10px;font-size:14px;color:var(--color-neutral-200);padding:12px 16px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge)" aria-live="polite"><i class="ph-fill ${iconoEstado[0]}" style="color:${iconoEstado[1]};font-size:18px"></i>${textoEstado}${d && d.simulado ? h` ${tagMono("SIMULADO")}` : ""}</div>
     ${botonera(botonPrimario("Continuar", "siguiente", !d || (d.fase ? !d.medicion_lista : d.dedo === false)))}`;
   }
 
@@ -1547,7 +1544,7 @@ ${S.modal ? vistaModal() : ""}`;
     ${Object.keys(frases).length > 1 ? segOpciones("frase", "Frase a leer", Object.entries(frases).map(([k, f]) => [k, f.titulo, S.fraseVoz === k]), "frase", "align-self:flex-start") : ""}
     <blockquote style="margin:0;padding:22px 26px;border-radius:var(--radius-lg);background:var(--color-surface);font-size:22px;line-height:1.5;max-width:46ch;text-wrap:pretty;box-shadow:inset 2px 0 0 var(--color-accent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">${frases[S.fraseVoz].texto || "(Falta la frase: revisen voz/voz_fatiga.py)"}</blockquote>
     <span style="font-size:12px;color:var(--color-neutral-400);margin-top:-10px">${notaFrase}</span>
-    <div style="display:flex;align-items:center;gap:14px;max-width:640px">
+    <div style="display:flex;align-items:center;gap:14px;max-width:640px;padding:14px 18px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge), var(--shadow-sm)">
       <div style="display:flex;align-items:flex-end;gap:3px;height:36px;flex:none" aria-hidden="true">
         ${Array.from({ length: 14 }, (_, i) => h`<span style="width:4px;border-radius:2px;height:${grabando ? 8 + Math.round(Math.abs(Math.sin(t * 3 + i)) * 26) : 6}px;background:${grabando ? "var(--color-accent)" : "var(--color-neutral-700)"};transition:height .2s"></span>`)}
       </div>
@@ -1732,25 +1729,46 @@ ${S.modal ? vistaModal() : ""}`;
     ${botonera(primario, { sinOmitir: activa })}`;
   }
 
-  function vKss() {
-    return h`${titulo("Cuestionario", "Dos preguntas rápidas sobre cómo te sientes ahora.")}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:24px;align-items:start">
-      <div style="display:flex;flex-direction:column;gap:6px">
-        ${etq("¿Cuánto sueño tienes ahora? · Karolinska")}
-        ${L.KSS.map(([n, label]) => h`<button type="button" class="hv-acc6" aria-pressed="${String(S.kss === n)}" data-click="kss" data-arg="${n}" style="display:flex;align-items:center;gap:14px;min-height:44px;padding:6px 14px;border:0;border-radius:var(--radius-md);background:${S.kss === n ? "var(--color-accent-900)" : "var(--color-surface)"};box-shadow:${S.kss === n ? "inset 0 0 0 1px var(--color-accent)" : "none"};text-align:left;cursor:pointer;font-size:14px">
-            <b style="${MONO};font-size:18px;font-weight:500;width:20px;text-align:center;color:var(--color-accent)">${n}</b><span>${label}</span></button>`)}
+  /** Contador de horas de sueño (de media en media hora). */
+  function contadorHoras(pregunta, ayuda, valor, accion) {
+    return h`<div style="display:flex;flex-direction:column;gap:10px">
+      ${etq(pregunta)}
+      <div style="display:flex;align-items:center;gap:14px;padding:16px;${TARJ}">
+        <button class="btn btn-secondary btn-icon" type="button" aria-label="Media hora menos" data-click="${accion}" data-arg="-0.5" style="width:48px;height:48px;font-size:20px"><i class="ph ph-minus"></i></button>
+        <output aria-live="polite" style="${MONO};font-size:44px;min-width:100px;text-align:center;font-variant-numeric:tabular-nums">${fmt(valor, 1)}</output>
+        <button class="btn btn-secondary btn-icon" type="button" aria-label="Media hora más" data-click="${accion}" data-arg="0.5" style="width:48px;height:48px;font-size:20px"><i class="ph ph-plus"></i></button>
+        <span style="color:var(--color-neutral-300)">horas</span>
       </div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        ${etq("¿Cuántas horas dormiste anoche?")}
-        <div style="display:flex;align-items:center;gap:14px;padding:16px;${TARJ}">
-          <button class="btn btn-secondary btn-icon" type="button" aria-label="Media hora menos" data-click="horas" data-arg="-0.5" style="width:48px;height:48px;font-size:20px"><i class="ph ph-minus"></i></button>
-          <output aria-live="polite" style="${MONO};font-size:44px;min-width:100px;text-align:center;font-variant-numeric:tabular-nums">${fmt(S.horas, 1)}</output>
-          <button class="btn btn-secondary btn-icon" type="button" aria-label="Media hora más" data-click="horas" data-arg="0.5" style="width:48px;height:48px;font-size:20px"><i class="ph ph-plus"></i></button>
-          <span style="color:var(--color-neutral-300)">horas</span>
-        </div>
-      </div>
+      <span style="font-size:12px;color:var(--color-neutral-400)">${ayuda}</span>
+    </div>`;
+  }
+
+  function vCuestionario() {
+    const total = S.horas + S.horasPrevia;
+    const nivel = L.nivelSueno48(total);
+    const st = { bien: ST.verde, poco: ST.amarillo, "muy poco": ST.rojo }[nivel];
+    const textoNivel = { bien: `Suficiente: ${L.SUENO_48H.MINIMO_H} h o más`, poco: `Menos de ${L.SUENO_48H.MINIMO_H} h`, "muy poco": `Menos de ${L.SUENO_48H.MUY_POCO_H} h` }[nivel];
+    const tope = 24;  // escala de la barra: 0 a 24 h en 48 h
+    const marca = (L.SUENO_48H.MINIMO_H / tope) * 100;
+    return h`${titulo("Cuestionario de sueño", "Dos preguntas rápidas: cuánto dormiste anoche y la noche anterior. Con las dos se calcula tu sueño de las últimas 48 horas.", "max-width:64ch")}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:24px;align-items:start">
+      ${contadorHoras("¿Cuántas horas dormiste anoche?", "Solo el sueño de la noche, sin siestas.", S.horas, "horas")}
+      ${contadorHoras("¿Y la noche anterior?", "La noche de antes de anoche.", S.horasPrevia, "horasPrevia")}
     </div>
-    ${botonera(botonPrimario("Ver resultado", "enviarCuestionario", S.kss === null || !PUEDE), { sinOmitir: true })}`;
+    <section aria-label="Sueño en las últimas 48 horas" style="display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--radius-lg);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge), var(--shadow-sm)">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <i class="ph ph-moon-stars" style="font-size:22px;color:var(--color-accent)"></i>
+        <span style="display:flex;flex-direction:column;gap:2px;margin-right:auto">${etq("Sueño en las últimas 48 horas")}<span style="${MONO};font-size:34px;font-variant-numeric:tabular-nums;line-height:1.1">${fmt(total, 1)}<span style="font-size:15px;color:var(--color-neutral-400)"> h</span></span></span>
+        ${pildora(st, textoNivel)}
+      </div>
+      <div style="position:relative;height:10px;border-radius:5px;background:var(--color-neutral-800)" role="meter" aria-label="Horas de sueño en 48 horas" aria-valuemin="0" aria-valuemax="${tope}" aria-valuenow="${total}">
+        <div style="height:100%;width:${Math.min(100, (total / tope) * 100)}%;border-radius:5px;background:${st.fg};transition:width .2s"></div>
+        <span title="Mínimo: ${L.SUENO_48H.MINIMO_H} h" style="position:absolute;top:-4px;bottom:-4px;left:${marca}%;width:2px;background:var(--color-text);opacity:.6"></span>
+      </div>
+      <div style="position:relative;height:14px;${MONO};font-size:11px;color:var(--color-neutral-500)"><span style="position:absolute;left:0">0 h</span><span style="position:absolute;left:${marca}%;transform:translateX(-50%);white-space:nowrap">mínimo ${L.SUENO_48H.MINIMO_H} h</span><span style="position:absolute;right:0">${tope} h</span></div>
+      <span style="font-size:12px;color:var(--color-neutral-400);text-wrap:pretty">Se usa el modelo de sueño previo de la gestión del riesgo de fatiga: dormir menos de ${L.SUENO_48H.MINIMO_H} horas en 48 horas aumenta el riesgo de errores por fatiga. Las horas de anoche también se comparan con tu línea base.</span>
+    </section>
+    ${botonera(botonPrimario("Ver resultado", "enviarCuestionario", !PUEDE), { sinOmitir: true })}`;
   }
 
   // Trayectoria del cohete en la pantalla de análisis: dos curvas de Bézier en un lienzo de 1000 × 190.
@@ -1823,9 +1841,9 @@ ${S.modal ? vistaModal() : ""}`;
   // Qué motivo del coordinador corresponde a cada indicador (los puntos llegan por fuente, no por indicador).
   const MOTIVO_DE = { "Pulso": /^pulso/i, "HRV (RMSSD)": /variabilidad/i, "Reacción PVT-B": /pvt/i, "Símbolos DSST": /símbolos/i,
     "Parpadeos": /parpadeos/i, "PERCLOS": /ojos cerrados/i, "Bostezos": /bostezo/i, "Fatiga por visión": /ojos cerrados|parpadeos|bostezo/i,
-    "Cansancio en la voz": /voz/i, "Somnolencia KSS": /karolinska/i, "Horas de sueño": /horas de sueño/i };
+    "Cansancio en la voz": /voz/i, "Sueño en 48 h": /48 horas/i, "Horas de sueño": /horas de sueño/i };
   const FUENTE_DE = { "Pulso": "esp32", "HRV (RMSSD)": "esp32", "Reacción PVT-B": "pvt", "Símbolos DSST": "dsst", "Parpadeos": "vision",
-    "PERCLOS": "vision", "Bostezos": "vision", "Fatiga por visión": "vision", "Cansancio en la voz": "voz", "Somnolencia KSS": "cuestionario", "Horas de sueño": "cuestionario" };
+    "PERCLOS": "vision", "Bostezos": "vision", "Fatiga por visión": "vision", "Cansancio en la voz": "voz", "Sueño en 48 h": "cuestionario", "Horas de sueño": "cuestionario" };
 
   function indicadoresDe(ev) {
     const d = S.sesiones[ev.sesion] || { esp32: [] };
@@ -1903,7 +1921,7 @@ ${S.modal ? vistaModal() : ""}`;
     } else out.push(nd("Cansancio en la voz", "Voz", vz ? (vz.estado_voz === "sin línea base" ? "Sin línea base de voz: hacen falta 3 mediciones." : "No se pudo comparar.") : "Se omitió o no llegó a esta pantalla."));
     const cu = d.cuestionario;
     if (cu) {
-      out.push({ tipo: "reportado", nombre: "Somnolencia KSS", fuente: "Cuestionario", valor: entero(cu.kss), unidad: "de 9", puntos: null, nota: cu.kss_texto ? `${cu.kss_texto}.` : "Escala de Karolinska." });
+      out.push({ tipo: "reportado", nombre: "Sueño en 48 h", fuente: "Cuestionario", valor: fmt(L.horasSueno48(cu), 1), unidad: "h", puntos: null, nota: `Anoche y la noche anterior. Menos de ${L.SUENO_48H.MINIMO_H} h marca (modelo de sueño previo).` });
       out.push({ tipo: "reportado", nombre: "Horas de sueño", fuente: "Cuestionario", valor: fmt(cu.horas_sueno, 1), unidad: "h", puntos: null, nota: "Se compara con tu línea base (sin línea base: menos de 6 h marca)." });
     } else out.push(nd("Cuestionario", "Cuestionario", "No llegó a esta pantalla."));
     for (const it of out) if (it.tipo !== "no_disponible") it.puntos = ptsDe(it.nombre);
@@ -2037,7 +2055,7 @@ ${S.modal ? vistaModal() : ""}`;
     const vals = filas.map((f) => num(f[k])).filter((v) => v !== null);
     const lo = vals.length ? Math.min(...vals) : null, hi = vals.length ? Math.max(...vals) : null;
     if (k === "puntaje") return ["Puntaje", 0, 1, 0.25, ""];
-    if (k === "kss") return ["Somnolencia KSS", 1, 9, 2, ""];
+    if (k === "horas_sueno_48h") return ["Sueño en 48 h", Math.min(6, lo === null ? 6 : Math.floor(lo)), Math.max(18, hi === null ? 18 : Math.ceil(hi)), 3, " h"];
     if (k === "pvt_mediana") return ["Reacción mediana", Math.min(200, lo === null ? 200 : Math.floor(lo / 50) * 50), Math.max(450, hi === null ? 450 : Math.ceil(hi / 50) * 50), 50, " ms"];
     return ["Horas de sueño", Math.min(3, lo === null ? 3 : Math.floor(lo)), Math.max(9, hi === null ? 9 : Math.ceil(hi)), 2, " h"];
   }
@@ -2059,7 +2077,7 @@ ${S.modal ? vistaModal() : ""}`;
     const nums = []; for (let i = 0; i < nPag; i++) if (i === 0 || i === nPag - 1 || Math.abs(i - pag) <= 1) nums.push(i); else if (nums[nums.length - 1] !== -1) nums.push(-1);
     const todos = S.hPersona === "todos";
     const claro = S.tema === "claro";
-    const SER = ["puntaje", "pvt_mediana", "kss", "horas_sueno"];
+    const SER = ["puntaje", "pvt_mediana", "horas_sueno_48h", "horas_sueno"];
     const grid = Array.from({ length: Math.floor((mx - mn) / stp + 1e-9) + 1 }, (_, i) => mn + i * stp);
     const estadoReg = H.estado === "cargando" ? ["ph-circle-notch", "Cargando desde MongoDB…"] : H.estado === "ok" ? ["ph-database", `MongoDB · ${H.filas.length} evaluaciones`] : ["ph-database", "Requiere el registrador (MongoDB local)"];
     const vacio = H.estado === "error" ? h`<div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:32px 8px"><i class="ph ph-plugs" style="font-size:28px;color:var(--color-neutral-500)"></i><b style="font-weight:500">No se pudo leer el historial</b><span style="font-size:13px;color:var(--color-neutral-400)">${H.motivo}</span><span style="font-size:13px;color:var(--color-neutral-400)">Abran MongoDB y el registrador: ${cmd("python registrador\\mongo_local.py")} y ${cmd("python registrador\\registrador.py")}.</span><button class="btn btn-secondary" type="button" data-click="recargarHistorial" style="margin-top:4px"><i class="ph ph-arrow-clockwise"></i>Reintentar</button></div>`
@@ -2076,7 +2094,7 @@ ${S.modal ? vistaModal() : ""}`;
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <h2 style="font-size:15px;margin:0;margin-right:auto">Evolución · ${sl}${todos ? " · toda la tripulación" : " · " + L.nombre(S.hPersona)}</h2>
       <div role="tablist" aria-label="Indicador" style="display:flex;gap:2px;flex-wrap:wrap">
-        ${SER.map((k) => h`<button role="tab" type="button" class="hv-tab" aria-selected="${String(S.serie === k)}" data-click="serie" data-arg="${k}" style="padding:6px 10px;border:0;background:transparent;border-radius:var(--radius-sm);color:${S.serie === k ? "var(--color-accent-200)" : "var(--color-neutral-400)"};box-shadow:${S.serie === k ? "inset 0 -2px 0 var(--color-accent)" : "none"};font-size:13px;cursor:pointer">${serieDe(k, rows)[0]}</button>`)}
+        ${SER.map((k) => h`<button role="tab" type="button" class="hv-tab" aria-selected="${String(S.serie === k)}" data-click="serie" data-arg="${k}" style="padding:6px 10px;border:0;background:${S.serie === k ? "var(--color-accent-900)" : "var(--card-solid)"};border-radius:var(--radius-sm);color:${S.serie === k ? "var(--color-accent-200)" : "var(--color-neutral-400)"};box-shadow:${S.serie === k ? "inset 0 -2px 0 var(--color-accent)" : "none"};font-size:13px;cursor:pointer">${serieDe(k, rows)[0]}</button>`)}
       </div>
     </div>
     ${todos ? h`<div style="display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center">
@@ -2094,7 +2112,7 @@ ${S.modal ? vistaModal() : ""}`;
         const fg = claro ? { verde: "oklch(0.72 0.15 158)", amarillo: "oklch(0.80 0.15 80)", rojo: "oklch(0.70 0.17 25)" }[f.color] || ST.sin.fg : (ST[f.color] || ST.sin).fg;
         const sombra = claro ? "drop-shadow(0 0 1px rgba(255,255,255,1)) drop-shadow(0 1px 2px rgba(40,40,90,.35))" : "drop-shadow(0 0 1.5px rgba(6,9,19,.95)) drop-shadow(0 1px 2px rgba(6,9,19,.8))";
         const titulo2 = `${L.nombre(f.persona)} · ${fechaCorta(f.fecha)} · ${(ST[f.color] || ST.sin).word}`;
-        return h`<button type="button" class="hv-icono" data-click="hSel" data-arg="${f.id}" title="${titulo2}" aria-label="${titulo2}" style="position:absolute;left:${(xs(i) / 800) * 100}%;top:${(y(num(f[S.serie])) / 220) * 100}%;transform:translate(-50%,-50%) scale(${f.id === S.hSel ? "1.35" : "1"});width:28px;height:28px;padding:0;border:0;background:transparent;display:grid;place-items:center;color:${fg};cursor:pointer;filter:${sombra};transition:transform .15s"><i class="ph-fill ${icono(f.persona)}" style="font-size:24px"></i></button>`;
+        return h`<button type="button" class="hv-icono" data-click="hSel" data-arg="${f.id}" title="${titulo2}" aria-label="${titulo2}" style="position:absolute;left:${(xs(i) / 800) * 100}%;top:${(y(num(f[S.serie])) / 220) * 100}%;transform:translate(-50%,-50%) scale(${f.id === S.hSel ? "1.35" : "1"});width:28px;height:28px;padding:0;border:0;border-radius:50%;background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge);display:grid;place-items:center;color:${fg};cursor:pointer;filter:${sombra};transition:transform .15s"><i class="ph-fill ${icono(f.persona)}" style="font-size:24px"></i></button>`;
       }) : ""}
       ${asc.filter((_, i) => i % Math.max(1, Math.ceil(asc.length / 8)) === 0).map((f) => h`<span style="position:absolute;bottom:0;left:${(xs(asc.indexOf(f)) / 800) * 100}%;transform:translateX(-50%);${MONO};font-size:10px;color:var(--color-neutral-500)">${fechaCorta(f.fecha)}</span>`)}
     </div>
@@ -2103,14 +2121,14 @@ ${S.modal ? vistaModal() : ""}`;
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:20px;align-items:start">
     <section style="overflow-x:auto;grid-column:span ${S.w >= 1200 ? 2 : 1}">
       <table class="table" style="min-width:560px">
-        <thead><tr><th>Fecha</th><th>Persona</th><th>Estado</th><th style="text-align:right">Puntaje</th><th style="text-align:right">KSS</th><th style="text-align:right">Sueño</th><th style="text-align:right">PVT</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Persona</th><th>Estado</th><th style="text-align:right">Puntaje</th><th style="text-align:right">Sueño 48 h</th><th style="text-align:right">Anoche</th><th style="text-align:right">PVT</th></tr></thead>
         <tbody>
           ${rows.slice(pag * POR_PAGINA, pag * POR_PAGINA + POR_PAGINA).map((f) => { const st = ST[f.color] || ST.sin; return h`<tr data-click="hSel" data-arg="${f.id}" style="cursor:pointer;background-color:${f.id === S.hSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent"}">
               <td style="${MONO};font-size:12px;white-space:nowrap">${fechaCorta(f.fecha)} ${horaCorta(f.fecha)}</td>
               <td>${L.nombre(f.persona)}${f.simulado ? h` <span class="tag tag-neutral" style="${MONO};font-size:9px;padding:1px 6px">SIM</span>` : ""}</td>
               <td><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:5px;background:${st.bg};color:${st.fg};${MONO};font-size:11px;font-weight:600"><i class="ph-fill ${st.icon}"></i>${st.word}</span></td>
               <td style="text-align:right;${MONO}">${fmt(f.puntaje)}</td>
-              <td style="text-align:right;${MONO}">${entero(f.kss)}</td>
+              <td style="text-align:right;${MONO}">${fmt(f.horas_sueno_48h, 1)}</td>
               <td style="text-align:right;${MONO}">${fmt(f.horas_sueno, 1)}</td>
               <td style="text-align:right;${MONO}">${entero(f.pvt_mediana)}</td>
             </tr>`; })}
@@ -2120,7 +2138,7 @@ ${S.modal ? vistaModal() : ""}`;
           <span style="${MONO};font-size:12px;color:var(--color-neutral-400);margin-right:auto">${pag * POR_PAGINA + 1}–${Math.min(rows.length, pag * POR_PAGINA + POR_PAGINA)} de ${rows.length} evaluaciones</span>
           <button class="btn btn-ghost" type="button" data-click="hPag" data-arg="${pag - 1}" ${si(pag === 0, "disabled")} aria-label="Página anterior" style="padding:6px 8px"><i class="ph ph-caret-left"></i></button>
           ${nums.map((i) => (i === -1 ? h`<span style="padding:0 4px;color:var(--color-neutral-500)">…</span>`
-            : h`<button type="button" class="hv-acc6" data-click="hPag" data-arg="${i}" aria-current="${i === pag ? "page" : "false"}" style="min-width:32px;height:32px;padding:0 8px;border:0;border-radius:var(--radius-sm);background:${i === pag ? "var(--color-accent-900)" : "transparent"};box-shadow:${i === pag ? "inset 0 0 0 1px var(--color-accent)" : "inset 0 0 0 1px var(--color-neutral-800)"};color:${i === pag ? "var(--color-accent-200)" : "var(--color-neutral-300)"};${MONO};font-size:12px;cursor:pointer">${i + 1}</button>`))}
+            : h`<button type="button" class="hv-acc6" data-click="hPag" data-arg="${i}" aria-current="${i === pag ? "page" : "false"}" style="min-width:32px;height:32px;padding:0 8px;border:0;border-radius:var(--radius-sm);background:${i === pag ? "var(--color-accent-900)" : "var(--card-solid)"};box-shadow:${i === pag ? "inset 0 0 0 1px var(--color-accent)" : "inset 0 0 0 1px var(--card-edge)"};color:${i === pag ? "var(--color-accent-200)" : "var(--color-neutral-300)"};${MONO};font-size:12px;cursor:pointer">${i + 1}</button>`))}
           <button class="btn btn-ghost" type="button" data-click="hPag" data-arg="${pag + 1}" ${si(pag >= nPag - 1, "disabled")} aria-label="Página siguiente" style="padding:6px 8px"><i class="ph ph-caret-right"></i></button>
         </nav>` : ""}
       ${rows.length ? "" : vacio}
@@ -2132,8 +2150,8 @@ ${S.modal ? vistaModal() : ""}`;
         <dl style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0;font-size:13px">
           <dt style="color:var(--color-neutral-400)">Puntaje</dt><dd style="margin:0;${MONO}">${fmt(sel.puntaje)}</dd>
           <dt style="color:var(--color-neutral-400)">Tarea</dt><dd style="margin:0">${sel.tarea ? cap(sel.tarea) : "–"}</dd>
-          <dt style="color:var(--color-neutral-400)">KSS</dt><dd style="margin:0;${MONO}">${entero(sel.kss)} de 9</dd>
-          <dt style="color:var(--color-neutral-400)">Sueño</dt><dd style="margin:0;${MONO}">${fmt(sel.horas_sueno, 1)} h</dd>
+          <dt style="color:var(--color-neutral-400)">Sueño en 48 h</dt><dd style="margin:0;${MONO}">${fmt(sel.horas_sueno_48h, 1)} h</dd>
+          <dt style="color:var(--color-neutral-400)">Sueño anoche</dt><dd style="margin:0;${MONO}">${fmt(sel.horas_sueno, 1)} h</dd>
           <dt style="color:var(--color-neutral-400)">PVT mediana</dt><dd style="margin:0;${MONO}">${entero(sel.pvt_mediana)} ms</dd>
           <dt style="color:var(--color-neutral-400)">Pulso</dt><dd style="margin:0;${MONO}">${entero(sel.pulso_lpm)} lpm</dd>
           <dt style="color:var(--color-neutral-400)">PERCLOS</dt><dd style="margin:0;${MONO}">${fmt(sel.perclos)}</dd>
@@ -2206,7 +2224,7 @@ ${S.modal ? vistaModal() : ""}`;
         <svg viewBox="0 0 400 80" style="width:100%;height:auto;display:block" role="img" aria-label="Forma de onda del micrófono"><line x1="0" y1="40" x2="400" y2="40" style="stroke:var(--color-neutral-800);stroke-width:1"></line><polyline points="${S.wave.length ? S.wave.map((v, i) => ((i * 400) / 63).toFixed(1) + "," + (40 - Math.max(-1, Math.min(1, v * 4)) * 36).toFixed(1)).join(" ") : "0,40 400,40"}" style="fill:none;stroke:var(--color-accent);stroke-width:1.5;stroke-linejoin:round"></polyline></svg>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
-        ${[["Nivel", micOn ? String(db(S.level)) : "–", "dBFS ahora"], ["Pico", micOn ? String(pkDb) : "–", "dBFS máximo"], ["Ruido de fondo", micOn && nDb != null ? String(nDb) : "–", "dBFS en silencio"]].map(([label, valor, unidad]) => h`<div style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:var(--radius-md);box-shadow:inset 0 0 0 1px var(--color-neutral-800)"><span style="font-size:11px;color:var(--color-neutral-400)">${label}</span><span style="${MONO};font-size:22px;font-variant-numeric:tabular-nums">${valor}</span><span style="font-size:10px;color:var(--color-neutral-500)">${unidad}</span></div>`)}
+        ${[["Nivel", micOn ? String(db(S.level)) : "–", "dBFS ahora"], ["Pico", micOn ? String(pkDb) : "–", "dBFS máximo"], ["Ruido de fondo", micOn && nDb != null ? String(nDb) : "–", "dBFS en silencio"]].map(([label, valor, unidad]) => h`<div style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge)"><span style="font-size:11px;color:var(--color-neutral-400)">${label}</span><span style="${MONO};font-size:22px;font-variant-numeric:tabular-nums">${valor}</span><span style="font-size:10px;color:var(--color-neutral-500)">${unidad}</span></div>`)}
       </div>
       <div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-md);box-shadow:inset 2px 0 0 var(--color-accent);background:color-mix(in srgb, var(--color-accent) 6%, transparent)"><i class="ph ph-quotes" style="font-size:18px;color:var(--color-accent)"></i><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:var(--color-neutral-400)">Di en voz alta, con tono normal</span><span style="font-size:15px">Estación lista para la evaluación de la tripulación.</span></span></div>
       ${S.micErr ? h`<div role="alert" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:var(--radius-md);background:var(--st-rojo-bg)"><i class="ph ph-x-circle" style="font-size:18px;color:var(--st-rojo);flex:none"></i><span style="font-size:13px;color:var(--color-text)">${S.micErr}</span></div>` : ""}
@@ -2258,14 +2276,14 @@ ${S.modal ? vistaModal() : ""}`;
       ${TRIPULACION().map((p) => h`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="width:64px;font-size:14px">${L.nombre(p)}</span>
           <div role="radiogroup" aria-label="Icono de ${L.nombre(p)}" style="display:flex;gap:4px;flex-wrap:wrap">
-            ${ICONOS.map(([ic, label]) => { const on = icono(p) === ic; return h`<button type="button" class="hv-acc6" role="radio" aria-checked="${String(on)}" aria-label="${label}" data-click="icono" data-arg="${p}|${ic}" style="width:30px;height:30px;padding:0;border:0;border-radius:7px;display:grid;place-items:center;background:${on ? "var(--color-accent-900)" : "transparent"};box-shadow:${on ? "inset 0 0 0 1px var(--color-accent)" : "inset 0 0 0 1px var(--color-neutral-800)"};color:${on ? "var(--color-accent-200)" : "var(--color-neutral-300)"};cursor:pointer"><i class="ph-fill ${ic}" style="font-size:18px"></i></button>`; })}
+            ${ICONOS.map(([ic, label]) => { const on = icono(p) === ic; return h`<button type="button" class="hv-acc6" role="radio" aria-checked="${String(on)}" aria-label="${label}" data-click="icono" data-arg="${p}|${ic}" style="width:30px;height:30px;padding:0;border:0;border-radius:7px;display:grid;place-items:center;background:${on ? "var(--color-accent-900)" : "var(--card-solid)"};box-shadow:${on ? "inset 0 0 0 1px var(--color-accent)" : "inset 0 0 0 1px var(--color-neutral-800)"};color:${on ? "var(--color-accent-200)" : "var(--color-neutral-300)"};cursor:pointer"><i class="ph-fill ${ic}" style="font-size:18px"></i></button>`; })}
           </div>
         </div>`)}
     </section>
     <section style="${SECC};gap:14px">
       <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-circle-half" style="color:var(--color-accent)"></i>Apariencia</h2>
       <div role="radiogroup" aria-label="Modo de color" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
-        ${temas.map(([k, label, ic, bg, nav, card, ink, acc]) => { const on = S.tema === k; return h`<button type="button" class="hv-acc6" role="radio" aria-checked="${String(on)}" data-click="tema" data-arg="${k}" style="display:flex;flex-direction:column;gap:8px;padding:10px;border:0;border-radius:var(--radius-md);background:transparent;box-shadow:${on ? "inset 0 0 0 1.5px var(--color-accent)" : "inset 0 0 0 1px var(--color-neutral-800)"};cursor:pointer;text-align:left;transition:box-shadow .2s">
+        ${temas.map(([k, label, ic, bg, nav, card, ink, acc]) => { const on = S.tema === k; return h`<button type="button" class="hv-acc6" role="radio" aria-checked="${String(on)}" data-click="tema" data-arg="${k}" style="display:flex;flex-direction:column;gap:8px;padding:10px;border:0;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:${on ? "inset 0 0 0 1.5px var(--color-accent)" : "inset 0 0 0 1px var(--color-neutral-800)"};cursor:pointer;text-align:left;transition:box-shadow .2s">
             <span style="position:relative;display:block;height:64px;border-radius:6px;overflow:hidden;background:${bg}">
               <span style="position:absolute;left:0;top:0;bottom:0;width:26%;background:${nav}"></span>
               <span style="position:absolute;left:34%;top:12px;width:40%;height:8px;border-radius:3px;background:${ink}"></span>
@@ -2313,7 +2331,7 @@ ${S.modal ? vistaModal() : ""}`;
       ${privacidad.map((pv) => h`<span style="display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--color-neutral-200);text-wrap:pretty"><i class="ph ph-check" style="color:var(--color-accent);margin-top:2px"></i>${pv}</span>`)}
       <button class="btn btn-secondary" type="button" data-click="abrirModal" style="align-self:flex-start;margin-top:4px"><i class="ph ph-trash"></i>Borrar mi historial</button>
     </section>
-    <section style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:var(--radius-lg);box-shadow:inset 0 0 0 1px var(--color-neutral-800)">
+    <section style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:var(--radius-lg);background:var(--card-solid);box-shadow:inset 0 0 0 1px var(--card-edge)">
       <h2 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px"><i class="ph ph-info" style="color:var(--color-neutral-300)"></i>Cómo funciona la evaluación</h2>
       <p style="margin:0;font-size:13px;line-height:1.55;color:var(--color-neutral-200);text-wrap:pretty">Cada fuente da 0, 1 o 2 puntos frente a tu línea base. Rojo si una fuente tiene 2 puntos o tres fuentes tienen puntos; amarillo si alguna tiene puntos; verde si ninguna. La voz pesa como máximo 1 punto y el oxígeno solo genera un aviso.</p>
       <p style="margin:0;font-size:13px;line-height:1.55;color:var(--color-neutral-300);text-wrap:pretty">Es un prototipo de apoyo a la decisión. No es un dispositivo médico y no diagnostica.</p>
@@ -2444,7 +2462,6 @@ ${S.modal ? vistaModal() : ""}`;
     S.persona = (params.get("persona") || (CFG.tripulacion || [])[0] || "bri").toLowerCase();
     S.tarea = params.get("tarea") || TAREAS[0];
     S.demo = params.get("demo") === "1";
-    S.conDsst = params.get("dsst") === "1" || pasoInicial === "simbolos";
     S.sesion = `prueba-${marcaSesion()}-${S.persona}`;
     S.inicio = Date.now();
     S.pantalla = "evaluacion";
@@ -2453,7 +2470,7 @@ ${S.modal ? vistaModal() : ""}`;
     entrarInicio();
   }
   if (S.pantalla === "historial") cargarHistorial();
-  else if (window.APTO) {  // para el Panel: pulso, KSS y PVT de las evaluaciones de hoy aunque la página se abra después
+  else if (window.APTO) {  // para el Panel: pulso, sueño en 48 h y PVT de las evaluaciones de hoy aunque la página se abra después
     fetch("historial.json?dias=1").then((r) => (r.ok ? r.json() : null)).then((j) => { if (j && j.disponible) { completarUltimas(j.filas || []); pedirPintar(); } }).catch(() => {});
   }
   if (S.pantalla === "config") revisarPermisos();

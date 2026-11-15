@@ -7,7 +7,7 @@ Lee los dos lugares donde se guarda la línea base (solo lee, no cambia nada):
   datos/coordinador/linea_base.jsonl   lo de la estación: reacción, símbolos, cuestionario, cámara y sensor.
                                        El coordinador promedia TODAS las de la persona (con 1 ya compara).
   datos/voz/historial.jsonl            las voces: hacen falta 3 de la frase estándar (voz_fatiga.MIN_LINEA_BASE).
-Avisa si una línea base se tomó con sueño (Karolinska 6 o más, o menos de 6 h de sueño), porque el sistema la
+Avisa si una línea base se tomó con sueño (menos de 6 h anoche, o menos de 12 h en las últimas 48 h), porque el sistema la
 toma como el estado normal de la persona.
 """
 import argparse
@@ -39,9 +39,11 @@ def avisos_estacion(tipo: str, sesion: str, d: dict) -> list[str]:
     """Problemas de una medición de línea base que la hacen inútil o engañosa."""
     r = []
     if tipo == "cuestionario":
-        kss, horas = d.get("kss"), d.get("horas_sueno")
-        if (kss is not None and kss >= 6) or (horas is not None and horas < 6):
-            r.append(f"se tomó con sueño (Karolinska {kss}, {horas} h de sueño) en la sesión {sesion}")
+        horas, previa, h48 = d.get("horas_sueno"), d.get("horas_sueno_previa"), d.get("horas_sueno_48h")
+        if h48 is None and horas is not None and previa is not None:
+            h48 = horas + previa
+        if (horas is not None and horas < 6) or (h48 is not None and h48 < 12):
+            r.append(f"se tomó con sueño ({horas} h anoche, {h48} h en 48 h) en la sesión {sesion}")
     elif tipo == "vision":
         cara = d.get("cara_detectada_pct")
         if cara is not None and cara < 50:

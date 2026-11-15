@@ -25,7 +25,7 @@ TIPOS_FILA = ("evaluacion", "cuestionario", "pvt", "dsst", "esp32", "vision", "v
 CALIDAD_ESP32_MIN = 0.5    # como el coordinador: solo lecturas con dedo y calidad >= 0,5
 SIN_SENAL_S = 30           # si el enlace no da señales en este tiempo, el tablero dice «sin señal»
 MAX_DOCUMENTOS = 200_000
-COLUMNAS_CSV = ["fecha_nave", "llego_tierra", "persona", "sesion", "tarea", "color", "puntaje", "kss", "horas_sueno",
+COLUMNAS_CSV = ["fecha_nave", "llego_tierra", "persona", "sesion", "tarea", "color", "puntaje", "horas_sueno_48h", "horas_sueno",
                 "pvt_mediana_ms", "pvt_lapsos", "dsst_por_minuto", "pulso_lpm", "spo2_min", "perclos", "estado_voz",
                 "aviso_spo2", "simulado", "provisional", "motivos"]
 
@@ -129,7 +129,10 @@ def filas_de(docs) -> list[dict]:
             "fecha": _ms(doc.get("recibido")), "llego": _ms(doc.get("llego_tierra")),
             "color": ev.get("color"), "puntaje": _num(ev.get("puntaje")), "motivos": ev.get("motivos") or [],
             "accion": ev.get("accion"), "tarea": ev.get("tarea") or se.get("tarea") or "",
-            "kss": _num(cu.get("kss")), "horas_sueno": _num(cu.get("horas_sueno")),
+            "horas_sueno_48h": _num(cu.get("horas_sueno_48h")) if _num(cu.get("horas_sueno_48h")) is not None else
+                (_num(cu.get("horas_sueno")) + _num(cu.get("horas_sueno_previa"))
+                 if _num(cu.get("horas_sueno")) is not None and _num(cu.get("horas_sueno_previa")) is not None else None),
+            "horas_sueno": _num(cu.get("horas_sueno")),
             "pvt_mediana": _num(pv.get("rt_mediana_ms")), "pvt_lapsos": _num(pv.get("lapsos")),
             "dsst_por_minuto": _num(ds.get("por_minuto")),
             "pulso_lpm": round(statistics.median(pulsos), 1) if pulsos else None,

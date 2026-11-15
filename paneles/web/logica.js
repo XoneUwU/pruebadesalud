@@ -27,18 +27,21 @@
     "M5 20 Q20 5 35 20 Q20 35 5 20 Z M20 20 h0.1",                // ojo con punto
   ];
 
-  // Escala de somnolencia de Karolinska, con redacción sin género.
-  const KSS = [
-    [1, "Extremadamente alerta"],
-    [2, "Muy alerta"],
-    [3, "Alerta"],
-    [4, "Bastante alerta"],
-    [5, "Ni alerta ni con sueño"],
-    [6, "Algunas señales de sueño"],
-    [7, "Con sueño, pero sin esfuerzo para no dormirme"],
-    [8, "Con sueño y algo de esfuerzo para no dormirme"],
-    [9, "Mucho sueño: gran esfuerzo para no dormirme, luchando contra el sueño"],
-  ];
+  // Sueño de las últimas 48 h (anoche + la noche anterior), del modelo de sueño previo de Dawson y McCulloch que se
+  // usa en la gestión del riesgo de fatiga: menos de 12 h en 48 h es riesgo. Igual que coordinador_provisional.py.
+  const SUENO_48H = { MINIMO_H: 12, MUY_POCO_H: 8 };
+  /** Horas en 48 h -> "bien" | "poco" (1 punto en el coordinador) | "muy poco" (2 puntos) | null sin dato. */
+  function nivelSueno48(horas) {
+    if (horas === null || horas === undefined || !Number.isFinite(Number(horas))) return null;
+    return horas < SUENO_48H.MUY_POCO_H ? "muy poco" : horas < SUENO_48H.MINIMO_H ? "poco" : "bien";
+  }
+  /** Total de 48 h de un mensaje del cuestionario: el enviado o la suma de las dos noches. */
+  function horasSueno48(cu) {
+    if (!cu) return null;
+    const ok = (x) => x !== null && x !== undefined && x !== "" && Number.isFinite(Number(x));
+    if (ok(cu.horas_sueno_48h)) return Number(cu.horas_sueno_48h);
+    return ok(cu.horas_sueno) && ok(cu.horas_sueno_previa) ? Number(cu.horas_sueno) + Number(cu.horas_sueno_previa) : null;
+  }
 
   function normalizar(texto) {
     return String(texto || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -184,7 +187,7 @@
   }
 
   const Logica = {
-    ORDEN_COLOR, PVT, KSS, DSST_SEGUNDOS, DSST_DEMO_S, SIMBOLOS_DSST, normalizar, nombre, lista, conArticulo, puntaje, ordenar,
+    ORDEN_COLOR, PVT, SUENO_48H, nivelSueno48, horasSueno48, DSST_SEGUNDOS, DSST_DEMO_S, SIMBOLOS_DSST, normalizar, nombre, lista, conArticulo, puntaje, ordenar,
     recomendacion, clasificarRespuesta, resumenPvt, resumenDsst, tsAMs, hora, ahoraIso, decimal,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = Logica;

@@ -57,7 +57,7 @@ def ejemplo():
         doc("esp32", "bri", 3, {"sesion": s1, "dedo": True, "calidad": 0.2, "pulso_lpm": 150, "spo2": 80}),
         doc("esp32", "bri", 4, {"sesion": s1, "dedo": False, "calidad": 0.9, "pulso_lpm": None}),
         doc("pvt", "bri", 200, {"sesion": s1, "rt_mediana_ms": 280, "lapsos": 1}),
-        doc("cuestionario", "bri", 230, {"sesion": s1, "kss": 7, "horas_sueno": 5.5}),
+        doc("cuestionario", "bri", 230, {"sesion": s1, "horas_sueno": 5.5, "horas_sueno_previa": 5}),
         doc("evaluacion", "bri", 232, {"sesion": s1, "color": "amarillo", "puntaje": 2, "motivos": ["A"]}),
         doc("evaluacion", "bri", 240, {"sesion": s1, "color": "rojo", "puntaje": 4, "motivos": ["A", "B"],
                                        "provisional": True}),
@@ -75,7 +75,7 @@ def probar_modelo():
     revisar(bri["color"] == "rojo" and bri["puntaje"] == 4, "vale la última evaluación si el coordinador recalculó")
     revisar(bri["pulso_lpm"] == 72.0, "pulso = mediana de las lecturas con dedo y calidad >= 0,5", str(bri["pulso_lpm"]))
     revisar(bri["spo2_min"] == 95, "SpO2 mínimo solo de lecturas válidas", str(bri["spo2_min"]))
-    revisar(bri["tarea"] == "EVA" and bri["kss"] == 7 and bri["pvt_mediana"] == 280, "tarea, KSS y PVT de la sesión")
+    revisar(bri["tarea"] == "EVA" and bri["horas_sueno_48h"] == 10.5 and bri["pvt_mediana"] == 280, "tarea, sueño en 48 h y PVT de la sesión")
     revisar(bri["llego"] - bri["fecha"] == 20_000, "guarda cuándo llegó a Tierra")
 
     ahora = int((T0 + timedelta(seconds=700)).timestamp() * 1000)

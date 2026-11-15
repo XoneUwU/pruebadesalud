@@ -60,7 +60,7 @@ Sin Docker también funciona: `pip install -r houston/requirements.txt`, un Mong
   Tierra (queda 5 min y pasa a la tripulación). Las evaluaciones que vienen en camino muestran «llega en N s». Todo
   va con el retraso de la comunicación: con `HOUSTON_RETRASO_S=0` en `houston/.env` (y `docker compose up -d`) se ve
   al instante.
-- **Evaluaciones**: gráfico de evolución (puntaje, PVT, KSS o sueño; con toda la tripulación, un ícono por persona),
+- **Evaluaciones**: gráfico de evolución (puntaje, PVT, sueño de 48 h o de anoche; con toda la tripulación, un ícono por persona),
   tabla con filtro por periodo y persona, detalle y CSV.
 - **Resultado**: el semáforo, la recomendación, los motivos, las horas en la nave y en Tierra, y los indicadores que
   llegaron (ESP32 resumido, PVT, símbolos, cámara, voz y cuestionario).
