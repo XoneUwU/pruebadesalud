@@ -33,6 +33,11 @@ inline Biquad pasaAltos(float fc, float fs) {  // Butterworth
   return normalizar((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + al, -2 * c, 1 - al);
 }
 
+inline Biquad pasaBajos(float fc, float fs) {  // Butterworth
+  float w = 2 * M_PI * fc / fs, al = sinf(w) / sqrtf(2), c = cosf(w);
+  return normalizar((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + al, -2 * c, 1 - al);
+}
+
 // Secuencia guiada (35 s): entre cada orden hay una pausa de 2 s para que la persona alcance a reaccionar.
 struct FaseMusculo {
   const char *nombre, *texto;  // texto: como mucho 14 caracteres (lo que entra al lado del contador en la OLED)

@@ -76,6 +76,9 @@ def estado(persona: str, coordinador: list[dict], voces: list[dict]) -> list[str
     lineas = [f"{persona}: " + ("completa" if not falta else "le falta " + ", ".join(falta))]
     lineas.append("  estación: " + " · ".join(f"{ESTACION[t]} {n}" for t, n in cuenta.items()))
     lineas.append(f"  voces estándar: {n_voz} de {VOCES_NECESARIAS}")
+    n_musculo = sum(1 for f in filas if f.get("tipo") == "esp32" and (f.get("datos") or {}).get("musculo_relacion")
+                    is not None and not (f.get("datos") or {}).get("musculo_simulado"))
+    lineas.append(f"  músculo (AD8232, prototipo; no suma al semáforo ni hace falta): {n_musculo}")
     for f in filas:
         for aviso in avisos_estacion(f.get("tipo"), f.get("sesion"), f.get("datos") or {}):
             lineas.append(f"  OJO: {aviso}")

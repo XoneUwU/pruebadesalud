@@ -36,6 +36,11 @@ sin línea base con valores fijos de referencia del prototipo, que hay que calib
                 SpO2: NO suma al semáforo. Si durante al menos 20 s seguidos (lecturas con dedo y calidad >= 0,5)
                 el SpO2 está 4 puntos o más por debajo del promedio de la línea base (o por debajo de 92 sin
                 línea base), la evaluación lleva "aviso_spo2": true y el motivo MOTIVO_SPO2, sin cambiar el color.
+  Músculo       activación muscular con el AD8232 (prototipo): NO suma al semáforo. De la prueba guiada del ESP32
+                (fase "musculo") se toma la mediana del RMS en APRIETA y en DESCANSA, sin la primera lectura de cada
+                orden (cubre el segundo anterior y el tiempo de reacción), y la relación entre las dos. Va en la
+                evaluación ("musculo", con la relación de la línea base) y en la línea base del ESP32. Los valores
+                fingidos ("musculo_simulado": true, MUSCULO_FINGIDO en el firmware) no se comparan.
 Los puntos de cada fuente (pvt, dsst, cuestionario, voz, vision) son los de su peor indicador.
   rojo      si alguna fuente tiene 2 puntos, o si 3 fuentes o más tienen puntos
   amarillo  si alguna fuente tiene puntos
@@ -64,6 +69,8 @@ SPO2_SEGUNDOS = 20          # tiempo seguido con el SpO2 bajo para avisar (el ES
 SPO2_PUNTOS_BAJO = 4        # puntos por debajo del promedio de la línea base
 SPO2_MINIMO_SIN_BASE = 92   # sin línea base: avisar por debajo de esto
 MOTIVO_SPO2 = "Oxígeno más bajo de lo habitual: repetir la medición"
+# Activación muscular (AD8232, prototipo; no suma al semáforo)
+MUSCULO_MIN_LECTURAS = 3  # lecturas válidas por orden (APRIETA, DESCANSA) para dar un valor
 ACCIONES = {
     "verde": "Puede realizar la tarea",
     "amarillo": "Reasignar la tarea o hacerla en pareja, y descansar antes",
@@ -254,15 +261,59 @@ def lectura_esp32_valida(m: dict) -> bool:
     return calidad is None or calidad >= CALIDAD_ESP32_MIN
 
 
+def _mediana(valores) -> float | None:
+    vs = sorted(v for v in valores if v is not None)
+    return round(float(vs[len(vs) // 2]), 1) if vs else None
+
+
+def resumen_musculo(lecturas: list[dict]) -> dict:
+    """Prueba guiada del músculo (lecturas del ESP32 con "fase": "musculo", en orden de llegada).
+
+    Mediana del RMS en APRIETA y en DESCANSA (solo con electrodos y sin la primera lectura de cada orden), su
+    relación y el % del tiempo con los electrodos puestos. {} si la placa no hizo la prueba. Sin "musculo_orden"
+    (firmware anterior) o con pocas lecturas, los valores van en None."""
+    en_prueba = [m for m in lecturas if m.get("fase") == "musculo"]
+    if not en_prueba:
+        return {}
+    por_orden: dict[str, list[float]] = {"aprieta": [], "descansa": []}
+    anterior = None
+    for m in en_prueba:
+        orden = m.get("musculo_orden")
+        if orden in por_orden and orden == anterior and m.get("electrodos") is True:
+            v = _num(m.get("musculo_rms_mv"))
+            if v is not None:
+                por_orden[orden].append(v)
+        anterior = orden
+    aprieta, descansa = ((_mediana(vs) if len(vs) >= MUSCULO_MIN_LECTURAS else None) for vs in por_orden.values())
+    relacion = round(aprieta / descansa, 2) if aprieta is not None and descansa else None
+    con = sum(1 for m in en_prueba if m.get("electrodos") is True)
+    return {"musculo_aprieta_mv": aprieta, "musculo_descansa_mv": descansa, "musculo_relacion": relacion,
+            "electrodos_pct": round(100 * con / len(en_prueba)),
+            "musculo_simulado": any(m.get("musculo_simulado") for m in en_prueba)}
+
+
 def resumen_esp32(lecturas: list[dict]) -> dict:
-    """Mediana de las lecturas válidas del ESP32 de una sesión (resiste lecturas sueltas malas)."""
+    """Mediana de las lecturas válidas del ESP32 de una sesión (resiste lecturas sueltas malas) y, si la placa hizo
+    la prueba guiada del músculo, su resumen (resumen_musculo)."""
     validas = [m for m in lecturas if lectura_esp32_valida(m)]
 
     def mediana(campo):
-        vs = [x for x in (_num(m.get(campo)) for m in validas) if x is not None]
-        return round(float(sorted(vs)[len(vs) // 2]), 1) if vs else None
+        return _mediana(_num(m.get(campo)) for m in validas)
     return {"pulso_lpm": mediana("pulso_lpm"), "spo2": mediana("spo2"), "hrv_rmssd_ms": mediana("hrv_rmssd_ms"),
-            "lecturas": len(lecturas), "lecturas_validas": len(validas)}
+            "lecturas": len(lecturas), "lecturas_validas": len(validas), **resumen_musculo(lecturas)}
+
+
+def musculo_para_evaluacion(esp32: dict | None, base_esp32: list[dict] | None) -> dict | None:
+    """Lo que va en la evaluación como "musculo" (informativo, sin puntos): el resumen de la sesión y la relación
+    promedio de la línea base (sin valores fingidos). None si en la sesión no hubo prueba del músculo."""
+    if not esp32 or "musculo_relacion" not in esp32:
+        return None
+    simulado = bool(esp32.get("musculo_simulado"))
+    base = None if simulado else _promedio(_num(b.get("musculo_relacion")) for b in (base_esp32 or [])
+                                           if not b.get("musculo_simulado"))
+    return {"aprieta_mv": esp32.get("musculo_aprieta_mv"), "descansa_mv": esp32.get("musculo_descansa_mv"),
+            "relacion": esp32.get("musculo_relacion"), "relacion_base": round(base, 2) if base is not None else None,
+            "electrodos_pct": esp32.get("electrodos_pct"), "simulado": simulado}
 
 
 # ---------------------------------------------------------------- línea base
@@ -351,6 +402,9 @@ class Coordinador:
         if aviso:
             print(f"[coordinador] {persona}: SpO2 bajo durante {segundos_bajo:.0f} s seguidos -> aviso (no cambia el color)")
         ev = {"persona": persona, "sesion": sesion, "tarea": self.tareas.get(sesion, ""), **r, "provisional": True}
+        musculo = musculo_para_evaluacion(datos.get("esp32"), base.get("esp32"))
+        if musculo:  # informativo: no cambia el color ni el puntaje
+            ev["musculo"] = musculo
         self.cli.publicar(tema(persona, "evaluacion"), ev, retener=True)
         self.cli.publicar(tema(persona, "semaforo"), {"persona": persona, "sesion": sesion, "color": r["color"],
                                                       "provisional": True}, retener=True)

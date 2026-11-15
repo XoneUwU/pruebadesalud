@@ -81,6 +81,7 @@ del codo.
 | `electrodos` | `true` si los tres electrodos estuvieron pegados más de la mitad del último segundo (salidas LO+ y LO−) |
 | `musculo_rms_mv` | RMS de la señal en el último segundo: cuánta actividad hubo |
 | `musculo_pico_mv` | pico de la envolvente (suavizada ~100 ms) en el último segundo: la contracción más fuerte |
+| `musculo_orden` | solo en la prueba guiada (`"fase": "musculo"`): `preparate`, `aprieta`, `espera` o `descansa`. La estación la muestra y el coordinador separa lo medido al apretar y en reposo |
 
 - **Por ahora los valores publicados son fingidos** (`MUSCULO_FINGIDO 1` en `config.h`) y el mensaje lleva
   `"musculo_simulado": true`: suben mientras la prueba guiada dice APRIETA. `electrodos` sí es real. En la prueba
@@ -95,7 +96,9 @@ del codo.
   igual, y después el resultado del pulso. `MUSCULO_EN_EVALUACION 0` la quita.
 - **Solo el AD8232**: `-DPRUEBA_MUSCULO=1` repite la prueba guiada sin Wi-Fi ni pulso, con los valores reales, y
   manda una línea por segundo por el monitor serie. Con `-DCRUDO_MUSCULO=1`, además, cada lectura (500/s).
-- Filtros: pasa altos de 10 Hz y notch de 50 y 100 Hz (`MUSCULO_RED_HZ`). LO+ o LO− cuentan como despegado solo si
+- Filtros: pasa altos de 10 Hz, notch de 50 y 100 Hz (`MUSCULO_RED_HZ`) y pasa bajos de 45 Hz (los armónicos de
+  150, 200 y 250 Hz eran casi la mitad de lo que quedaba). Con la captura del 15/11, el 92 % de la señal filtrada
+  queda entre 10 y 45 Hz. LO+ o LO− cuentan como despegado solo si
   quedan en alto 50 ms seguidos: con ruido dan pulsos cortos aunque los electrodos estén bien.
 - Los valores están en **mV a la salida del AD8232**, que amplifica mucho la señal: no son los microvoltios reales
   del músculo. Se leen con `analogReadMilliVolts` (con la calibración de fábrica de la placa).

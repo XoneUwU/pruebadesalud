@@ -604,6 +604,15 @@ void publicarDatos() {
       int total = 0;
       for (int i = 0; i < N_FASES_MUSCULO; i++) total += FASES_MUSCULO[i].s;
       doc["quedan_s"] = max(0, total - (int)((millis() - inicioEstado) / 1000));
+      // La orden en curso: la estación la muestra y el coordinador separa lo medido en APRIETA y en DESCANSA
+      int quedanOrden;
+      uint32_t enFase;
+      int f = faseMusculo(millis() - inicioEstado, quedanOrden, enFase);
+      if (f >= 0) {
+        String orden = FASES_MUSCULO[f].nombre;
+        orden.toLowerCase();  // "preparate", "aprieta", "espera" o "descansa"
+        doc["musculo_orden"] = orden;
+      }
     }
     if (medicionHecha) {  // resumen de los 30 s: queda disponible aunque se retire el dedo
       doc["medicion_lista"] = true;
@@ -1034,11 +1043,14 @@ float muscSuma2 = 0, muscPico = 0;
 int muscN = 0, muscDespegado = 0, muscBuenas = 0;
 int muscLoMasN = 0, muscLoMenosN = 0, muscTopeN = 0;
 uint32_t muscMin = UINT32_MAX, muscMax = 0;
-// Filtros (solo los usa la tarea). La captura del 15/11 con la laptop enchufada: 72 % de la señal era 50 Hz.
+// Filtros (solo los usa la tarea). La captura del 15/11 con la laptop enchufada: 72 % de la señal era 50 Hz y casi
+// todo el resto, sus armónicos (100, 150, 200 y 250 Hz). Con pasa altos 10 Hz + notch 50 y 100 Hz + pasa bajos de
+// 45 Hz (4.º orden), el 92 % de lo que queda está entre 10 y 45 Hz (lo único que deja pasar la placa del AD8232).
 const float FS_MUSCULO = 1000.0f / MUSCULO_CADA_MS;
 const float RED_HZ = MUSCULO_RED_HZ > 0 ? MUSCULO_RED_HZ : 50;
 Biquad filtroAltos = pasaAltos(10, FS_MUSCULO), filtroRed = notch(RED_HZ, FS_MUSCULO, 4),
-       filtroRed2 = notch(2 * RED_HZ, FS_MUSCULO, 4);
+       filtroRed2 = notch(2 * RED_HZ, FS_MUSCULO, 4), filtroBajos = pasaBajos(45, FS_MUSCULO),
+       filtroBajos2 = pasaBajos(45, FS_MUSCULO);
 
 void leerMusculo() {
   bool loMas = digitalRead(PIN_LO_MAS) == HIGH, loMenos = digitalRead(PIN_LO_MENOS) == HIGH;
@@ -1060,11 +1072,13 @@ void leerMusculo() {
     muscBase = NAN;
     muscEnv = 0;
     filtroAltos.reiniciar(), filtroRed.reiniciar(), filtroRed2.reiniciar();
+    filtroBajos.reiniciar(), filtroBajos2.reiniciar();
     muscAsentando = MUSCULO_ASENTAR_MS / MUSCULO_CADA_MS;
   } else {
     if (isnan(muscBase)) muscBase = mv;  // se resta la primera lectura: así el pasa altos no arranca con un salto
     ac = filtroAltos.paso(mv - muscBase);  // desde 10 Hz: sin deriva ni movimiento lento
     if (MUSCULO_RED_HZ > 0) ac = filtroRed2.paso(filtroRed.paso(ac));  // sin el zumbido de la red (50 y 100 Hz)
+    ac = filtroBajos2.paso(filtroBajos.paso(ac));  // hasta 45 Hz: fuera los armónicos de 150, 200 y 250 Hz
     muscEnv += MUSCULO_ENVOLVENTE * (fabsf(ac) - muscEnv);
     if (muscAsentando > 0) muscAsentando--;
     else cuenta = true;

@@ -391,6 +391,12 @@
       if (d.medicion_lista) return ["ok", "Medición lista: ya puedes retirar el dedo y continuar."];
       if (d.fase === "midiendo") return ["espera", `Midiendo: quedan ${entero(d.quedan_s)} s. No retires el dedo.`];
       if (d.fase === "cuenta") return ["espera", "Dedo detectado: la placa cuenta 3, 2, 1…"];
+      if (d.fase === "musculo") {  // AD8232: la placa guía 35 s de APRIETA / DESCANSA después de los 30 s del dedo
+        const quedan = num(d.quedan_s) !== null ? ` Quedan ${entero(d.quedan_s)} s.` : "";
+        if (d.electrodos === false) return ["aviso", "Prueba del músculo: pega los electrodos en el antebrazo (RA y LA sobre el músculo, RL en el codo). Sin electrodos, la placa la salta."];
+        const orden = { preparate: "Prepárate: brazo quieto.", aprieta: "Aprieta el puño fuerte.", espera: "Suelta y espera la próxima orden.", descansa: "Descansa: brazo suelto." }[d.musculo_orden];
+        return ["espera", `Prueba del músculo (ya puedes retirar el dedo): ${orden || "sigue las órdenes de la placa."}${quedan}`];
+      }
       if (d.fase === "cancelada" || d.fase === "reposo") return ["aviso", "La placa canceló su medición (sin conexión o sin resultado a tiempo). Pueden omitir este paso, o cancelar la evaluación y empezar de nuevo."];
       return ["aviso", "Coloca el dedo en el sensor: la placa cuenta 3, 2, 1 y mide 30 segundos."];
     }
@@ -1273,6 +1279,10 @@ ${S.modal ? vistaModal() : ""}`;
       { label: "SpO₂", icon: "ph-drop", valor: d && num(spo2) !== null ? L.decimal(spo2, 0) : "–", unidad: "% de oxígeno en sangre" },
       { label: "Movimiento", icon: "ph-hand", valor: d ? fmt(d.movimiento) : "–", unidad: d && num(d.movimiento) !== null ? (d.movimiento > 0.05 ? "g · en movimiento" : "g · quieto") : "g" },
     ];
+    if (d && "electrodos" in d) {  // AD8232 (prototipo): mV a la salida del AD8232, del último segundo
+      tarjetas.push({ label: "Músculo", icon: "ph-hand-fist", valor: d.electrodos ? entero(d.musculo_rms_mv) : "–",
+        unidad: !d.electrodos ? "sin electrodos" : d.musculo_simulado ? "mV RMS · valores fingidos" : "mV RMS · AD8232 (prototipo)" });
+    }
     const n = S.ppg.length;
     const px = (i) => ((160 - n + i) * 600) / 159;
     const py = (v) => Math.round((110 - v * 88) * 10) / 10;
@@ -1589,6 +1599,18 @@ ${S.modal ? vistaModal() : ""}`;
       const motivo = (d.esp32 || []).length ? "Ninguna lectura con el dedo puesto y calidad de 0,5 o más." : "Sin lecturas del sensor en esta sesión.";
       out.push(nd("Pulso", "ESP32", motivo), nd("HRV (RMSSD)", "ESP32", motivo));
       if (ev.aviso_spo2) out.push({ tipo: "medido", nombre: "SpO₂", fuente: "ESP32", valor: "", unidad: "", puntos: null, aviso: true, nota: "Aviso, no puntaje: estuvo bajo 30 s seguidos. Repetir la medición." });
+    }
+    const mu = ev.musculo;  // AD8232 (prototipo), del coordinador: informativo, no suma al semáforo
+    if (mu) {
+      const fuenteMu = "ESP32 · AD8232";
+      if (num(mu.relacion) !== null) {
+        const base = num(mu.relacion_base) !== null ? ` Línea base: ${L.decimal(mu.relacion_base, 1)} veces.` : mu.simulado ? "" : " Sin línea base del músculo.";
+        out.push({ tipo: "medido", nombre: "Activación muscular", fuente: fuenteMu, valor: L.decimal(mu.relacion, 1), unidad: "veces el reposo", puntos: null,
+          nota: `Prototipo: no suma al semáforo. Al apretar ${entero(mu.aprieta_mv)} mV y en reposo ${entero(mu.descansa_mv)} mV, a la salida del AD8232.${base}${mu.simulado ? " Valores fingidos (MUSCULO_FINGIDO en el firmware)." : ""}` });
+      } else {
+        out.push(nd("Activación muscular", fuenteMu, num(mu.electrodos_pct) === 0 ? "Sin electrodos puestos: la placa saltó la prueba del músculo."
+          : "Pocas lecturas con los electrodos puestos, o la placa no manda la orden de cada paso (falta cargarle el firmware nuevo)."));
+      }
     }
     const pv = d.pvt;
     if (pv) {

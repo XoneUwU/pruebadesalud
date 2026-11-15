@@ -98,7 +98,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/control/estado_escucha` | Copiloto | Panel | `{"persona", "estado"}`: `escuchando`, `transcribiendo`, `listo` (con `texto`: la pregunta entendida) o `error` (con `motivo`) |
 | `apto/control/estado_voz` | Voz | Panel | `{"persona", "estado": "grabando" o "listo"}` |
 | `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta", "sesion"}`: pregunta escrita desde la estación |
-| `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador, estación | Cada 1 s: `persona`, `sesion`, `pulso_lpm`, `hrv_rmssd_ms` (RMSSD de 30 s), `spo2`, `dedo`, `movimiento` (g), `calidad` (0 a 1); sin dedo, pulso, HRV y SpO2 en `null`; `"simulado": true` con `MODO_SIMULADO`. El coordinador usa la mediana de las lecturas con dedo y calidad ≥ 0,5: su pulso manda sobre el de la cámara, y la HRV se compara con la línea base. Ver `firmware/README.md` |
+| `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador, estación | Cada 1 s: `persona`, `sesion`, `pulso_lpm`, `hrv_rmssd_ms` (RMSSD de 30 s), `spo2`, `dedo`, `movimiento` (g), `calidad` (0 a 1); sin dedo, pulso, HRV y SpO2 en `null`; `"simulado": true` con `MODO_SIMULADO`. Músculo (AD8232, prototipo): `electrodos`, `musculo_rms_mv`, `musculo_pico_mv`, `musculo_simulado` y, en la prueba guiada, `musculo_orden`. El coordinador usa la mediana de las lecturas con dedo y calidad ≥ 0,5: su pulso manda sobre el de la cámara, y la HRV se compara con la línea base. Ver `firmware/README.md` |
 | `apto/{persona}/vision` | Visión (Eric) | Coordinador | `perclos` (fracción de 0 a 1 con los ojos cerrados; acepta también porcentaje), `parpadeos_min`, `bostezos` y `bostezos_min` (incluyen los tapados con la mano), `bostezos_tapados`, `lentes` (true si se midió con lentes puestos: los ojos no cuentan), `ear_abierto`, `cabeza_inclinada_pct`, `cara_detectada_pct`, `fps`, `duracion_s`, `avisos`, `linea_base` y la `sesion` de la orden. El coordinador provisional usa los parpadeos solo contra la línea base. El pulso por cámara (rPPG) se quitó: el pulso es solo el del ESP32. El módulo usa `ClienteMQTT("vision")` para que la estación lo vea activo. |
 | `apto/{persona}/voz` | Voz (Bri) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | PVT-B en el navegador: `rt_media_ms`, `rt_mediana_ms`, `lapsos` (355 ms o más, o sin respuesta en 30 s), `anticipadas` (antes del estímulo o en menos de 100 ms), `lapsos_por_min` y `anticipadas_por_min` (para comparar 3 min con 1 min), `n_estimulos`, `duracion_s`, `linea_base`, `modo_demo` (true = 1 minuto) |
@@ -196,6 +196,11 @@ el copiloto lo dice al final del resumen. Para probarlo: `python herramientas\si
 por cámara (rPPG) se quitó porque con la luz de la estación no llegaba a la calidad mínima; si un mensaje viejo trae
 `pulso_rppg_lpm`, no se usa. En la pantalla de resultados, «Fatiga por visión» resume la cámara: vale lo que su
 peor indicador (ojos cerrados, parpadeos o bostezos): sin signos, leve o marcada.
+**Músculo (AD8232): informativo, no puntaje.** De la prueba guiada del ESP32 el coordinador toma la mediana del RMS
+en APRIETA y en DESCANSA (sin la primera lectura de cada orden) y la relación entre las dos («veces el reposo»). Va
+en la evaluación como `musculo` (`aprieta_mv`, `descansa_mv`, `relacion`, `relacion_base`, `electrodos_pct`,
+`simulado`) y en la línea base del ESP32, **sin cambiar el color**. Mientras el firmware tenga `MUSCULO_FINGIDO 1`
+los valores son fingidos (`simulado: true`) y no se comparan con la línea base.
 
 **Cómo lo reemplaza Danilo:**
 1. Crear `coordinador\coordinador.py` con `ClienteMQTT("coordinador")`: con ese nombre la estación lo ve como
@@ -368,7 +373,8 @@ ESP32 muestra el semáforo en un **LED RGB**, en la pantalla OLED y con el zumba
    pruebas. Un semáforo de una sesión anterior se ignora. Queda hasta la próxima evaluación.
 
 Cada mensaje `apto/{persona}/esp32` lleva `fase` (`reposo`, `anuncio`, `nombre`, `espera`, `cuenta`, `midiendo`,
-`listo`, `resultado`, `cancelada`), `quedan_s` mientras mide y, al terminar, `medicion_lista: true` con
+`listo`, `resultado`, `cancelada`, `musculo`), `quedan_s` mientras mide (en la prueba del músculo, también
+`musculo_orden`: `preparate`, `aprieta`, `espera` o `descansa`) y, al terminar las dos, `medicion_lista: true` con
 `pulso_medido_lpm`, `hrv_medido_ms` y `spo2_medido`. La estación habilita «Continuar» con `medicion_lista`.
 
 **Cancelación**: «CANCELADA» y el motivo, LED apagado y vuelta a «Listo» si la estación publica

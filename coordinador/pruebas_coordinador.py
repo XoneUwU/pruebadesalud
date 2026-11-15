@@ -174,7 +174,71 @@ def main() -> int:
     print(f"{'OK   ' if ok else 'FALLA'}  el coordinador publica el aviso: aviso_spo2={ev10['aviso_spo2']}, "
           f"{ev10['color']}, {ev10['motivos']}")
 
-    total = len(CASOS) + 3 + len(casos_spo2) + 2
+    # Músculo (AD8232): resumen de la prueba guiada (35 s, una lectura por segundo). Informativo: sin puntos.
+    from coordinador_provisional import musculo_para_evaluacion, resumen_esp32, resumen_musculo
+
+    SECUENCIA = (["preparate"] * 5 + ["aprieta"] * 5 + ["espera"] * 2 + ["descansa"] * 6 + ["espera"] * 2
+                 + ["aprieta"] * 5 + ["espera"] * 2 + ["descansa"] * 8)
+
+    def prueba_musculo(secuencia=SECUENCIA, electrodos=True, con_orden=True, simulado=False):
+        lect = []
+        for i, orden in enumerate(secuencia):
+            primera = i == 0 or secuencia[i - 1] != orden  # cubre el segundo anterior: no debe contar
+            v = 999.0 if primera else 250.0 if orden == "aprieta" else 20.0
+            m = {"fase": "musculo", "dedo": False, "electrodos": electrodos, "musculo_rms_mv": v if electrodos else None}
+            if con_orden:
+                m["musculo_orden"] = orden
+            if simulado:
+                m["musculo_simulado"] = True
+            lect.append(m)
+        return lect
+
+    normal = resumen_musculo(prueba_musculo())
+    casos_musculo = [
+        ("prueba completa: 250 al apretar, 20 en reposo, relación 12,5",
+         normal == {"musculo_aprieta_mv": 250.0, "musculo_descansa_mv": 20.0, "musculo_relacion": 12.5,
+                    "electrodos_pct": 100, "musculo_simulado": False}, normal),
+        ("sin electrodos: sin valores, 0 % con electrodos",
+         (r := resumen_musculo(prueba_musculo(electrodos=False)))["musculo_relacion"] is None
+         and r["electrodos_pct"] == 0, r),
+        ("firmware sin musculo_orden: sin valores",
+         (r := resumen_musculo(prueba_musculo(con_orden=False)))["musculo_relacion"] is None
+         and r["electrodos_pct"] == 100, r),
+        ("órdenes de 3 s: sin la primera quedan 2 lecturas, no alcanza",
+         (r := resumen_musculo(prueba_musculo(["aprieta"] * 3 + ["descansa"] * 3)))["musculo_relacion"] is None, r),
+        ("sin prueba del músculo: el resumen del ESP32 no trae campos de músculo",
+         "musculo_relacion" not in (r := resumen_esp32([{"dedo": True, "calidad": 0.9, "pulso_lpm": 70}])), r),
+        ("la línea base promedia sin los fingidos",
+         (r := musculo_para_evaluacion(normal, [{"musculo_relacion": 10}, {"musculo_relacion": 14},
+                                                {"musculo_relacion": 99, "musculo_simulado": True}]))["relacion_base"] == 12.0, r),
+        ("valores fingidos: no se comparan con la línea base",
+         (r := musculo_para_evaluacion(resumen_musculo(prueba_musculo(simulado=True)),
+                                       [{"musculo_relacion": 10}]))["relacion_base"] is None and r["simulado"], r),
+    ]
+    for nombre, ok, detalle in casos_musculo:
+        fallas += not ok
+        print(f"{'OK   ' if ok else 'FALLA'}  músculo, {nombre}: {detalle}")
+
+    # En la evaluación publicada: "musculo" aparece y no cambia el color ni el puntaje.
+    cli.mensajes.clear()
+    coord._al_sesion("apto/control/sesion", {"persona": "sebas", "tarea": "caminata espacial", "sesion": "s11"})
+    for _ in range(30):
+        coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "sesion": "s11", "pulso_lpm": 72, "dedo": True,
+                                            "calidad": 0.9, "fase": "midiendo"})
+    for m in prueba_musculo():
+        coord._al_dato("apto/sebas/esp32", {"persona": "sebas", "sesion": "s11", **m})
+    coord._al_dato("apto/sebas/cuestionario", {"persona": "sebas", "sesion": "s11", "kss": 3, "horas_sueno": 8})
+    s11 = coord.sesiones[("sebas", "s11")]
+    s11["timer"].cancel()
+    coord._publicar("sebas", "s11")
+    ev11 = next(d for t, d in cli.mensajes if t == "apto/sebas/evaluacion")
+    ok = (ev11.get("musculo", {}).get("relacion") == 12.5 and ev11["color"] == ev["color"]
+          and ev11["senales"] == ev["senales"] and ev11["puntaje"] == ev["puntaje"])
+    fallas += not ok
+    print(f"{'OK   ' if ok else 'FALLA'}  el coordinador publica el músculo sin puntos: {ev11.get('musculo')}, "
+          f"{ev11['color']} {ev11['senales']}")
+
+    total = len(CASOS) + 3 + len(casos_spo2) + 2 + len(casos_musculo) + 1
     print(f"\n{total - fallas} de {total} pasaron.")
     return 1 if fallas else 0
 
