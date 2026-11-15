@@ -78,7 +78,7 @@ def configuracion(local: bool) -> dict:
         "mqtt_clave": config.get(clave),
         "puede_publicar": local,
         "tripulacion": [p.strip().lower() for p in config.get("TRIPULACION").split(",") if p.strip()],
-        "pvt_segundos": config.get_int("PVT_SEGUNDOS", 180),
+        "pvt_segundos": config.get_int("PVT_SEGUNDOS", 60),
         "retraso_tierra_s": config.get_float("RETRASO_TIERRA_S", 2.6),
         "frase_voz": frase_voz(),
         "frases_voz": frases_voz(),

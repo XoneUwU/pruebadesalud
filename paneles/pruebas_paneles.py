@@ -192,7 +192,7 @@ process.stdin.on("end", () => {
     pvt: L.resumenPvt([250, 300, 400, 120], 2, 1, 7, 61234),
     clasificacion: [99, 100, 354, 355].map(L.clasificarRespuesta),
     dsst: L.resumenDsst(45, 3, 90000),
-    simbolos: [L.SIMBOLOS_DSST.length, new Set(L.SIMBOLOS_DSST).size, L.DSST_SEGUNDOS],
+    simbolos: [L.SIMBOLOS_DSST.length, new Set(L.SIMBOLOS_DSST).size, L.DSST_SEGUNDOS, L.DSST_DEMO_S, L.PVT.DEMO_S],
   }));
 });
 """
@@ -222,7 +222,7 @@ console.log(String(P.h`<p title="${'a"b'}">${"<img src=x onerror=1>"}${[P.h`<i>$
             f"PVT 99/100/354/355 ms: {js['clasificacion']}")
     revisar(js["dsst"] == {"correctas": 45, "incorrectas": 3, "por_minuto": 30, "duracion_s": 90},
             f"resumenDsst: {js['dsst']}")
-    revisar(js["simbolos"] == [9, 9, 90], f"DSST: 9 símbolos distintos y 90 s: {js['simbolos']}")
+    revisar(js["simbolos"] == [9, 9, 90, 40, 40], f"DSST: 9 símbolos distintos, 90 s (40 en demo); PVT demo 40 s: {js['simbolos']}")
 
 
 def probar_historial():
