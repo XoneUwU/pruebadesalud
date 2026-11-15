@@ -24,6 +24,15 @@ code,kbd{font-family:ui-monospace,Menlo,monospace}
 .btn-ghost{background:var(--color-accent-900);color:var(--color-accent-300);border-color:var(--color-accent-800);padding-inline:10px}
 .btn-ghost:hover:not(:disabled){background:var(--color-accent-800)}
 .btn-ghost:active:not(:disabled){background:var(--color-accent-700)}
+/* Resultados: cuerpo con los indicadores. Escáner que recorre la silueta y pulso en los puntos amarillos o rojos. */
+@keyframes rc-escanear{from{transform:translateY(0)}to{transform:translateY(560px)}}
+@keyframes rc-pulso{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.9);opacity:0}}
+.rc-escaner{animation:rc-escanear 4.5s ease-in-out infinite alternate}
+.rc-punto{z-index:1}
+.rc-punto:hover{filter:brightness(1.15)}
+.rc-punto:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
+.rc-alerta::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid var(--rc);animation:rc-pulso 1.8s ease-out infinite;pointer-events:none}
+
 /* Selectores de opciones (tarea, frase, vista, periodo...): con fondo sólido. */
 .seg{background:var(--card-solid)}
 

@@ -131,7 +131,7 @@
     horas: 7, horasPrevia: 7,
     anal: { t0: 0, comparando: false, vencida: false, listo: false },
     // resultados
-    resPersona: "", chat: { persona: "", sesion: "" }, escuchando: false, escuchaTexto: "",
+    resPersona: "", resParte: "", chat: { persona: "", sesion: "" }, escuchando: false, escuchaTexto: "",
     // historial
     hist: { estado: "nada", filas: [], motivo: "" }, periodo: "30", hPersona: "todos", serie: "puntaje", hSel: null, hPag: 0, hComando: "",
     // pruebas
@@ -929,6 +929,7 @@
       irA("inicio");
     },
     ultimoResultado: () => abrirResultado(ultimaEvaluada()),
+    resParte: (k) => { S.resParte = k; pedirPintar(); },
     abrirTripulante: (p) => {
       if (S.evaluaciones[p]) abrirResultado(p);
       else { if (S.paso !== "inicio") irA("inicio"); S.persona = p; irPantalla("evaluacion"); }
@@ -1685,10 +1686,10 @@ ${S.modal ? vistaModal() : ""}`;
             ${tarjetaDato("Lapsos", r.lapsos, `${L.decimal(r.lapsos_por_min)} por minuto (355 ms o más)`)}
             ${tarjetaDato("Anticipadas", r.anticipadas, `de ${r.n_estimulos} estímulos`)}
           </div>` : ""}
+        ${botonera(primario, { sinOmitir: P.fase === "activa" || P.fase === "preparando" })}
       </div>
       ${panelCamara(P, seg)}
-    </div>
-    ${botonera(primario, { sinOmitir: P.fase === "activa" || P.fase === "preparando" })}`;
+    </div>`;
   }
 
   function vDsst() {
@@ -1928,6 +1929,98 @@ ${S.modal ? vistaModal() : ""}`;
     return out;
   }
 
+  // ================================================================== cuerpo con los indicadores (Resultados)
+  // Silueta de la presentación (presentacion/becspace.html, «Qué mide»), en un lienzo de 520 × 630.
+  const CUERPO_D = "M260 100 L 271 100 L 273 114 C 288 120 312 120 326 126 C 342 132 346 148 344 166 L 346 236 C 348 260 350 284 352 306 L 354 328 C 360 340 360 360 352 370 C 346 376 338 372 338 362 L 336 334 C 332 310 328 286 326 262 L 320 200 C 318 190 314 182 310 178 C 310 205 304 228 300 244 C 298 262 312 282 314 300 C 316 318 314 340 310 360 L 304 460 C 306 485 310 515 308 540 L 302 600 C 310 610 308 622 292 622 L 276 620 C 274 606 278 590 278 570 L 276 480 L 268 340 C 266 328 264 324 260 324 C 256 324 254 328 252 340 L 244 480 L 242 570 C 242 590 246 606 244 620 L 228 622 C 212 622 210 610 218 600 L 212 540 C 210 515 214 485 216 460 L 210 360 C 206 340 204 318 206 300 C 208 282 222 262 220 244 C 216 228 210 205 210 178 C 206 182 202 190 200 200 L 194 262 C 192 286 188 310 184 334 L 182 362 C 182 372 174 376 168 370 C 160 360 160 340 166 328 L 168 306 C 170 284 172 260 174 236 L 176 166 C 174 148 178 132 194 126 C 208 120 232 120 247 114 L 249 100 L 260 100 Z";
+  const CUERPO_W = 520, CUERPO_H = 630;
+  // Cada parte: dónde está en el cuerpo (x, y), dónde va su etiqueta (lado, ly), de qué fuente del coordinador toma el
+  // color (senales: 0 verde, 1 amarillo, 2 rojo) y qué indicadores de Resultados muestra.
+  const PARTES_CUERPO = [
+    { k: "sueno", nom: "Sueño", ico: "ph-moon-stars", x: 300, y: 12, lado: "der", ly: 30, fuente: "cuestionario", ind: ["Sueño en 48 h", "Horas de sueño"] },
+    { k: "atencion", nom: "Atención", ico: "ph-shapes", x: 220, y: 12, lado: "izq", ly: 30, fuente: "dsst", ind: ["Símbolos DSST"] },
+    { k: "ojos", nom: "Ojos", ico: "ph-eye", x: 260, y: 58, lado: "izq", ly: 112, fuente: "vision", ind: ["PERCLOS", "Parpadeos", "Bostezos", "Fatiga por visión"] },
+    { k: "voz", nom: "Voz", ico: "ph-microphone", x: 260, y: 108, lado: "der", ly: 112, fuente: "voz", ind: ["Cansancio en la voz"] },
+    { k: "corazon", nom: "Corazón", ico: "ph-heartbeat", x: 284, y: 160, lado: "der", ly: 200, fuente: "esp32", ind: ["Pulso", "HRV (RMSSD)"] },
+    { k: "oxigeno", nom: "Oxígeno", ico: "ph-drop", x: 234, y: 182, lado: "izq", ly: 200, especial: "spo2", ind: ["SpO₂"] },
+    { k: "musculo", nom: "Músculo", ico: "ph-hand-fist", x: 186, y: 210, lado: "izq", ly: 290, especial: "musculo", ind: ["Activación muscular"] },
+    { k: "reflejos", nom: "Reflejos", ico: "ph-lightning", x: 349, y: 350, lado: "der", ly: 400, fuente: "pvt", ind: ["Reacción PVT-B"] },
+  ];
+
+  /** Estado de una parte: {st, puntos, nota, items}. Gris si no hay datos. El oxígeno y el músculo no suman al
+   *  semáforo: el oxígeno es amarillo solo con el aviso de SpO2 y el músculo verde si se midió (es informativo). */
+  function estadoParte(parte, ev, indicadores) {
+    const sen = ev.senales || {};
+    const items = indicadores.filter((it) => parte.ind.includes(it.nombre));
+    const conDato = items.filter((it) => it.tipo !== "no_disponible" && it.valor !== "");
+    if (parte.especial === "spo2") {
+      if (ev.aviso_spo2) return { st: ST.amarillo, puntos: null, nota: "Aviso: oxígeno bajo. No cambia el color.", items };
+      return conDato.length ? { st: ST.verde, puntos: null, nota: "Sin aviso de oxígeno.", items } : { st: ST.sin, puntos: null, nota: "Sin lecturas válidas del sensor.", items };
+    }
+    if (parte.especial === "musculo") {
+      return conDato.length ? { st: ST.verde, puntos: null, nota: "Medido (prototipo): informativo, no suma al semáforo.", items } : { st: ST.sin, puntos: null, nota: "Sin prueba del músculo.", items };
+    }
+    const pts = num(sen[parte.fuente]);
+    if (pts === null) return { st: ST.sin, puntos: null, nota: conDato.length ? "El coordinador no la evaluó." : "Sin datos en esta sesión.", items };
+    return { st: [ST.verde, ST.amarillo, ST.rojo][Math.min(2, Math.max(0, Math.round(pts)))], puntos: pts,
+      nota: pts === 0 ? "En tu rango habitual." : pts === 1 ? "1 punto: algo fuera de lo habitual." : "2 puntos: bastante fuera de lo habitual.", items };
+  }
+
+  /** "por minuto" -> "por min", "ms mediana" -> "ms", "correctas por min" -> "por min". */
+  const unidadCorta = (u) => { const t = String(u || ""); if (/por min/.test(t)) return "por min"; return t.split(" ")[0]; };
+
+  function cuerpoResultado(ev, indicadores) {
+    const partes = PARTES_CUERPO.map((p) => ({ ...p, ...estadoParte(p, ev, indicadores) }));
+    const peso = (q) => (q.st === ST.rojo ? 3 : q.st === ST.amarillo ? 2 : q.st === ST.verde ? 1 : 0);
+    const peor = partes.reduce((a, b) => (peso(b) > peso(a) ? b : a), partes[0]);
+    const sel = partes.find((q) => q.k === S.resParte) || peor;
+    const pct = (v, total) => `${(v / total) * 100}%`;
+    const xEtq = (q) => (q.lado === "izq" ? 150 : 370);  // donde termina la línea, al borde de la etiqueta
+    const principal = (q) => q.items.find((it) => it.tipo !== "no_disponible" && it.valor !== "");
+    const glow = (q) => (q.st === ST.rojo || q.st === ST.amarillo ? `0 0 0 4px color-mix(in srgb, ${q.st.fg} 22%, transparent), 0 0 16px ${q.st.fg}` : "0 0 0 3px color-mix(in srgb, var(--color-surface) 70%, transparent)");
+    const cuenta = (st) => partes.filter((q) => q.st === st).length;
+    return h`<div style="display:flex;flex-direction:column;gap:10px">
+      <div class="cuerpo-res" style="position:relative;width:100%;aspect-ratio:${CUERPO_W}/${CUERPO_H};max-height:430px;margin:0 auto">
+        <svg viewBox="0 0 ${CUERPO_W} ${CUERPO_H}" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible">
+          <defs>
+            <linearGradient id="rc-cuerpo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9184d9" stop-opacity=".45"></stop><stop offset=".55" stop-color="#5d7fb0" stop-opacity=".25"></stop><stop offset="1" stop-color="#00C896" stop-opacity=".16"></stop></linearGradient>
+            <radialGradient id="rc-aura" cx="50%" cy="45%" r="55%"><stop offset="0" stop-color="${sel.st.fg}" stop-opacity=".18"></stop><stop offset="1" stop-color="${sel.st.fg}" stop-opacity="0"></stop></radialGradient>
+            <linearGradient id="rc-escaner" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#6CFF8F" stop-opacity="0"></stop><stop offset=".5" stop-color="#6CFF8F" stop-opacity=".32"></stop><stop offset="1" stop-color="#6CFF8F" stop-opacity="0"></stop></linearGradient>
+            <clipPath id="rc-clip"><path d="${CUERPO_D}"></path><ellipse cx="260" cy="58" rx="27" ry="36"></ellipse><rect x="247" y="84" width="26" height="34"></rect></clipPath>
+          </defs>
+          <ellipse cx="260" cy="330" rx="200" ry="300" fill="url(#rc-aura)"></ellipse>
+          <g style="fill:url(#rc-cuerpo);stroke:color-mix(in srgb, var(--color-accent) 55%, transparent);stroke-width:2">
+            <ellipse cx="233" cy="60" rx="4.5" ry="8"></ellipse><ellipse cx="287" cy="60" rx="4.5" ry="8"></ellipse>
+            <path d="M249 84 L271 84 L274 118 L246 118 Z"></path>
+            <path d="${CUERPO_D}"></path>
+            <ellipse cx="260" cy="58" rx="27" ry="36"></ellipse>
+          </g>
+          <g style="fill:none;stroke:color-mix(in srgb, var(--color-accent) 40%, transparent);stroke-width:1.2;stroke-linecap:round">
+            <path d="M220 128 Q240 134 256 127 M300 128 Q280 134 264 127 M226 150 Q242 174 258 167 M294 150 Q278 174 262 167 M260 170 V296 M243 200 H277 M245 226 H275 M247 250 H273 M218 464 q12 6 24 0 M278 464 q12 6 24 0"></path>
+          </g>
+          <g clip-path="url(#rc-clip)"><rect class="rc-escaner" x="100" y="0" width="320" height="70" fill="url(#rc-escaner)"></rect></g>
+          ${partes.map((q) => { const xe = xEtq(q); const codo = q.lado === "izq" ? xe + 14 : xe - 14; const on = q.k === sel.k;
+            return h`<polyline points="${q.x},${q.y} ${codo},${q.ly} ${xe},${q.ly}" style="fill:none;stroke:${q.st.fg};stroke-width:${on ? 2 : 1.3};stroke-dasharray:${on ? "none" : "3 4"};opacity:${on ? 0.95 : 0.55}"></polyline>
+              <circle cx="${xe}" cy="${q.ly}" r="3" style="fill:${q.st.fg}"></circle>`; })}
+        </svg>
+        ${partes.map((q) => { const on = q.k === sel.k; return h`<button type="button" class="rc-punto${q.st === ST.rojo || q.st === ST.amarillo ? " rc-alerta" : ""}" data-click="resParte" data-arg="${q.k}" aria-pressed="${String(on)}" title="${q.nom}: ${q.st.word.toLowerCase()}" aria-label="${q.nom}: ${q.st.word.toLowerCase()}"
+            style="position:absolute;left:${pct(q.x, CUERPO_W)};top:${pct(q.y, CUERPO_H)};transform:translate(-50%,-50%) scale(${on ? 1.18 : 1});width:24px;height:24px;padding:0;border-radius:50%;border:1.5px solid ${q.st.fg};background:${q.st.bg};color:${q.st.fg};display:grid;place-items:center;cursor:pointer;box-shadow:${glow(q)};transition:transform .15s;--rc:${q.st.fg}"><i class="ph-fill ${q.ico}" style="font-size:12px"></i></button>`; })}
+        ${partes.map((q) => { const it = principal(q); const izq = q.lado === "izq"; const on = q.k === sel.k;
+          return h`<button type="button" data-click="resParte" data-arg="${q.k}" style="position:absolute;top:${pct(q.ly, CUERPO_H)};${izq ? "left:0" : "right:0"};width:${pct(146, CUERPO_W)};transform:translateY(-50%);display:flex;flex-direction:column;align-items:${izq ? "flex-start" : "flex-end"};gap:1px;padding:4px 6px;border:0;border-radius:var(--radius-sm);background:${on ? `color-mix(in srgb, ${q.st.fg} 14%, var(--card-solid))` : "var(--card-solid)"};box-shadow:inset 0 0 0 1px ${on ? q.st.fg : "var(--card-edge)"};text-align:${izq ? "left" : "right"};cursor:pointer">
+              <span style="display:flex;align-items:center;gap:5px;${MONO};font-size:9.5px;letter-spacing:0.08em;text-transform:uppercase;color:${q.st.fg}"><span style="width:7px;height:7px;border-radius:50%;background:${q.st.fg};flex:none"></span>${q.nom}</span>
+              <span style="${MONO};font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--color-text);white-space:nowrap">${it ? h`${it.valor}<span style="font-size:9.5px;color:var(--color-neutral-400)"> ${unidadCorta(it.unidad)}</span>` : "–"}</span>
+            </button>`; })}
+      </div>
+      <div aria-live="polite" style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:var(--radius-md);background:var(--card-solid);box-shadow:inset 3px 0 0 ${sel.st.fg}, inset 0 0 0 1px var(--card-edge)">
+        <div style="display:flex;align-items:center;gap:8px"><i class="ph-fill ${sel.ico}" style="font-size:17px;color:${sel.st.fg}"></i><b style="font-weight:500;font-size:14px">${sel.nom}</b>${pildora(sel.st, sel.st === ST.sin ? "SIN DATO" : "", "margin-left:auto;font-size:10px;padding:2px 7px")}</div>
+        ${sel.items.filter((it) => it.tipo !== "no_disponible" && it.valor !== "").map((it) => h`<span style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--color-neutral-300)"><span>${it.nombre}</span><span style="${MONO};color:var(--color-text);white-space:nowrap">${it.valor} <span style="color:var(--color-neutral-400)">${it.unidad}</span></span></span>`)}
+        <span style="font-size:11.5px;color:var(--color-neutral-400)">${sel.nota}</span>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;${MONO};font-size:10.5px;color:var(--color-neutral-400)">
+        ${[[ST.verde, "Bien"], [ST.amarillo, "Atención"], [ST.rojo, "Alerta"], [ST.sin, "Sin dato"]].map(([st, t]) => h`<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:${st.fg}"></span>${t} · ${cuenta(st)}</span>`)}
+      </div>
+    </div>`;
+  }
+
   function vistaResultados() {
     const ev = evaluacionVista();
     if (!ev) {
@@ -1956,28 +2049,33 @@ ${S.modal ? vistaModal() : ""}`;
     const chatOk = abierto && PUEDE;
     return h`<div data-k="res-${ev.persona}" style="display:contents">
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:stretch">
-    <section style="position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:22px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
-      <div style="position:relative;width:140px;height:140px">
-        <svg viewBox="0 0 140 140" width="140" height="140"><circle cx="70" cy="70" r="62" fill="none" stroke="var(--color-neutral-800)" stroke-width="1"></circle><circle cx="70" cy="70" r="50" fill="${st.bg}" stroke="${st.fg}" stroke-width="2"></circle><circle cx="70" cy="70" r="62" fill="none" stroke="${st.fg}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${p * 389.6} 389.6" transform="rotate(-90 70 70)"></circle></svg>
-        <i class="ph-fill ${st.icon}" style="position:absolute;inset:0;display:grid;place-items:center;font-size:44px;color:${st.fg}"></i>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:8px 12px 8px 10px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));box-shadow:inset 0 0 0 1px var(--color-accent-700)">
+    <section style="position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:stretch;gap:14px;padding:22px;border-radius:var(--radius-lg);background:var(--color-surface);box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <div style="align-self:flex-start;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:8px 12px 8px 10px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));box-shadow:inset 0 0 0 1px var(--color-accent-700)">
         <i class="ph-fill ${icono(ev.persona)}" style="font-size:24px;color:var(--color-accent-300)"></i>
         <span style="display:flex;flex-direction:column;line-height:1.2"><span style="${ETQ};white-space:nowrap">Tripulante evaluado</span><span style="font-size:20px;font-weight:500">${L.nombre(ev.persona)}</span></span>
         <span style="margin-left:6px;${MONO};font-size:12px;color:var(--color-neutral-400)">${[cuando(L.tsAMs(ev.ts)), cap(ev.tarea || "")].filter(Boolean).join(" · ")}</span>
       </div>
-      <span style="${MONO};font-size:30px;font-weight:600;letter-spacing:0.08em;color:${st.fg}">${st.word}</span>
-      <span style="font-size:15px;color:var(--color-neutral-200)">${st.label}</span>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${ev.provisional ? tagMono("PROVISIONAL") : ""}
-        ${ev.simulado ? tagMono("SIMULADO", "tag-outline") : ""}
-        ${ev.reproducido ? tagMono("REPRODUCIDO", "tag-outline") : ""}
-        ${modoDemo ? tagMono("MODO DEMO 1 MIN") : ""}
-        ${meta.linea_base ? h`<span class="tag tag-accent">Línea base</span>` : ""}
-      </div>
-      <span style="${MONO};font-size:12px;color:var(--color-neutral-400)">Puntaje ${fmt(ev.puntaje)} · ${ev.sesion ? `sesión ${ev.sesion}` : L.hora(L.tsAMs(ev.ts))}</span>
+      ${cuerpoResultado(ev, indicadores)}
     </section>
     <section style="display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:var(--radius-lg);background:var(--color-surface);grid-column:span ${S.w >= 1100 ? 2 : 1};box-shadow:var(--shadow-sm);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+      <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--color-divider)">
+        <div style="position:relative;width:96px;height:96px;flex:none">
+          <svg viewBox="0 0 140 140" width="96" height="96"><circle cx="70" cy="70" r="62" fill="none" stroke="var(--color-neutral-800)" stroke-width="1"></circle><circle cx="70" cy="70" r="50" fill="${st.bg}" stroke="${st.fg}" stroke-width="2"></circle><circle cx="70" cy="70" r="62" fill="none" stroke="${st.fg}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${p * 389.6} 389.6" transform="rotate(-90 70 70)"></circle></svg>
+          <i class="ph-fill ${st.icon}" style="position:absolute;inset:0;display:grid;place-items:center;font-size:32px;color:${st.fg}"></i>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+          <span style="${MONO};font-size:30px;font-weight:600;letter-spacing:0.08em;line-height:1;color:${st.fg}">${st.word}</span>
+          <span style="font-size:15px;color:var(--color-neutral-200)">${st.label}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${ev.provisional ? tagMono("PROVISIONAL") : ""}
+            ${ev.simulado ? tagMono("SIMULADO", "tag-outline") : ""}
+            ${ev.reproducido ? tagMono("REPRODUCIDO", "tag-outline") : ""}
+            ${modoDemo ? tagMono("MODO DEMO 1 MIN") : ""}
+            ${meta.linea_base ? h`<span class="tag tag-accent">Línea base</span>` : ""}
+          </div>
+          <span style="${MONO};font-size:12px;color:var(--color-neutral-400)">Puntaje ${fmt(ev.puntaje)} · ${ev.sesion ? `sesión ${ev.sesion}` : L.hora(L.tsAMs(ev.ts))}</span>
+        </div>
+      </div>
       <div style="display:flex;flex-direction:column;gap:6px">
         ${etq("Recomendación")}
         <p style="margin:0;font-size:20px;line-height:1.35;font-weight:500;text-wrap:pretty">${ev.accion || "–"}</p>
