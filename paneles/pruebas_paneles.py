@@ -141,9 +141,9 @@ def probar_sin_internet():
     for ruta in sorted(WEB.rglob("*")):
         if not ruta.is_file() or "vendor" in ruta.parts:
             continue
-        texto = ruta.read_text(encoding="utf-8")
         patron = {".html": externo_html, ".css": externo_css, ".js": externo_js}.get(ruta.suffix)
-        if patron:
+        if patron:  # solo los archivos de texto (las imágenes, como assets/fondo-luna.png, no se leen)
+            texto = ruta.read_text(encoding="utf-8")
             hallado = patron.search(texto)
             revisar(not hallado, f"{ruta.relative_to(AQUI)}: sin recursos externos",
                     f"encontrado: {hallado.group(0) if hallado else ''}")
