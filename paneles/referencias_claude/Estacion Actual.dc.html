@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Estación (actual) · ¿Está apto hoy?</title>
+<style>
+html{font-size:clamp(16px,0.55vw + 12px,26px);color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#070b11;background-image:linear-gradient(rgba(92,200,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(92,200,255,.025) 1px,transparent 1px);background-size:48px 48px;color:#e8eef5;font-family:system-ui,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;line-height:1.4}
+h1,h2,p{margin:0}
+a{color:#5cc8ff}a:hover{color:#e8eef5}
+button{font:inherit;color:inherit}
+</style>
+</helmet>
+<header style="position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;padding:0.6rem 1.25rem;background:rgba(7,11,17,.92);border-bottom:1px solid #1f2d3e">
+  <a href="#" style="color:#e8eef5;text-decoration:none;font-weight:650;letter-spacing:0.02em;white-space:nowrap">¿Está apto hoy?<span style="margin-left:0.5rem;padding-left:0.6rem;border-left:1px solid #2d4058;color:#5cc8ff;font-family:ui-monospace,Consolas,monospace;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.12em">Estación</span></a>
+  <div style="flex:1;min-width:0;color:#95a6ba;font-size:0.85rem"></div>
+  <div style="display:flex;align-items:center;gap:0.75rem;margin-left:auto">
+    <button type="button" aria-label="Pantalla completa" style="width:2.2rem;height:2.2rem;border:1px solid #2d4058;border-radius:8px;background:transparent;color:#95a6ba;font-size:1.1rem;line-height:1">⛶</button>
+    <span style="display:inline-flex;align-items:center;gap:0.45rem;padding:0.25rem 0.7rem;border:1px solid rgba(47,210,122,.45);border-radius:999px;font-family:ui-monospace,Consolas,monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#2fd27a"><span style="width:0.6rem;height:0.6rem;border-radius:50%;background:#2fd27a;box-shadow:0 0 8px #2fd27a"></span>Conectado</span>
+  </div>
+</header>
+<ol aria-label="Pasos de la evaluación" style="display:flex;gap:0.35rem;margin:0;padding:0.75rem 1.25rem;list-style:none;overflow-x:auto;font-family:ui-monospace,Consolas,monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em">
+  <li style="flex:1 0 auto;padding:0.35rem 0.6rem;border-top:3px solid #5cc8ff;color:#e8eef5">1 Inicio</li>
+  <li style="flex:1 0 auto;padding:0.35rem 0.6rem;border-top:3px solid #1f2d3e;color:#64768b">2 Dispositivo</li>
+  <li style="flex:1 0 auto;padding:0.35rem 0.6rem;border-top:3px solid #1f2d3e;color:#64768b">3 Cámara</li>
+  <li style="flex:1 0 auto;padding:0.35rem 0.6rem;border-top:3px solid #1f2d3e;color:#64768b">4 Voz</li>
+  <li style="flex:1 0 auto;padding:0.35rem 0.6rem;border-top:3px solid #1f2d3e;color:#64768b">5 Reacción</li>
+  <li style="flex:1 0 auto;padding:0.35rem 0.6rem;border-top:3px solid #1f2d3e;color:#64768b">6 Cuestionario</li>
+  <li style="flex:1 0 auto;padding:0.35rem 0.6rem;border-top:3px solid #1f2d3e;color:#64768b">7 Resultado</li>
+</ol>
+<main style="max-width:64rem;margin:0 auto;padding:1rem 1.25rem 3rem">
+  <section style="display:flex;flex-direction:column;gap:1.25rem">
+    <h1 style="margin-top:0.5rem;font-size:2rem;font-weight:650;letter-spacing:-0.01em">Nueva evaluación</h1>
+    <div style="padding:0.9rem 1.1rem;display:flex;flex-wrap:wrap;align-items:center;gap:0.5rem 1.5rem;background:#0d141d;border:1px solid #1f2d3e;border-radius:10px">
+      <span style="font-family:ui-monospace,Consolas,monospace;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.14em;color:#95a6ba">Módulos</span>
+      <ul style="list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:0.6rem 1.75rem">
+        <li style="display:flex;align-items:flex-start;gap:0.45rem"><span style="width:0.7rem;height:0.7rem;margin-top:0.4rem;border-radius:50%;background:#2fd27a;box-shadow:0 0 6px #2fd27a;flex:none"></span><span><b>Voz</b> activo</span></li>
+        <li style="display:flex;align-items:flex-start;gap:0.45rem"><span style="width:0.7rem;height:0.7rem;margin-top:0.4rem;border-radius:50%;background:#2fd27a;box-shadow:0 0 6px #2fd27a;flex:none"></span><span><b>Copiloto</b> activo</span></li>
+        <li style="display:flex;align-items:flex-start;gap:0.45rem"><span style="width:0.7rem;height:0.7rem;margin-top:0.4rem;border-radius:50%;background:#2fd27a;box-shadow:0 0 6px #2fd27a;flex:none"></span><span><b>Visión</b> activo</span></li>
+        <li style="display:flex;align-items:flex-start;gap:0.45rem;color:#95a6ba"><span style="width:0.7rem;height:0.7rem;margin-top:0.4rem;border-radius:50%;background:#ff5c5c;flex:none"></span><span><b>Coordinador</b> no está abierto<small style="display:block;font-family:ui-monospace,Consolas,monospace;font-size:0.72rem;color:#64768b">python coordinador\coordinador_provisional.py</small></span></li>
+        <li style="display:flex;align-items:flex-start;gap:0.45rem;color:#95a6ba"><span style="width:0.7rem;height:0.7rem;margin-top:0.4rem;border-radius:50%;background:#ff5c5c;flex:none"></span><span><b>ESP32</b> no está abierto<small style="display:block;font-family:ui-monospace,Consolas,monospace;font-size:0.72rem;color:#64768b">enciendan la placa (firmware\apto_esp32) en la misma red</small></span></li>
+      </ul>
+    </div>
+    <h2 style="font-family:ui-monospace,Consolas,monospace;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.14em;color:#95a6ba">¿Quién se evalúa?</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:0.75rem">
+      <button type="button" aria-pressed="true" style="min-height:5.5rem;padding:0.8rem 1rem;border:2px solid #5cc8ff;border-radius:10px;background:rgba(92,200,255,.14);box-shadow:inset 0 0 0 1px #5cc8ff;font-size:1.6rem;font-weight:600">Bri</button>
+      <button type="button" style="min-height:5.5rem;padding:0.8rem 1rem;border:2px solid #2d4058;border-radius:10px;background:#0d141d;font-size:1.6rem;font-weight:600">Danilo</button>
+      <button type="button" style="min-height:5.5rem;padding:0.8rem 1rem;border:2px solid #2d4058;border-radius:10px;background:#0d141d;font-size:1.6rem;font-weight:600">Sebas</button>
+      <button type="button" style="min-height:5.5rem;padding:0.8rem 1rem;border:2px solid #2d4058;border-radius:10px;background:#0d141d;font-size:1.6rem;font-weight:600">Erick</button>
+      <button type="button" style="min-height:5.5rem;padding:0.8rem 1rem;border:2px solid #2d4058;border-radius:10px;background:#0d141d;font-size:1.6rem;font-weight:600">Adrian</button>
+    </div>
+    <h2 style="font-family:ui-monospace,Consolas,monospace;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.14em;color:#95a6ba">Tarea</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:0.75rem">
+      <button type="button" aria-pressed="true" style="min-height:4rem;padding:0.8rem 1rem;border:2px solid #5cc8ff;border-radius:10px;background:rgba(92,200,255,.14);box-shadow:inset 0 0 0 1px #5cc8ff;font-size:1.15rem;font-weight:600">Caminata espacial</button>
+      <button type="button" style="min-height:4rem;padding:0.8rem 1rem;border:2px solid #2d4058;border-radius:10px;background:#0d141d;font-size:1.15rem;font-weight:600">Maniobra de acoplamiento</button>
+      <button type="button" style="min-height:4rem;padding:0.8rem 1rem;border:2px solid #2d4058;border-radius:10px;background:#0d141d;font-size:1.15rem;font-weight:600">Mantenimiento externo</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:0.75rem">
+      <label style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.9rem 1rem;border:1px solid #1f2d3e;border-radius:10px;background:#0d141d;font-size:1.1rem"><input type="checkbox" style="width:1.5rem;height:1.5rem;margin:0.1rem 0 0;accent-color:#5cc8ff;flex:none"><span>Medición de línea base<small style="display:block;color:#95a6ba;font-size:0.85rem">Márcala si hoy descansaste bien: esta medición servirá para comparar las siguientes.</small></span></label>
+      <label style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.9rem 1rem;border:1px solid #1f2d3e;border-radius:10px;background:#0d141d;font-size:1.1rem"><input type="checkbox" style="width:1.5rem;height:1.5rem;margin:0.1rem 0 0;accent-color:#5cc8ff;flex:none"><span>Modo demo (1 min)<small style="display:block;color:#95a6ba;font-size:0.85rem">La prueba de reacción dura 1 minuto en vez de 3. Queda anotado en el resultado.</small></span></label>
+      <label style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.9rem 1rem;border:1px solid #1f2d3e;border-radius:10px;background:#0d141d;font-size:1.1rem"><input type="checkbox" style="width:1.5rem;height:1.5rem;margin:0.1rem 0 0;accent-color:#5cc8ff;flex:none"><span>Prueba de símbolos (90 s)<small style="display:block;color:#95a6ba;font-size:0.85rem">Además de la de reacción: emparejar símbolos con números lo más rápido posible.</small></span></label>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;justify-content:flex-end;margin-top:1.5rem">
+      <button type="button" style="display:inline-flex;align-items:center;justify-content:center;min-height:3rem;padding:0.6rem 1.4rem;border:1px solid #5cc8ff;border-radius:10px;background:#5cc8ff;color:#061018;font-weight:600">Comenzar</button>
+    </div>
+  </section>
+</main>
+</x-dc>
+</body>
+</html>
