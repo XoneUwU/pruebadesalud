@@ -41,13 +41,13 @@
     return String(texto || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   }
 
-  /** "erick" -> "Erick" (como str.capitalize de Python). */
+  /** "eric" -> "Eric" (como str.capitalize de Python). */
   function nombre(persona) {
     const p = String(persona || "");
     return p ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : "";
   }
 
-  /** ["Sebas"] -> "Sebas"; ["Sebas", "Ana", "Erick"] -> "Sebas, Ana y Erick". */
+  /** ["Sebas"] -> "Sebas"; ["Sebas", "Ana", "Eric"] -> "Sebas, Ana y Eric". */
   function lista(items) {
     return items.length === 1 ? items[0] : items.slice(0, -1).join(", ") + " y " + items[items.length - 1];
   }

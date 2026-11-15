@@ -11,7 +11,7 @@ de Mosquitto, un simulador y los scripts de Windows.
 | **Bri** | Voz (fatiga en la voz) y copiloto por voz; la laptop de la estación (broker e integración) |
 | **Danilo** | Coordinador (calcula el semáforo; mientras tanto corre el coordinador provisional) y firmware del ESP32 (3 LED, zumbador, modo local sin Wi-Fi) |
 | **Sebas** | Paneles (estación, tripulación y Tierra) y prueba de reacción (PVT) |
-| **Erick** | Visión (cámara: pulso sin contacto, parpadeos, PERCLOS y bostezos) |
+| **Eric** | Visión (cámara: parpadeos, PERCLOS y bostezos) |
 | **Adrian** | ESP32 (firmware: pulso, HRV, SpO2, movimiento y semáforo) |
 
 ```
@@ -28,7 +28,7 @@ apto-hoy/
 ├── registrador/          guarda todo apto/# en MongoDB, exporta a CSV y reproduce sesiones
 ├── herramientas/         simulador.py (datos falsos) y escuchar.py (ver mensajes)
 ├── mosquitto/            configuración del broker (evento y desarrollo)
-├── vision/               pulso sin contacto, parpadeos y PERCLOS por cámara (MediaPipe)
+├── vision/               parpadeos, PERCLOS y bostezos por cámara (MediaPipe)
 ├── firmware/             ESP32 (apto_esp32): pulso, HRV, SpO2, movimiento y semáforo (ver firmware/README.md)
 └── datos/                grabaciones e historial (no se sube a Git)
 ```
@@ -57,7 +57,7 @@ Abrir una terminal en la carpeta del proyecto (`.venv\Scripts\activate` primero)
 | Paneles web | `python paneles\servidor.py` y abrir http://localhost:8080 | Estación, tripulación y Tierra (ver la sección 5) |
 | Coordinador provisional | `python coordinador\coordinador_provisional.py` | Calcula el semáforo al terminar el cuestionario de la estación (sección 6) |
 | Registrador | `python registrador\mongo_local.py` y `python registrador\registrador.py` | Guarda cada mensaje en MongoDB (sección 7) |
-| Visión | `python vision\vision.py --ver` (vista previa) o `--persona bri` (una medición) | Malla del rostro, regiones del pulso, pulso y EAR en vivo (sección 8) |
+| Visión | `python vision\vision.py --ver` (vista previa) o `--persona bri` (una medición) | Malla del rostro, EAR, parpadeos y bostezos en vivo (sección 8) |
 | Todo junto | `iniciar.bat dev` | Una ventana por módulo: broker, MongoDB, registrador, voz, copiloto, coordinador provisional, visión y paneles |
 
 Opciones útiles del copiloto: `--sin-llm` (sin Ollama, responde con las fichas), `--sin-voz` (solo texto),
@@ -89,7 +89,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 
 | Tema | Publica | Lee | Contenido |
 |---|---|---|---|
-| `apto/control/sesion` | Panel (Sebas), copiloto | Todos | `{"persona", "tarea", "sesion"}`: inicio de una evaluación y persona activa. **Con retain**: el ESP32 (y cualquier módulo que se reinicie) sabe la persona activa al conectarse. La estación lo publica al tocar «Comenzar» (`sesion` = `20261113-193005-bri`). El copiloto lo publica cuando alguien dice «soy Erick», «habla Sebas» o «aquí Bri» (nombres de `TRIPULACION` en `config.env`). |
+| `apto/control/sesion` | Panel (Sebas), copiloto | Todos | `{"persona", "tarea", "sesion"}`: inicio de una evaluación y persona activa. **Con retain**: el ESP32 (y cualquier módulo que se reinicie) sabe la persona activa al conectarse. La estación lo publica al tocar «Comenzar» (`sesion` = `20261113-193005-bri`). El copiloto lo publica cuando alguien dice «soy Eric», «habla Sebas» o «aquí Bri» (nombres de `TRIPULACION` en `config.env`). |
 | `apto/control/modulos/{modulo}` | Todos los módulos de Python (`comun/mqtt_cliente.py`) y el ESP32 | Estación | `{"modulo", "activo": true}` al conectarse, **con retain**; el Last Will publica `{"activo": false}` si el programa se cae, y `cerrar()` lo publica al salir bien. La estación espera los nombres `voz`, `copiloto`, `vision`, `coordinador` y `esp32`. Son cuatro niveles a propósito: `apto/estado/{modulo}` coincidiría con `apto/+/voz`. |
 | `apto/control/orden_vision` | Panel (Sebas) | Visión | `{"accion": "medir", "persona", "segundos": 60, "sesion"}`: la estación pide un minuto de medición con la cámara (la estación no abre la cámara: lo hace el módulo de visión, que muestra el rostro en su ventana) |
 | `apto/control/estado_vision` | Visión | Panel | `{"persona", "sesion", "estado": "midiendo", "segundos_restantes"}` cada 5 s mientras mide; antes de empezar, si ve lentes, `"lentes"` con `"mensaje"` (pide quitarlos) y `"espera_s"`; al terminar `"listo"`, o `"error"` con `"motivo"` (por ejemplo «No se encontró la cámara»). La estación lo muestra en el paso de la cámara. |
@@ -99,7 +99,7 @@ Todo mensaje es JSON y lleva `persona`, `sesion` y `ts`. `control` es un nombre 
 | `apto/control/estado_voz` | Voz | Panel | `{"persona", "estado": "grabando" o "listo"}` |
 | `apto/control/pregunta` | Panel (Sebas) | Copiloto | `{"persona", "pregunta", "sesion"}`: pregunta escrita desde la estación |
 | `apto/{persona}/esp32` | ESP32 (Adrian) | Coordinador, estación | Cada 1 s: `persona`, `sesion`, `pulso_lpm`, `hrv_rmssd_ms` (RMSSD de 30 s), `spo2`, `dedo`, `movimiento` (g), `calidad` (0 a 1); sin dedo, pulso, HRV y SpO2 en `null`; `"simulado": true` con `MODO_SIMULADO`. El coordinador usa la mediana de las lecturas con dedo y calidad ≥ 0,5: su pulso manda sobre el de la cámara, y la HRV se compara con la línea base. Ver `firmware/README.md` |
-| `apto/{persona}/vision` | Visión (Erick) | Coordinador | `perclos` (fracción de 0 a 1 con los ojos cerrados; acepta también porcentaje), `parpadeos_min`, `bostezos` y `bostezos_min` (incluyen los tapados con la mano), `bostezos_tapados`, `lentes` (true si se midió con lentes puestos: los ojos no cuentan), `pulso_rppg_lpm` (null si la calidad es baja) y `calidad_rppg` (0 a 1), `ear_abierto`, `cabeza_inclinada_pct`, `cara_detectada_pct`, `fps`, `duracion_s`, `avisos`, `linea_base` y la `sesion` de la orden. El coordinador provisional usa el pulso solo si `calidad_rppg` ≥ 0,5, y los parpadeos solo contra la línea base. El módulo usa `ClienteMQTT("vision")` para que la estación lo vea activo. |
+| `apto/{persona}/vision` | Visión (Eric) | Coordinador | `perclos` (fracción de 0 a 1 con los ojos cerrados; acepta también porcentaje), `parpadeos_min`, `bostezos` y `bostezos_min` (incluyen los tapados con la mano), `bostezos_tapados`, `lentes` (true si se midió con lentes puestos: los ojos no cuentan), `ear_abierto`, `cabeza_inclinada_pct`, `cara_detectada_pct`, `fps`, `duracion_s`, `avisos`, `linea_base` y la `sesion` de la orden. El coordinador provisional usa los parpadeos solo contra la línea base. El pulso por cámara (rPPG) se quitó: el pulso es solo el del ESP32. El módulo usa `ClienteMQTT("vision")` para que la estación lo vea activo. |
 | `apto/{persona}/voz` | Voz (Bri) | Coordinador | Tono, jitter, shimmer, HNR, pausas. Con 3 o más mediciones de línea base, también `z_rasgos`, `indice_cansancio` (positivo = más cansancio), `estado_voz` y `motivos_voz` (frases neutras). Es una sugerencia, no un diagnóstico. |
 | `apto/{persona}/pvt` | PVT (Sebas) | Coordinador | PVT-B en el navegador: `rt_media_ms`, `rt_mediana_ms`, `lapsos` (355 ms o más, o sin respuesta en 30 s), `anticipadas` (antes del estímulo o en menos de 100 ms), `lapsos_por_min` y `anticipadas_por_min` (para comparar 3 min con 1 min), `n_estimulos`, `duracion_s`, `linea_base`, `modo_demo` (true = 1 minuto) |
 | `apto/{persona}/dsst` | Panel (Sebas) | Coordinador | Prueba de símbolos (DSST, 90 s, opcional): `correctas`, `incorrectas`, `por_minuto` (correctas por minuto), `duracion_s`, `linea_base` || `apto/{persona}/cuestionario` | Panel (Sebas) | Coordinador | `kss` (escala de somnolencia de Karolinska, 1 a 9), `kss_texto`, `horas_sueno` (de 0 a 16, de media en media hora), `linea_base` |
@@ -120,7 +120,7 @@ barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siet
 | Pantalla | Qué muestra (todo con datos reales de MQTT) |
 |---|---|
 | Panel | Recomendación para la tarea (la misma de `resumen_tripulacion()` del copiloto), conteo por color, una tarjeta por integrante (pulso, KSS y PVT), módulos abiertos, aviso de SpO2 y últimas respuestas del copiloto |
-| Evaluación | Paso a paso: inicio (persona, tarea, línea base, modo demo, símbolos y verificación de broker y módulos), dispositivo (pulso, HRV, SpO₂ y movimiento del ESP32), cámara (60 s, la mide el módulo de visión), voz (frase de `voz_fatiga.py`), reacción PVT-B (3 min, o 1 min con «Modo demo»), símbolos DSST (90 s, opcional), cuestionario de Karolinska y la espera del coordinador |
+| Evaluación | Paso a paso: inicio (persona, tarea, línea base, modo demo, símbolos y verificación de broker y módulos), dispositivo (pulso, HRV, SpO₂ y movimiento del ESP32), voz (frase de `voz_fatiga.py`), reacción PVT-B (1 min; **la cámara mide al mismo tiempo**, sin abrir su ventana), símbolos DSST (90 s, opcional), cuestionario de Karolinska y la espera del coordinador |
 | Pruebas | Cámara y micrófono de este navegador (imagen, luz, nivel, ruido y una grabación de 3 s), sin guardar nada |
 | Resultados | Semáforo, motivos, recomendación, aviso de SpO2, Becspace AI (el copiloto: pregunta escrita o 🎤 Hablar) e indicadores por fuente: medido, estimado, reportado o no disponible, con su calidad y sus puntos |
 | Historial | Evaluaciones guardadas por el registrador (MongoDB): gráfico por indicador, tabla, detalle, exportar CSV y el comando para reproducir la sesión |
@@ -136,8 +136,8 @@ barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siet
 - **Credenciales**: si la página se abre en la misma laptop (localhost), `/config.js` lleva `MQTT_USER` y
   `MQTT_PASS` (puede publicar). Desde otra laptop lleva `MQTT_USER_LECTURA` y `MQTT_PASS_LECTURA` (solo lee).
   Por eso la estación solo funciona en la laptop de Bri. En desarrollo todos quedan vacíos.
-- **Opciones** en `config.env`: `PVT_SEGUNDOS` (180 = PVT-B de 3 minutos; la casilla «Modo demo» de la estación
-  la baja a 1 minuto y lo anota como `modo_demo: true`), `RETRASO_TIERRA_S` (20 s), `MQTT_WS_PORT` (9001) y
+- **Opciones** en `config.env`: `PVT_SEGUNDOS` (60, lo mismo que mide la cámara; 180 = PVT-B de 3 minutos; la casilla «Modo demo» de la estación
+  la baja a 1 minuto y lo anota como `modo_demo: true`), `RETRASO_TIERRA_S` (2,6 s: ida y vuelta a la Luna; acepta decimales), `MQTT_WS_PORT` (9001) y
   `TRIPULACION` (los botones de la estación y las tarjetas). Si se cambian, hay que reiniciar `servidor.py`.
 - **Examen de voz con variaciones (opcional)**: en el paso de voz se elige la frase: la estándar (por defecto) o
   variaciones de menos a más difícil hasta un trabalenguas. Cada frase tiene su **propia línea base** (una
@@ -149,9 +149,16 @@ barra lateral con el logo animado, fondo con la Tierra de noche (o claro) y siet
   (`apto/control/modulos/+`). En cada paso dice «el módulo X no está abierto» y cómo abrirlo, en vez de esperar.
   El ESP32 no es un módulo de Python: si en 10 s no llegan datos, la estación lo avisa (y recuerda que los tres
   LED encendidos significan que no llega al broker).
-- **Lentes**: si el módulo de visión ve lentes antes de medir (`estado_vision` `"lentes"`), el paso de la cámara
-  muestra «Se ven lentes: quítatelos para continuar con la medición» y la cuenta de 60 s no corre hasta que el
-  módulo empieza a medir. Los datos de la cámara incluyen los bostezos tapados con la mano.
+- **Cámara junto con la reacción**: la cámara ya no tiene paso propio. Al tocar «Empezar la prueba», la estación
+  pide la medición (`orden_vision` con `"ventana": false` y los mismos segundos que la prueba) y arranca cuando el
+  módulo empieza a medir; así nadie pasa un minuto quieto mirando la cámara. Si el módulo ve lentes
+  (`estado_vision` `"lentes"`), el pedido de quitárselos sale en el área de la prueba antes de empezar. Al terminar
+  dice si llegaron los datos de la cámara. Los parpadeos medidos durante una tarea no son comparables con líneas
+  base tomadas mirando la cámara sin hacer nada.
+- **Cancelar evaluación**: botón en todos los pasos; corta la evaluación sin publicar resultado y avisa al ESP32
+  (`apto/control/cancelar`).
+- **Sin caché**: `servidor.py` responde todo con `Cache-Control: no-store`, para que la estación cargue siempre la
+  versión nueva después de actualizar el proyecto.
 - Cada página muestra si está conectada al broker. Los datos con `"simulado": true` llevan la etiqueta SIMULADO, y
   los del coordinador provisional, PROVISIONAL. La onda del pulso en el paso del dispositivo es ILUSTRATIVA: va al
   ritmo del pulso medido, porque el ESP32 manda un resumen por segundo y no la señal cruda.
@@ -179,15 +186,16 @@ con el promedio de la persona (`datos/coordinador/linea_base.jsonl`); sin línea
 referencia del prototipo, que hay que calibrar. **Rojo** si alguna fuente tiene 2 puntos o si 3 fuentes tienen
 puntos; **amarillo** si alguna tiene puntos; **verde** si ninguna. Los motivos son frases neutras, sin sujeto
 («Somnolencia alta según la escala de Karolinska»). La voz pesa como máximo 1 punto, porque es una señal débil.
-**SpO2: aviso, no puntaje.** Si durante al menos 30 s seguidos, con dedo y calidad ≥ 0,5, el SpO2 está 4 puntos o
+**SpO2: aviso, no puntaje.** Si durante al menos 20 s seguidos (de los 30 s que mide el ESP32), con dedo y calidad ≥ 0,5, el SpO2 está 4 puntos o
 más por debajo del promedio de la línea base de la persona (o por debajo de 92 si no tiene línea base), la evaluación
 lleva `"aviso_spo2": true` y el motivo «Oxígeno más bajo de lo habitual: repetir la medición», **sin cambiar el
 color**. Sacar el dedo o una lectura normal cortan la racha. La estación lo muestra en amarillo debajo del semáforo y
 el copiloto lo dice al final del resumen. Para probarlo: `python herramientas\simulador.py --persona bri --esp32 40
 --spo2 89` durante una sesión, antes del cuestionario.
-**Pulso: manda el sensor.** Si llegan lecturas del ESP32 en la sesión (una por segundo; se usa su mediana), su
-pulso es el que cuenta y el de la cámara (rPPG) no se usa; sin sensor, el de la cámara solo cuenta si
-`calidad_rppg` ≥ 0,5.
+**Pulso: solo el del sensor.** Se usa la mediana de las lecturas del ESP32 de la sesión (una por segundo). El pulso
+por cámara (rPPG) se quitó porque con la luz de la estación no llegaba a la calidad mínima; si un mensaje viejo trae
+`pulso_rppg_lpm`, no se usa. En la pantalla de resultados, «Fatiga por visión» resume la cámara: vale lo que su
+peor indicador (ojos cerrados, parpadeos o bostezos): sin signos, leve o marcada.
 
 **Cómo lo reemplaza Danilo:**
 1. Crear `coordinador\coordinador.py` con `ClienteMQTT("coordinador")`: con ese nombre la estación lo ve como
@@ -226,7 +234,7 @@ Guarda cada mensaje de `apto/#` para validar el sistema después y como respaldo
   es lo que impide que se abra a la red. En la laptop de Bri no se usa porque la máquina virtual de Docker ocupa
   unos 2 GB de RAM que necesitan Ollama y Whisper.
 
-## 8. Visión (pulso sin contacto, parpadeos y PERCLOS)
+## 8. Visión (parpadeos, PERCLOS y bostezos)
 
 `vision\vision.py` (MediaPipe 1.2, API Tasks `FaceLandmarker` y `HandLandmarker`; los modelos `face_landmarker.task`
 y `hand_landmarker.task` van en `modelos\`: los baja `instalar.bat`, o el módulo la primera vez).
@@ -236,7 +244,7 @@ Cámara en `config.env`: `CAMARA=0` (índice; `--listar` muestra las disponibles
 **Con el celular (DroidCam)**: abrir la app en el celular, conectado al mismo Wi-Fi que la laptop; la app muestra
 «WiFi IP» y el puerto 4747. Poner `CAMARA=http://ESA_IP:4747/video` y reiniciar el servicio de visión. No hace falta
 el programa DroidCam de Windows (si se usa, su cámara virtual aparece en `--listar` solo cuando está conectado).
-La cámara del celular suele dar más cuadros por segundo y mejor imagen que la de la laptop, y eso mejora el pulso.
+La cámara del celular suele dar más cuadros por segundo y mejor imagen que la de la laptop, y eso mejora la malla del rostro.
 Solo un programa a la vez puede recibir la imagen de DroidCam.
 
 **DroidCam por cable USB** (Android; no depende del Wi-Fi): activar en el celular las opciones de desarrollador
@@ -248,19 +256,13 @@ de Android SDK Platform-Tools; si está en otro lugar, poner su ruta en `ADB=`.
 | Modo | Qué hace |
 |---|---|
 | `--listar` | Lista las cámaras |
-| `--ver` | Vista previa en vivo (sin medir ni publicar): malla del rostro, regiones del pulso (frente y mejillas), pulso estimado y EAR. `q` o `Esc` para salir |
-| `--persona bri` | Una medición con ventana; `--linea-base`, `--sin-ventana`, `--sin-mqtt`, `--referencia 72` |
-| `--referencia 72` (solo) | Guarda el pulso medido con otro aparato junto al último estimado, en `datos\vision\validacion.csv` |
+| `--ver` | Vista previa en vivo (sin medir ni publicar): malla del rostro, zonas donde se mide la luz (frente y mejillas), EAR, parpadeos y bostezos. `q` o `Esc` para salir |
+| `--persona bri` | Una medición con ventana; `--linea-base`, `--sin-ventana`, `--sin-mqtt`, `--diagnostico` |
 | `--servicio` | Espera `apto/control/orden_vision`. Al recibir la orden **abre sola la ventana** mientras mide (la estación le dice a la persona que ahí ve su rostro), publica `estado_vision` (`midiendo` con los segundos que faltan cada 5 s, y `listo` o `error` con el motivo), cierra la ventana y suelta la cámara. Se anuncia como `ClienteMQTT("vision")` |
 
 Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada medición en
-`datos\vision\historial.jsonl` (con el pulso aunque sea dudoso, para validar).
+`datos\vision\historial.jsonl`.
 
-- **Pulso (rPPG)**: promedio RGB de la frente y las mejillas en cada cuadro, con su hora; se vuelve a muestrear
-  a 30 Hz; método POS (ventanas de 1,6 s); filtro de banda en el espectro de 0,7 a 3 Hz (42 a 180 lpm); el
-  pico da el pulso. **Calidad** = relación señal/ruido del pico (potencia a ±0,1 Hz del pico y de su armónico
-  contra el resto de la banda) llevada a 0..1: `(SNR dB + 3) / 12`. Si es menor que 0,5, **no se publica el
-  número**: va un aviso.
 - **Ojos**: EAR con 6 puntos por ojo. Para los parpadeos y el PERCLOS cuenta el ojo **más abierto** de los dos: un
   parpadeo o un cierre son con los dos ojos, y cerrar uno solo (un guiño) no cuenta. Para los bostezos se usa el
   promedio de los dos. EAR de ojo abierto = mediana de los primeros 5 s.
@@ -273,8 +275,20 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
   Por eso, durante la medición conviene mirar la ventana de frente.
 - **Bostezos**: MAR (apertura de la boca) = promedio de 3 aperturas internas de los labios / ancho entre las
   comisuras internas. Bostezo = MAR ≥ 0,6 que se mantiene (hasta bajar de 0,45) al menos 1,5 s; hablar abre la
-  boca menos y por menos tiempo. Mientras dura un bostezo los ojos se achican: esos cuadros no cuentan para los
-  parpadeos ni el PERCLOS. La ventana muestra el contador y avisa cuando la boca está muy abierta.
+  boca menos y por menos tiempo. Además tiene que mostrar **al menos una señal de bostezo**: los ojos se
+  entrecierran (EAR suavizado < 85 % del abierto al menos 0,5 s seguidos), la boca sigue abierta 2,5 s o más, o se
+  abrió de a poco (de MAR 0,3 a 0,6 en 0,4 s o más). En las trazas reales, los bostezos simulados quedaron
+  abiertos de 2,3 a 4,8 s, se abrieron en 0,43 a 3,2 s y achicaron los ojos 1,4 s o más. Los gestos de boca muy
+  abierta al hablar se abrieron de golpe (0,14 a 0,29 s), duraron de 0,5 a 1,6 s y casi nunca achicaron los ojos.
+  Uno de ellos (MAR 0,93 durante 1,56 s, ojos al 99-118 %) contaba antes como bostezo. La mandíbula no sirve para
+  distinguirlos: sube igual (+25 %) en los dos. Las tres señales se calculan con lo que pasó hasta cada cuadro y solo
+  pueden pasar de «no» a «sí», así que el contador en vivo no baja. **Límite conocido**: un gesto que mantenga la
+  boca muy abierta 2,5 s o más todavía cuenta. Mientras dura un bostezo los ojos se achican: esos cuadros no
+  cuentan para los parpadeos ni el PERCLOS. La ventana muestra el contador y avisa cuando la boca está muy abierta.
+  Cada bostezo con la boca a la vista se explica en la consola (momento, duración, MAR al empezar, máximo, mediana y
+  al terminar, tiempo de apertura, ojos, mandíbula, si después llegó la mano y qué señales lo hicieron bostezo).
+  Con `--diagnostico` (o `VISION_DIAGNOSTICO=1`) también salen las aperturas descartadas y el motivo. Se ajustan en
+  `config.local.env`: `BOSTEZO_VISTO_OJOS_S` (0,5), `BOSTEZO_LARGO_S` (2,5) y `BOSTEZO_SUBIDA_S` (0,4).
 - **Bostezos tapados con la mano** (en Bolivia, como en otros lugares, se bosteza tapándose la boca, y entonces
   el MAR no sirve): MediaPipe Hands (`hand_landmarker.task`, 1 de cada 2 cuadros, a media resolución) marca
   «mano en la boca» cuando 4 o más de los 21 puntos de una mano caen en el rectángulo de la boca y la nariz.
@@ -300,7 +314,7 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
   condiciones solo pueden pasar de «no» a «sí». Así una decisión tomada no cambia y el contador en vivo nunca
   baja; antes se recalculaba todo con el promedio de la sesión y bajaba al moverse o al cambiar de persona.
   Se publica `bostezos` (todos) y `bostezos_tapados`. Con la mano en la cara,
-  esos cuadros no cuentan para el pulso. Si no se puede usar la detección de manos, se mide igual y va un aviso.
+  esos cuadros no cuentan para medir la luz. Si no se puede usar la detección de manos, se mide igual y va un aviso.
   **Diagnóstico**: cada vez que la mano se va de la boca, la consola explica qué se midió y qué faltó (por
   ejemplo «ojos hasta el 88 % del abierto… los ojos casi no se entrecerraron»); en `--ver` también sale en la
   ventana, y al cerrar se guardan las series (sin imágenes) en `datos\vision\trazas\ver-*.npz`. Los umbrales se
@@ -320,27 +334,46 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
   no detectarse. **Ajuste**: con `--ver` la ventana muestra el puntaje (arriba a la derecha); mirarlo con y sin
   lentes y poner `LENTES_UMBRAL` entre los dos en `config.local.env`. `LENTES_REVISAR=0` lo apaga.
 - **Avisos de calidad**: poca luz (brillo de la piel < 60 de 255), demasiada luz o reflejos (> 210, o más del
-  5 % de la piel saturada), cara no detectada más del 20 % del tiempo, menos de 15 cuadros por segundo y pulso
-  poco confiable. La ventana muestra los de luz en vivo.
-- **Validación**: medir con la cámara y, al mismo tiempo, con otro aparato (oxímetro o reloj); luego
-  `python vision\vision.py --referencia <lpm>`. `validacion.csv` guarda el estimado, la referencia, el error,
-  la calidad, los fps y la cara detectada, para calcular el error medio después.
-- **Prueba**: `python vision\pruebas_vision.py` (señales sintéticas: pulso de 72 lpm → 72 ± 3, parpadeos
-  conocidos, PERCLOS, bostezos tapados, lentes, avisos y ventana).
+  5 % de la piel saturada), cara no detectada más del 20 % del tiempo, y menos de 15 cuadros por segundo.
+  La ventana muestra los de luz en vivo.
+- **Prueba**: `python vision\pruebas_vision.py` (señales sintéticas: parpadeos
+  conocidos, PERCLOS, bostezos tapados, falsos positivos de bostezo al hablar o gesticular, lentes, avisos y
+  ventana).
 
 ## 9. ESP32: luces y respaldo sin Wi-Fi
 
 Firmware en `firmware\apto_esp32\`. El cableado, las librerías y cómo subirlo están en `firmware/README.md`. El
-ESP32 muestra el semáforo en **3 LED sueltos**, en la pantalla OLED y con el zumbador:
-- **LED:** amarillo en GPIO 25, verde en GPIO 26 y rojo en GPIO 27, cada uno con 220 Ω y el cátodo a GND.
+ESP32 muestra el semáforo en un **LED RGB**, en la pantalla OLED y con el zumbador:
+- **LED RGB:** rojo en GPIO 25, verde en GPIO 26 y azul en GPIO 27, cada canal con 220 Ω (cátodo común a GND; con
+  ánodo común, `LED_ANODO_COMUN 1`). **Nunca se encienden los tres canales a la vez**, para no forzarlo.
 - **Zumbador:** suena con un tono de 2 kHz, así que sirve uno activo o uno pasivo; da 3 pitidos al pasar a rojo.
 
 | LED | Significa |
 |---|---|
-| Uno solo: verde, amarillo o rojo | El semáforo de la evaluación (`apto/{persona}/semaforo`) |
-| **Los tres encendidos** | **Sin conexión al broker** (con Wi-Fi configurado) o, en el modo local, **midiendo** |
-| Los tres parpadeando | Modo local: «repite» (hubo poca señal buena) |
-| Al arrancar: amarillo, verde, rojo, los tres y un pitido | Prueba del cableado |
+| Verde, amarillo (rojo + verde) o rojo | El resultado **final** de la evaluación en curso (`apto/{persona}/semaforo` de esa sesión) |
+| **Azul fijo** | Evaluación en curso (midiendo o esperando el resultado), o **sin conexión al broker** |
+| Azul parpadeando | Modo local: «repite» (hubo poca señal buena) |
+| Apagado | En reposo, o evaluación cancelada |
+| Al arrancar: rojo, verde y azul, de a uno, y un pitido | Prueba del cableado |
+
+**Con Wi-Fi, la placa sigue la evaluación de la estación** y la OLED anuncia cada paso:
+
+1. «INICIAR ANALISIS» (un pitido) cuando la estación publica una sesión nueva (`apto/control/sesion`), y después el
+   nombre de quien se evalúa.
+2. «Coloca tu dedo», cuenta 3-2-1 y **30 s de medición** con cuenta regresiva. Si se retira el dedo, «Dedo retirado:
+   repite»; si hubo menos de 10 s de señal buena, «Senal debil: repite».
+3. «MEDIDO» con el pulso, el SpO₂ y la HRV de esos 30 s: ya se puede retirar el dedo. La placa **solo publica
+   lecturas durante los 30 s**; fuera de ellos `pulso_lpm`, `hrv_rmssd_ms` y `spo2` van en `null`.
+4. El color y «Resultado final» **recién cuando el coordinador publica el semáforo de esa sesión**, con todas las
+   pruebas. Un semáforo de una sesión anterior se ignora. Queda hasta la próxima evaluación.
+
+Cada mensaje `apto/{persona}/esp32` lleva `fase` (`reposo`, `anuncio`, `nombre`, `espera`, `cuenta`, `midiendo`,
+`listo`, `resultado`, `cancelada`), `quedan_s` mientras mide y, al terminar, `medicion_lista: true` con
+`pulso_medido_lpm`, `hrv_medido_ms` y `spo2_medido`. La estación habilita «Continuar» con `medicion_lista`.
+
+**Cancelación**: «CANCELADA» y el motivo, LED apagado y vuelta a «Listo» si la estación publica
+`apto/control/cancelar` (`{"persona", "sesion", "motivo"}`, retenido; botón «Cancelar evaluación»), si la placa pasa
+20 s sin broker durante una evaluación («Sin conexion») o si pasan 15 min sin resultado final («Sin resultado»).
 
 ### Respaldo de la demo: medición sin Wi-Fi (modo local)
 
@@ -357,11 +390,11 @@ Si en la demo fallan la red o la laptop, el ESP32 puede medir solo, sin Wi-Fi ni
    | Resultado | Cuándo | LED | Zumbador |
    |---|---|---|---|
    | VERDE | Pulso de 50 a 99 | Verde | 1 pitido corto |
-   | AMARILLO | Pulso de 100 a 119 («Pulso en reposo alto») o menor que 50 («Pulso bajo: repite») | Amarillo | 1 pitido |
-   | ROJO | Pulso de 120 o más | Rojo | 3 pitidos |
+   | AMARILLO | Pulso de 100 a 119 («Pulso en reposo alto») o de 40 a 49 («Pulso bajo») | Amarillo | 1 pitido |
+   | ROJO | Pulso de 120 o más, o menor que 40 («Pulso muy bajo») | Rojo | 3 pitidos |
    | REPITE | Menos de 10 s de señal buena | Los tres parpadeando | 2 pitidos largos |
 
-   - **SpO₂:** si es menor que 92, solo agrega «Oxigeno bajo: repite» en la OLED, sin cambiar el color (la misma
+   - **SpO₂:** si es menor que 92, solo agrega «Oxigeno bajo» en la OLED, sin cambiar el color (la misma
      regla que el aviso de SpO₂ del coordinador).
    - **HRV:** se muestra, pero no se juzga, porque no hay línea base.
 5. Para otra medición, retirar el dedo y volver a ponerlo.

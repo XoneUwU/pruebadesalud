@@ -37,8 +37,9 @@ def tema_modulo(nombre_modulo: str) -> str:
 
 
 def tema(persona: str, tipo: str) -> str:
-    """tema("erick", "voz") -> "apto/erick/voz"."""
-    return f"{PREFIJO}/{persona}/{tipo}"
+    """tema("eric", "voz") -> "apto/eric/voz". La persona va siempre en minúsculas: «Adrian» y «adrian» son la
+    misma persona (si no, su línea base quedaba partida en dos)."""
+    return f"{PREFIJO}/{persona.strip().lower()}/{tipo}"
 
 
 class ClienteMQTT:
@@ -145,6 +146,6 @@ class ClienteMQTT:
 
 
 def persona_de_tema(tema_mqtt: str) -> str:
-    """'apto/erick/evaluacion' -> 'erick'."""
+    """'apto/eric/evaluacion' -> 'eric'."""
     partes = tema_mqtt.split("/")
     return partes[1] if len(partes) >= 3 else ""

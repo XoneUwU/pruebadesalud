@@ -5,8 +5,8 @@ Graba (o lee un .wav) mientras la persona lee la frase fija, extrae rasgos de la
 
 Modos:
   python voz/voz_fatiga.py --listar                        lista los micrófonos
-  python voz/voz_fatiga.py --persona erick                 graba y analiza una vez
-  python voz/voz_fatiga.py --persona erick --linea-base    igual, marcado como línea base
+  python voz/voz_fatiga.py --persona eric                 graba y analiza una vez
+  python voz/voz_fatiga.py --persona eric --linea-base    igual, marcado como línea base
   python voz/voz_fatiga.py --archivo grabacion.wav         analiza un .wav existente
   python voz/voz_fatiga.py --servicio                      espera órdenes por MQTT (apto/control/orden_voz)
 
@@ -20,7 +20,7 @@ Frases: la estándar (por defecto) y, como opción, variaciones de menos a más 
 compara con las de la misma frase (frase_id), porque los rasgos cambian con el texto.
 
 Orden por MQTT para el modo servicio (la envía la estación):
-  tema apto/control/orden_voz  ->  {"accion": "grabar", "persona": "erick", "segundos": 12, "linea_base": false,
+  tema apto/control/orden_voz  ->  {"accion": "grabar", "persona": "eric", "segundos": 12, "linea_base": false,
                                     "frase": "estandar"}
 """
 import argparse
@@ -326,7 +326,8 @@ def main():
     if args.servicio:
         modo_servicio(cli)
     else:
-        evaluar(args.persona, args.segundos, args.linea_base, cli, args.archivo, frase_id=args.frase)
+        # En minúsculas, como la estación y el ESP32: «--persona Adrian» guardaba otra persona distinta de «adrian».
+        evaluar(args.persona.strip().lower(), args.segundos, args.linea_base, cli, args.archivo, frase_id=args.frase)
         if cli:
             time.sleep(0.5)  # dar tiempo a que salga el mensaje
             cli.cerrar()

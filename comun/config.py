@@ -43,6 +43,14 @@ def get_int(clave: str, defecto: int) -> int:
         return defecto
 
 
+def get_float(clave: str, defecto: float) -> float:
+    """Número con decimales; acepta punto o coma (2.6 o 2,6)."""
+    try:
+        return float(get(clave, str(defecto)).replace(",", "."))
+    except ValueError:
+        return defecto
+
+
 def ruta(clave: str, defecto: str = "") -> Path | None:
     """Ruta relativa a la raíz del proyecto (o absoluta si así se escribió)."""
     valor = get(clave, defecto)
