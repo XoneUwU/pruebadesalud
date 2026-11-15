@@ -124,7 +124,7 @@
     // evaluación
     paso: "inicio", persona: "", tarea: "", lineaBase: false, demo: false, sesion: "", inicio: 0,
     esp32: null, esp32Llegada: 0, esp32Tarde: false, ppg: [], latido: 0, musculo: [],
-    vision: null, estadoVision: "", visionRestantes: null, visionMotivo: "", visionMensaje: "", camFase: "lista", camInicio: 0, camT: SEGUNDOS_CAMARA, vista: "ventana",
+    vision: null, estadoVision: "", visionRestantes: null, visionMotivo: "", visionMensaje: "", camFase: "lista", camInicio: 0, camT: SEGUNDOS_CAMARA, vista: "web",
     fraseVoz: "estandar", vozFase: "inicio", vozMsg: "", vozInicio: 0, vozPct: 0, voz: null,
     pvt: { fase: "intro", msg: "", cont: "", contColor: "", res: null },
     dsst: { fase: "intro", res: null, clave: [], actual: 0 },
@@ -426,7 +426,7 @@
     publicar("apto/control/orden_vision", { accion: "medir", segundos: SEGUNDOS_CAMARA, linea_base: S.lineaBase });
     const reloj = cadaTanto(250, () => {
       // Mientras el módulo espera a que se quiten los lentes, la cuenta de la medición no corre.
-      if (S.camFase === "midiendo" && S.estadoVision === "lentes") { S.camInicio = Date.now(); S.camT = SEGUNDOS_CAMARA; return; }
+      if (S.camFase === "midiendo" && (S.estadoVision === "lentes" || S.estadoVision === "buscando")) { S.camInicio = Date.now(); S.camT = SEGUNDOS_CAMARA; return; }
       const local = Math.max(0, SEGUNDOS_CAMARA - (Date.now() - S.camInicio) / 1000);
       const remoto = num(S.visionRestantes);
       S.camT = remoto !== null && S.estadoVision === "midiendo" ? Math.min(local, remoto) : local;
@@ -539,6 +539,12 @@
       const e = S.estadoVision;
       if (e === "lentes") {  // el módulo espera a que se quiten los lentes; después avisa "midiendo" solo
         S.pvt.msg = S.visionMensaje || "Se ven lentes: quítatelos para continuar con la medición.";
+        pedirPintar();
+        return;
+      }
+      // El módulo busca la cámara (abre DroidCam en el celular o pasa a la de la laptop): se espera hasta 30 s
+      if (e === "buscando" && Date.now() - t0 <= 30000) {
+        S.pvt.msg = S.visionMensaje || "Buscando la cámara…";
         pedirPintar();
         return;
       }
@@ -1451,7 +1457,7 @@ ${S.modal ? vistaModal() : ""}`;
     const restante = S.camFase === "listo" || S.camFase === "error" ? 0 : Math.max(0, Math.min(SEGUNDOS_CAMARA, S.camT));
     return h`<div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;gap:6px;margin-right:auto"><h2 style="font-size:26px;margin:0">Monitoreo con cámara</h2><p style="margin:0;color:var(--color-neutral-300);max-width:60ch">Mira a la cámara de frente durante ${SEGUNDOS_CAMARA} segundos. Mide parpadeos, ojos cerrados y bostezos.</p></div>
-      ${segOpciones("vista", "Vista de la cámara", [["ventana", "Ventana de visión", S.vista === "ventana", "ph-app-window"], ["web", "Vista web · pendiente", S.vista === "web", "ph-browser"]], "vista")}
+      ${segOpciones("vista", "Vista de la cámara", [["web", "Video en vivo", S.vista === "web", "ph-browser"], ["ventana", "Ventana de visión", S.vista === "ventana", "ph-app-window"]], "vista")}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start">
       <div style="display:flex;flex-direction:column;gap:10px">
@@ -1459,10 +1465,7 @@ ${S.modal ? vistaModal() : ""}`;
           <div style="position:absolute;inset:0;background-image:linear-gradient(color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px),linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px);background-size:40px 40px"></div>
           ${esquinas(14, 22)}
           <div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%);border-radius:50%;border:1.5px dashed ${cara !== null && cara < 80 ? ST.amarillo.fg : mid ? "var(--color-accent)" : "var(--color-neutral-600)"}"></div>
-          ${S.vista === "web" ? h`<div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%)">
-              ${LANDMARKS.map(([x, y]) => h`<span style="position:absolute;left:${x}%;top:${y}%;width:4px;height:4px;margin:-2px;border-radius:50%;background:var(--color-accent-300);opacity:.85"></span>`)}
-            </div>
-            <span style="position:absolute;left:50%;bottom:44px;transform:translateX(-50%);padding:4px 10px;border-radius:5px;background:color-mix(in srgb, var(--color-bg) 80%, transparent);font-size:12px;color:var(--color-neutral-200);white-space:nowrap">Vista previa simulada · la transmisión web aún no existe</span>`
+          ${S.vista === "web" && mid ? videoEnVivo()
           : h`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center">
               <i class="ph ph-app-window" style="font-size:36px;color:var(--color-accent-400)"></i>
               <span style="font-size:15px;max-width:34ch;color:var(--color-neutral-100)">${ventanaTexto}</span>
@@ -1571,6 +1574,14 @@ ${S.modal ? vistaModal() : ""}`;
       <span style="display:flex;flex-direction:column;gap:1px"><b style="font-weight:500;font-size:12px;color:${st.fg}">${tituloTxt}</b><span style="font-size:11px;color:var(--color-neutral-200)">${texto}</span></span></div>`;
 
   /** Panel lateral de la cámara durante la prueba de reacción (pvtPreparar pide la medición sin ventana). */
+  // Video en vivo del módulo de visión: MJPEG con la malla de la cara, solo en esta laptop y mientras mide
+  // (vision.py --servicio, VISION_VIDEO_PUERTO). data-k: morph() no lo recrea al repintar, así el video no se corta.
+  function videoEnVivo() {
+    const url = `http://127.0.0.1:${Number(CFG.vision_video_puerto) || 8091}/video`;
+    // contain: el cuadro del celular es 16:9 y con cover se cortaban los costados del conteo («QUEDAN … s»)
+    return h`<img data-k="video-camara" src="${url}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000">`;
+  }
+
   function panelCamara(P, seg) {
     const abierto = activo("vision");
     const conCam = P.fase !== "intro" && Boolean(S.camConPvt);
@@ -1590,15 +1601,20 @@ ${S.modal ? vistaModal() : ""}`;
       : P.fase === "activa" ? Math.max(0, Math.ceil((pvt.duracionMs - (performance.now() - pvt.inicio)) / 1000))
         : e === "midiendo" && remoto !== null ? remoto : seg;
     const pct = quedan === null ? 0 : Math.max(0, Math.min(100, ((seg - quedan) / seg) * 100));
-    const chips = [{ icon: "ph-webcam", label: `CÁMARA ${CFG.camara != null && CFG.camara !== "" ? String(CFG.camara).replace(/^https?:\/\/([^/:]+).*$/, "droidcam $1") : "0"}`, fg: abierto ? ST.verde.fg : ST.rojo.fg }];
+    const buscando = e === "buscando" && !d;
+    const usada = d && d.camara ? d.camara : CFG.camara;  // la que midió de verdad (la de respaldo si el celular no respondió)
+    const nombreCam = usada == null || usada === "" ? "0" : /^\d+$/.test(String(usada)) ? (d && d.camara ? `laptop ${usada}` : String(usada))
+      : String(usada).replace(/^https?:\/\/([^/:]+).*$/, "droidcam $1");
+    const chips = [{ icon: "ph-webcam", label: `CÁMARA ${nombreCam}`, fg: abierto ? ST.verde.fg : ST.rojo.fg }];
     if (cara !== null) chips.push({ icon: cara >= 80 ? "ph-check-circle" : "ph-warning-circle", label: `ROSTRO ${Math.round(cara)} %`, fg: cara >= 80 ? ST.verde.fg : ST.amarillo.fg });
     if (d) chips.push(avisoLuz ? { icon: "ph-warning-circle", label: "REVISAR LUZ", fg: ST.amarillo.fg } : { icon: "ph-sun", label: "LUZ OK", fg: ST.verde.fg });
     if (lentes) chips.push({ icon: "ph-eyeglasses", label: "QUÍTATE LOS LENTES", fg: ST.amarillo.fg });
-    else if (mid) chips.push({ icon: "ph-record", label: "MIDIENDO", fg: "var(--color-accent-300)" });
+    else if (mid && !buscando) chips.push({ icon: "ph-record", label: "MIDIENDO", fg: "var(--color-accent-300)" });
     const [estado, sub] = !abierto && !d ? ["Módulo sin abrir", "La prueba sigue sin la cámara"]
       : !PUEDE ? ["Solo lectura", "Esta laptop no puede pedir la medición"]
         : P.fase === "intro" ? ["Lista", `Mide ${textoDuracion(seg)} junto con la prueba`]
           : lentes ? ["Se ven lentes", "Quítatelos para empezar"]
+            : buscando ? ["Buscando la cámara", S.visionMensaje || "Celular primero; si no responde, la de la laptop"]
             : error ? ["Error", S.visionMotivo || "La cámara no pudo medir"]
               : d ? ["Medición lista", "Datos enviados al coordinador"]
                 : P.fase === "preparando" ? ["Preparando", "Esperando al módulo de visión"]
@@ -1625,14 +1641,11 @@ ${S.modal ? vistaModal() : ""}`;
         <div style="position:absolute;inset:0;background-image:linear-gradient(color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px),linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px);background-size:24px 24px"></div>
         ${esquinas(8, 14)}
         <div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%);border-radius:50%;border:1.5px dashed ${oval}"></div>
-        ${S.vista === "web" ? h`<div style="position:absolute;left:50%;top:48%;width:38%;aspect-ratio:3/4;transform:translate(-50%,-50%)">
-            ${LANDMARKS.map(([x, y]) => h`<span style="position:absolute;left:${x}%;top:${y}%;width:4px;height:4px;margin:-2px;border-radius:50%;background:var(--color-accent-300);opacity:.85"></span>`)}
-          </div>
-          <span style="position:absolute;left:50%;bottom:10px;transform:translateX(-50%);padding:3px 8px;border-radius:4px;background:color-mix(in srgb, var(--color-bg) 80%, transparent);font-size:10px;color:var(--color-neutral-200);white-space:nowrap">Vista previa simulada · la transmisión web aún no existe</span>`
+        ${S.vista === "web" && (mid || lentes) ? videoEnVivo()
         : h`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center">
             <i class="ph ph-app-window" style="font-size:24px;color:var(--color-accent-400)"></i>
-            <span style="font-size:12px;max-width:30ch;color:var(--color-neutral-100)">${ventanaTexto}</span>
-            <span style="font-size:10px;color:var(--color-neutral-400);${MONO}">${abierto ? `vision.py --servicio · cámara ${CFG.camara ?? 0}` : COMANDO.vision}</span>
+            <span style="font-size:12px;max-width:30ch;color:var(--color-neutral-100)">${S.vista === "web" && !d && !error ? "Al empezar la prueba aparece aquí el video de la cámara, con la malla de la cara." : ventanaTexto}</span>
+            <span style="font-size:10px;color:var(--color-neutral-400);${MONO}">${abierto ? `vision.py --servicio · cámara ${nombreCam}` : COMANDO.vision}</span>
           </div>`}
         ${mid ? h`<div style="position:absolute;left:0;right:0;top:0;height:100%;background:linear-gradient(to bottom, transparent 85%, color-mix(in srgb, var(--color-accent) 14%, transparent));animation:barrido 3s linear infinite;pointer-events:none"></div>` : ""}
         <div style="position:absolute;left:8px;right:8px;top:8px;display:flex;gap:4px;flex-wrap:wrap;padding:0 22px">
@@ -1640,7 +1653,7 @@ ${S.modal ? vistaModal() : ""}`;
         </div>
       </div>
       <span style="font-size:11px;color:var(--color-neutral-400)" aria-live="polite">${estado} · ${sub}</span>
-      ${segOpciones("vista", "Vista de la cámara", [["ventana", "Ventana", S.vista === "ventana"], ["web", "Web · pendiente", S.vista === "web"]], "vista", "font-size:11px;align-self:flex-start")}
+      ${segOpciones("vista", "Vista de la cámara", [["web", "Video en vivo", S.vista === "web"], ["ventana", "Sin video", S.vista === "ventana"]], "vista", "font-size:11px;align-self:flex-start")}
       ${lentes ? h`<div class="aviso-camara">${alertaMini(ST.amarillo, "ph-eyeglasses", "Se ven lentes", textoLentes)}</div>` : ""}
       ${error ? alertaMini(ST.rojo, "ph-x-circle", "La cámara no pudo medir", `${S.visionMotivo || "Sin motivo"}. La evaluación sigue sin ella.`) : ""}
       ${avisos.map((a) => alertaMini(ST.amarillo, "ph-warning", "Aviso de calidad", a))}

@@ -521,6 +521,84 @@ def main() -> int:
             "adb devices: celular listo, sin permiso y ninguno")
     revisar(v.es_usb("http://127.0.0.1:4747/video") and not v.es_usb("http://192.168.1.50:4747/video")
             and not v.es_usb("0"), "DroidCam por cable = URL en 127.0.0.1; por Wi-Fi o índice, no")
+    revisar(v.app_droidcam("package:com.dev47apps.obsdroidcam\n") == "com.dev47apps.obsdroidcam"
+            and v.app_droidcam("package:com.dev47apps.obsdroidcam\npackage:com.dev47apps.droidcam\n")
+            == "com.dev47apps.droidcam" and v.app_droidcam("package:com.android.chrome\n") is None,
+            "app DroidCam: la de OBS, la normal antes que la de OBS, y ninguna")
+
+    # Búsqueda de la cámara: el celular y, si no da video, la de la laptop (sin abrir cámaras de verdad)
+    celular = "http://127.0.0.1:4747/video"
+    originales = v.abrir_celular, v.abrir_directa
+
+    def probar_busqueda(celular_ok, laptop_ok, respaldo="0"):
+        mensajes = []
+        v.abrir_celular = lambda f: ("cap-celular", "cuadro", None) if celular_ok else (None, None, "DroidCam no da video.")
+        v.abrir_directa = lambda f: ("cap-laptop", "cuadro", None) if laptop_ok else (None, None, "No se pudo abrir la cámara 0.")
+        try:
+            return v.abrir_con_respaldo(celular, mensajes.append, respaldo=respaldo), mensajes
+        except v.ErrorMedicion as e:
+            return str(e), mensajes
+    try:
+        (cap, fuente, _, aviso), msj = probar_busqueda(True, True)
+        revisar(cap == "cap-celular" and fuente == celular and aviso == "" and len(msj) == 1,
+                f"cámara: con el celular respondiendo se usa el celular, sin aviso ({msj})")
+        (cap, fuente, _, aviso), msj = probar_busqueda(False, True)
+        revisar(cap == "cap-laptop" and fuente == "0" and "laptop" in aviso and "DroidCam no da video" in aviso
+                and len(msj) == 2, f"cámara: sin el celular, la de la laptop, con el motivo en el aviso: {aviso}")
+        error, _ = probar_busqueda(False, True, respaldo="")
+        revisar(error == "DroidCam no da video.", f"cámara: sin respaldo (CAMARA_RESPALDO vacío), el error del celular: {error}")
+        error, _ = probar_busqueda(False, False)
+        revisar(isinstance(error, str) and "DroidCam no da video" in error and "Tampoco" in error,
+                f"cámara: si tampoco responde la laptop, el error dice las dos cosas: {error}")
+    finally:
+        v.abrir_celular, v.abrir_directa = originales
+    # Video en vivo para la estación: JPEG achicado con la malla, y el MJPEG por HTTP (sin cámara: cuadros inventados)
+    import cv2 as _cv2
+    import urllib.request
+    fondo = np.full((720, 1280, 3), 60, np.uint8)
+    malla = np.random.default_rng(5).uniform([500, 250], [780, 550], (478, 2))
+    conexiones = np.array([(i, i + 1) for i in range(477)])
+    jpg = v.cuadro_web(fondo, malla, conexiones)
+    img = _cv2.imdecode(np.frombuffer(jpg, np.uint8), _cv2.IMREAD_COLOR) if jpg else None
+    revisar(img is not None and img.shape[1] == v.VIDEO_ANCHO and float(img.std()) > 5
+            and v.cuadro_web(fondo, None, conexiones) is not None,
+            f"video: JPEG de {v.VIDEO_ANCHO} px con la malla dibujada (y sin cara, igual sale el cuadro)")
+    info = {"ear": 0.27, "parpadeos": 4, "bostezos": 1, "quedan": 20.0, "progreso": 0.5, "avisos": [], "manos": [],
+            "lentes": (None, None)}
+    con_conteo = v.cuadro_web(fondo, malla, conexiones, info)
+    img2 = _cv2.imdecode(np.frombuffer(con_conteo, np.uint8), _cv2.IMREAD_COLOR) if con_conteo else None
+    revisar(img2 is not None and img2.shape[1] == v.VIDEO_ANCHO and float(np.abs(img2[:118].astype(int) - img[:118]).mean()) > 3,
+            "video: con el conteo en vivo lleva el panel de arriba (EAR, parpadeos, bostezos), como la ventana")
+    grande = np.zeros((720, 1280, 3), np.uint8)
+    revisar(v.achicar(grande).shape == (360, 640, 3) and v.achicar(fondo[:480, :640]).shape == (480, 640, 3),
+            "los cuadros de 1280 x 720 (DroidCam) se procesan a 640 x 360; los de 640 quedan igual")
+    try:
+        v.sin_modo_eficiencia()
+        revisar(True, "pedir velocidad completa a Windows (sin modo eficiencia) no falla")
+    except Exception as e:  # noqa: BLE001
+        revisar(False, f"pedir velocidad completa a Windows falló: {e}")
+    tr = v.Transmision()
+    if tr.arrancar(8098):
+        tr.poner(fondo, malla, conexiones)
+        r = urllib.request.urlopen("http://127.0.0.1:8098/video", timeout=5)
+        cabecera = r.headers.get("Content-Type", "")
+        trozo = r.read(2000)
+        r.close()
+        revisar(cabecera.startswith("multipart/x-mixed-replace") and b"--cuadro" in trozo and b"\xff\xd8" in trozo,
+                f"video: http://127.0.0.1:8098/video manda MJPEG ({cabecera})")
+        try:
+            urllib.request.urlopen("http://127.0.0.1:8098/otra", timeout=5)
+            otra = 200
+        except urllib.error.HTTPError as e:
+            otra = e.code
+        revisar(otra == 404, f"video: otra ruta da 404 ({otra})")
+    else:
+        revisar(False, "video: no se pudo abrir el puerto 8098 para la prueba")
+
+    reg.camara, reg.aviso_camara = "0", "Se midió con la cámara de la laptop porque no respondió el celular: x"
+    res = reg.resultado()
+    revisar(res["camara"] == "0" and reg.aviso_camara in res["avisos"],
+            "el resultado dice con qué cámara se midió y, si fue la de respaldo, por qué")
 
     print("\n--- lentes ---")
     import cv2

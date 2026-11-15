@@ -179,6 +179,11 @@ LENTES_REVISION_S = 2.0   # se decide con los cuadros de los últimos 2 s, no co
 LENTES_FRAC = 0.6         # hay lentes si el 60 % o más de esos cuadros pasa el umbral...
 LENTES_LIBRE_FRAC = 0.2   # ...y ya no hay cuando baja al 20 % o menos
 MENSAJE_LENTES = ("Se ven lentes: quítatelos para continuar con la medición. Empieza sola cuando ya no se vean.")
+# --- cámara de respaldo: si la de CAMARA (el celular) no da video, se mide con esta (índice de la cámara de la
+# laptop; vacío = sin respaldo). Solo una: el índice 1 suele ser la cámara virtual de DroidCam, que da una imagen fija.
+CAMARA_RESPALDO = config.get("CAMARA_RESPALDO", "0").strip()
+DROIDCAM_APPS = ("com.dev47apps.droidcam", "com.dev47apps.obsdroidcam")  # DroidCam y DroidCam OBS
+DROIDCAM_ESPERA_S = 8.0  # al abrir la app desde la laptop: lo que se espera a que arranque
 # --- avisos
 LUZ_MIN, LUZ_MAX = 60, 210                # brillo medio de la piel (0 a 255)
 SATURADO_MAX = 0.05                       # fracción de píxeles de piel saturados
@@ -711,6 +716,8 @@ class Registro:
         self.ear_der, self.ear_izq = [], []  # cada ojo por separado (para no contar un guiño como parpadeo)
         self.con_lentes = False   # se midió con lentes porque no se los quitaron a tiempo
         self.sin_manos = False    # no se pudo usar la detección de manos
+        self.camara = ""          # la que midió de verdad (CAMARA o, si no dio video, CAMARA_RESPALDO)
+        self.aviso_camara = ""    # por qué se usó la de respaldo
 
     def agregar(self, t: float, pts, cuadro_bgr, inclinacion: float = float("nan"), mano: float = float("nan"),
                 lentes: float | None = None, z=None):
@@ -778,7 +785,10 @@ class Registro:
                           "para el semáforo.")
         if self.sin_manos:
             avisos.append("No se pudo usar la detección de manos: los bostezos tapados con la mano no se cuentan.")
+        if self.aviso_camara:
+            avisos.append(self.aviso_camara)
         return {
+            "camara": self.camara,
             "parpadeos_min": ojos["parpadeos_min"] if ojos else None,
             "parpadeos": ojos["parpadeos"] if ojos else None,
             "perclos": ojos["perclos"] if ojos else None,
@@ -821,6 +831,23 @@ def leer_dispositivos(salida: str) -> dict[str, str]:
     return {s.strip(): e.strip() for s, e in (l.split("\t", 1) for l in salida.splitlines()[1:] if "\t" in l)}
 
 
+def _correr_adb(adb: str, *args, timeout: float = 15):
+    import subprocess
+    return subprocess.run([adb, *args], capture_output=True, text=True, timeout=timeout,
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def _celular_listo(adb: str) -> tuple[str | None, str | None]:
+    """(serie del celular listo, None) o (None, motivo para mostrar)."""
+    dispositivos = leer_dispositivos(_correr_adb(adb, "devices").stdout)
+    listos = [s for s, e in dispositivos.items() if e == "device"]
+    if listos:
+        return listos[0], None
+    if "unauthorized" in dispositivos.values():
+        return None, "El celular pide permiso: acepten «¿Permitir depuración USB?» en su pantalla."
+    return None, "No veo el celular por USB: revisen el cable (que pase datos) y que la depuración USB esté activa."
+
+
 def puente_usb(fuente: str) -> str | None:
     """Rehace «adb forward» hacia el puerto de DroidCam (se pierde cada vez que se desconecta el celular).
     None si quedó listo; si no, el motivo para mostrar."""
@@ -829,24 +856,116 @@ def puente_usb(fuente: str) -> str | None:
     adb = buscar_adb()
     if adb is None:
         return "No encontré adb (Android SDK Platform-Tools) para usar DroidCam por cable."
-
-    def correr(*args):
-        return subprocess.run([adb, *args], capture_output=True, text=True, timeout=15,
-                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     try:
-        dispositivos = leer_dispositivos(correr("devices").stdout)
-        listos = [s for s, e in dispositivos.items() if e == "device"]
-        if not listos:
-            if "unauthorized" in dispositivos.values():
-                return "El celular pide permiso: acepten «¿Permitir depuración USB?» en su pantalla."
-            return "No veo el celular por USB: revisen el cable (que pase datos) y que la depuración USB esté activa."
+        serie, motivo = _celular_listo(adb)
+        if motivo:
+            return motivo
         puerto = urlparse(fuente).port or 4747
-        r = correr("-s", listos[0], "forward", f"tcp:{puerto}", f"tcp:{puerto}")
+        r = _correr_adb(adb, "-s", serie, "forward", f"tcp:{puerto}", f"tcp:{puerto}")
         if r.returncode != 0:
             return f"No se pudo conectar el puerto {puerto} por USB: {(r.stderr or r.stdout).strip()}"
     except (OSError, subprocess.SubprocessError) as e:
         return f"adb falló: {e}"
     return None
+
+
+def app_droidcam(salida_paquetes: str) -> str | None:
+    """De «pm list packages com.dev47apps»: la app de DroidCam instalada (la normal antes que la de OBS), o None."""
+    instaladas = {l.split(":", 1)[1].strip() for l in salida_paquetes.splitlines() if l.startswith("package:")}
+    return next((a for a in DROIDCAM_APPS if a in instaladas), None)
+
+
+def abrir_app_droidcam() -> str | None:
+    """Con el celular por USB: enciende la pantalla y abre la app DroidCam (o la trae al frente si ya estaba abierta),
+    y espera a que arranque. None si quedó abierta; si no, el motivo para mostrar."""
+    import subprocess
+    adb = buscar_adb()
+    if adb is None:
+        return "No encontré adb (Android SDK Platform-Tools) para usar DroidCam por cable."
+    try:
+        serie, motivo = _celular_listo(adb)
+        if motivo:
+            return motivo
+        app = app_droidcam(_correr_adb(adb, "-s", serie, "shell", "pm", "list", "packages", "com.dev47apps").stdout)
+        if app is None:
+            return "El celular no tiene la app DroidCam instalada."
+        print(f"[vision] DroidCam no da video: enciendo la pantalla del celular y abro {app}...")
+        _correr_adb(adb, "-s", serie, "shell", "input", "keyevent", "KEYCODE_WAKEUP")
+        _correr_adb(adb, "-s", serie, "shell", "monkey", "-p", app, "-c", "android.intent.category.LAUNCHER", "1")
+        fin = time.time() + DROIDCAM_ESPERA_S
+        while time.time() < fin:
+            if _correr_adb(adb, "-s", serie, "shell", "pidof", app).stdout.strip():
+                return None  # abierta: abrir_celular sigue probando hasta que dé video
+            time.sleep(0.5)
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"adb falló: {e}"
+    return "No se pudo abrir DroidCam en el celular: desbloquéenlo y ábranla."
+
+
+def abrir_directa(fuente: str):
+    """(cap, primer cuadro con imagen, None) o (None, None, motivo). Índice de cámara o URL."""
+    cap = abrir_camara(fuente)
+    if cap is None:
+        if es_usb(fuente):
+            extra = (" Abran la app DroidCam en el celular y déjenla en pantalla, y cierren DroidCam en la laptop: el "
+                     "celular acepta un programa a la vez.")
+        elif not fuente.isdigit():
+            extra = (" ¿DroidCam está tomado por otro programa (por ejemplo, el cliente de Windows)? El celular acepta "
+                     "uno a la vez.")
+        else:
+            extra = " ¿Está ocupada o desconectada?"
+        return None, None, f"No se pudo abrir la cámara {fuente}.{extra}"
+    cuadro = primer_cuadro(cap)
+    if cuadro is None or es_plano(cuadro):
+        cap.release()
+        if cuadro is None:
+            return None, None, f"La cámara {fuente} no entrega imágenes."
+        return None, None, (f"La cámara {fuente} entrega una imagen plana, sin video (si es la cámara virtual de "
+                            f"DroidCam, usen la URL del celular en CAMARA).")
+    return cap, cuadro, None
+
+
+def abrir_celular(fuente: str):
+    """DroidCam por cable: rehace «adb forward» y prueba; si no da video, enciende la pantalla, abre la app y vuelve a
+    probar. (cap, cuadro, None) o (None, None, motivo)."""
+    motivo = puente_usb(fuente)
+    if motivo:
+        return None, None, motivo
+    cap, cuadro, motivo = abrir_directa(fuente)
+    if cap is not None:
+        return cap, cuadro, None
+    motivo_app = abrir_app_droidcam()
+    if motivo_app:
+        return None, None, motivo_app
+    fin = time.time() + DROIDCAM_ESPERA_S  # al volver al frente, DroidCam tarda unos segundos en dar video
+    while time.time() < fin:
+        cap, cuadro, _ = abrir_directa(fuente)
+        if cap is not None:
+            return cap, cuadro, None
+        time.sleep(1.0)
+    return None, None, ("El celular está conectado pero DroidCam no da video: desbloquéenlo, dejen la app DroidCam "
+                        "abierta en pantalla y cierren DroidCam en la laptop.")
+
+
+def abrir_con_respaldo(fuente: str, al_buscar=None, respaldo: str | None = None):
+    """Busca la cámara: primero `fuente` (CAMARA; si es el celular por cable, también intenta abrir la app) y, si no
+    da video, la de la laptop (CAMARA_RESPALDO). (cap, fuente usada, primer cuadro, aviso); el aviso dice por qué se
+    usó la de respaldo ("" si no hizo falta). Sin ninguna, ErrorMedicion con el motivo."""
+    respaldo = CAMARA_RESPALDO if respaldo is None else respaldo
+    if al_buscar:
+        al_buscar("Buscando la cámara del celular…" if es_usb(fuente) else f"Abriendo la cámara {fuente}…")
+    cap, cuadro, motivo = abrir_celular(fuente) if es_usb(fuente) else abrir_directa(fuente)
+    if cap is not None:
+        return cap, fuente, cuadro, ""
+    if not respaldo or respaldo == fuente:
+        raise ErrorMedicion(motivo)
+    print(f"[vision] {motivo} Pruebo la cámara de la laptop ({respaldo}).")
+    if al_buscar:
+        al_buscar("No responde el celular: usando la cámara de la laptop…")
+    cap, cuadro, motivo_respaldo = abrir_directa(respaldo)
+    if cap is None:
+        raise ErrorMedicion(f"{motivo} Tampoco respondió la cámara de la laptop: {motivo_respaldo}")
+    return cap, respaldo, cuadro, f"Se midió con la cámara de la laptop porque no respondió el celular: {motivo}"
 
 
 def abrir_camara(fuente: str):
@@ -1043,6 +1162,155 @@ class Manos:
         self._lm.close()
 
 
+# ================================================================ velocidad
+# Los cuadros se procesan a este ancho como mucho: DroidCam manda 1280 x 720 y procesarlos así bajaba a ~13 cuadros
+# por segundo. EAR, MAR y el puntaje de lentes son proporciones: no cambian con el tamaño (la cara sigue pasando de
+# los 40 px entre ojos que pide puntaje_lentes).
+PROCESO_ANCHO = 640
+
+
+def achicar(cuadro, ancho: int = PROCESO_ANCHO):
+    import cv2
+    h, w = cuadro.shape[:2]
+    if w <= ancho:
+        return cuadro
+    return cv2.resize(cuadro, (ancho, max(1, round(h * ancho / w))), interpolation=cv2.INTER_AREA)
+
+
+def sin_modo_eficiencia():
+    """Windows 11 manda los procesos en segundo plano a los núcleos de eficiencia (EcoQoS). Durante la prueba de
+    reacción el navegador tiene el foco y la cámara bajaba de ~27 a ~13 cuadros por segundo (en esta laptop, el mismo
+    cálculo tarda 5 a 7 veces más con EcoQoS). Se pide velocidad completa para este proceso. En otro sistema, nada."""
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    class Estado(ctypes.Structure):  # PROCESS_POWER_THROTTLING_STATE
+        _fields_ = [("Version", wintypes.ULONG), ("ControlMask", wintypes.ULONG), ("StateMask", wintypes.ULONG)]
+    try:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.GetCurrentProcess.restype = wintypes.HANDLE
+        k32.SetProcessInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        k32.SetProcessInformation.restype = wintypes.BOOL
+        estado = Estado(1, 0x1, 0x0)  # EXECUTION_SPEED en el control y apagado en el estado = sin EcoQoS
+        if not k32.SetProcessInformation(k32.GetCurrentProcess(), 4, ctypes.byref(estado), ctypes.sizeof(estado)):
+            print(f"[vision] No pude quitar el modo eficiencia de Windows (error {ctypes.get_last_error()}).")
+    except (OSError, AttributeError) as e:  # Windows viejo sin SetProcessInformation
+        print(f"[vision] No pude quitar el modo eficiencia de Windows: {e}")
+
+
+# ================================================================ video en vivo para la estación
+VIDEO_PUERTO = config.get_int("VISION_VIDEO_PUERTO", 8091)  # http://127.0.0.1:8091/video (solo en esta laptop)
+VIDEO_ANCHO = PROCESO_ANCHO  # el panel de dibujar() (EAR, parpadeos, bostezos) está pensado para 640 px
+VIDEO_CADA_S = 0.125     # como mucho 8 cuadros por segundo
+
+
+def cuadro_web(cuadro, pts, conexiones, info: dict | None = None, ancho: int = VIDEO_ANCHO) -> bytes | None:
+    """JPEG del cuadro (ya en espejo) para la estación: con `info`, lo mismo que la ventana de visión (malla y el
+    conteo en vivo de parpadeos y bostezos, el EAR y el tiempo); sin `info`, solo la malla. No toca `cuadro`."""
+    import cv2
+    h, w = cuadro.shape[:2]
+    f = min(1.0, ancho / w)
+    img = cuadro.copy() if f == 1.0 else cv2.resize(cuadro, (ancho, max(1, round(h * f))), interpolation=cv2.INTER_AREA)
+    p = None if pts is None else np.asarray(pts, float)[:, :2] * f
+    if info is not None:
+        info = dict(info)
+        if f != 1.0 and info.get("manos"):
+            info["manos"] = [np.asarray(m, float) * f for m in info["manos"]]
+        dibujar(img, p, conexiones, info)
+    elif p is not None:
+        cv2.polylines(img, p[conexiones].astype(np.int32), False, (200, 170, 90), 1, cv2.LINE_AA)
+        for i in OJO_DER + OJO_IZQ:
+            cv2.circle(img, tuple(p[i].astype(int)), 2, (40, 210, 255), -1, cv2.LINE_AA)
+    ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    return jpg.tobytes() if ok else None
+
+
+class Transmision:
+    """Video MJPEG para el panel de la cámara de la estación (http://127.0.0.1:VIDEO_PUERTO/video): el último cuadro
+    con la malla, mientras se mide. Solo escucha en 127.0.0.1: el video de la cara no sale de esta laptop."""
+
+    def __init__(self):
+        self.activa = False
+        self._jpg, self._n, self._ultimo = None, 0, 0.0
+        self._cond = threading.Condition()
+
+    def toca(self) -> bool:
+        """¿Ya pasó VIDEO_CADA_S desde el último cuadro? (si no, ni se arma lo que se dibuja)."""
+        return self.activa and time.perf_counter() - self._ultimo >= VIDEO_CADA_S
+
+    def poner(self, cuadro, pts, conexiones, info: dict | None = None):
+        """Agrega un cuadro si toca (si no, no gasta tiempo en el JPEG). No modifica `cuadro`."""
+        if not self.toca():
+            return
+        self._ultimo = time.perf_counter()
+        jpg = cuadro_web(cuadro, pts, conexiones, info)
+        if jpg:
+            with self._cond:
+                self._jpg, self._n = jpg, self._n + 1
+                self._cond.notify_all()
+
+    def limpiar(self):
+        """Al empezar otra medición: que la estación no muestre el último cuadro de la anterior."""
+        with self._cond:
+            self._jpg = None
+
+    def esperar(self, visto: int, espera: float = 1.0) -> tuple[int, bytes | None]:
+        """(número, JPEG) del cuadro siguiente a `visto`, o el mismo si no llega otro en `espera` segundos."""
+        with self._cond:
+            if self._n == visto or self._jpg is None:  # sin cuadro todavía: también se espera (si no, gira sin parar)
+                self._cond.wait(espera)
+            return self._n, self._jpg
+
+    def arrancar(self, puerto: int = VIDEO_PUERTO) -> bool:
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        transmision = self
+
+        class Manejador(BaseHTTPRequestHandler):
+            def log_message(self, *args):  # sin una línea por pedido en la consola
+                pass
+
+            def do_GET(self):
+                if self.path.split("?")[0] != "/video":
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=cuadro")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                visto, quieto = -1, 0
+                try:
+                    while True:
+                        n, jpg = transmision.esperar(visto)
+                        if jpg is None:
+                            continue
+                        if n == visto:  # sin cuadros nuevos (no se está midiendo): cada ~2 s se reenvía el último,
+                            quieto += 1  # así se nota si la estación ya cerró el panel y el hilo termina
+                            if quieto < 2:
+                                continue
+                        visto, quieto = n, 0
+                        self.wfile.write(b"--cuadro\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                                         + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionError, OSError):
+                    return  # la estación cerró el panel o se recargó
+
+        try:
+            servidor = ThreadingHTTPServer(("127.0.0.1", puerto), Manejador)
+        except OSError as e:
+            print(f"[vision] No pude abrir el video en vivo en el puerto {puerto}: {e}")
+            return False
+        servidor.daemon_threads = True
+        threading.Thread(target=servidor.serve_forever, daemon=True).start()
+        self.activa = True
+        print(f"[vision] Video en vivo para la estación: http://127.0.0.1:{puerto}/video")
+        return True
+
+
+TRANSMISION = Transmision()
+
+
 # ================================================================ vista previa
 def dibujar(cuadro, pts, conexiones, info: dict):
     """Malla, zonas de luz, ojos y un panel con la cara, el EAR y el tiempo (texto sin tildes: OpenCV)."""
@@ -1133,40 +1401,23 @@ def avisos_en_vivo(registro: Registro) -> list[str]:
 
 
 def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, camara: str | None = None,
-             revisar_lentes: bool = False, al_lentes=None) -> Registro:
+             revisar_lentes: bool = False, al_lentes=None, al_buscar=None) -> Registro:
     """Abre la cámara y junta cuadros durante `segundos` (None = hasta q/Esc). al_avanzar(quedan) cada 5 s.
 
-    Con revisar_lentes (y `segundos`), antes de empezar mira LENTES_REVISION_S si hay lentes; si hay, llama a
-    al_lentes() y espera a que se los quiten (o LENTES_ESPERA_S) antes de empezar a contar los `segundos`."""
+    La cámara la busca abrir_con_respaldo (el celular y, si no da video, la de la laptop); al_buscar(mensaje) avisa
+    mientras busca. Con revisar_lentes (y `segundos`), antes de empezar mira LENTES_REVISION_S si hay lentes; si hay,
+    llama a al_lentes() y espera a que se los quiten (o LENTES_ESPERA_S) antes de empezar a contar los `segundos`."""
     import cv2
-    fuente = fuente_camara(camara)
-    if es_usb(fuente):
-        motivo = puente_usb(fuente)
-        if motivo:
-            raise ErrorMedicion(motivo)
-    cap = abrir_camara(fuente)
-    if cap is None:
-        if es_usb(fuente):
-            extra = (" Abran la app DroidCam en el celular y déjenla en pantalla, y cierren DroidCam en la laptop: el "
-                     "celular acepta un programa a la vez.")
-        elif not fuente.isdigit():
-            extra = (" ¿DroidCam está tomado por otro programa (por ejemplo, el cliente de Windows)? El celular acepta "
-                     "uno a la vez.")
-        else:
-            extra = " ¿Está ocupada o desconectada?"
-        raise ErrorMedicion(f"No se pudo abrir la cámara {fuente}.{extra}")
+    TRANSMISION.limpiar()
+    cap, fuente, _, aviso_camara = abrir_con_respaldo(fuente_camara(camara), al_buscar)
+    print(f"[vision] Cámara: {fuente}" + (f" ({aviso_camara})" if aviso_camara else ""))
     rostro = Rostro()
     manos = Manos.crear()
     registro = Registro()
     registro.sin_manos = manos is None
+    registro.camara, registro.aviso_camara = fuente, aviso_camara
     cam = None
     try:
-        cuadro = primer_cuadro(cap)
-        if cuadro is None:
-            raise ErrorMedicion(f"La cámara {fuente} no entrega imágenes.")
-        if es_plano(cuadro):
-            raise ErrorMedicion(f"La cámara {fuente} entrega una imagen plana, sin video (si es la cámara virtual de "
-                                f"DroidCam, usen la URL del celular en CAMARA).")
         for _ in range(10):  # que se ajuste la exposición
             cap.read()
         cam = Camara(cap)
@@ -1190,7 +1441,7 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
             if cuadro is None:
                 raise ErrorMedicion("La cámara dejó de enviar imágenes.")
             ahora = llegada - t0  # la hora en que llegó el cuadro, no la de procesarlo
-            cuadro = cv2.flip(cuadro, 1)  # como un espejo
+            cuadro = cv2.flip(achicar(cuadro), 1)  # a PROCESO_ANCHO y como un espejo
             pts = rostro.puntos(cuadro, ahora)
             if pts is not None:
                 zona, zona_t = zona_boca(pts), ahora
@@ -1230,7 +1481,8 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
                 if al_avanzar and quedan is not None and t - ultimo_aviso >= 5:
                     ultimo_aviso = t
                     al_avanzar(quedan)
-            if ventana:
+            # El conteo en vivo (y lo que se dibuja) también hace falta sin ventana si la estación mira el video
+            if ventana or TRANSMISION.activa:
                 if midiendo and t - ultimo_vivo >= 1.0:  # los parpadeos y los bostezos, una vez por segundo
                     ultimo_vivo = t
                     tr = np.asarray(registro.t)
@@ -1249,6 +1501,7 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
                                     print(texto_episodio(ep))
                         for linea in explicar_bostezos(registro, bocas_explicadas, t - 0.6, manos is not None):
                             print(linea)
+            if ventana or TRANSMISION.toca():  # sin ventana, solo cuando toca un cuadro del video (8 por segundo)
                 mensaje = None
                 if fase == "lentes":
                     mensaje = ["SE VEN LENTES", "Quitatelos para continuar con la medicion",
@@ -1265,6 +1518,8 @@ def capturar(segundos: float | None, ventana: bool = True, al_avanzar=None, cama
                         if ultimo_episodio and segundos is None else None,  # solo en --ver
                         "progreso": None if segundos is None or not midiendo else min(1.0, t / segundos),
                         "avisos": avisos_en_vivo(registro) if midiendo else []}
+                TRANSMISION.poner(cuadro, pts, rostro.conexiones, info)  # sobre una copia: antes de dibujar()
+            if ventana:
                 cv2.imshow(VENTANA, dibujar(cuadro, pts, rostro.conexiones, info))
                 tecla = cv2.waitKey(1) & 0xFF
                 if tecla in (ord("q"), 27):
@@ -1326,7 +1581,8 @@ def evaluar(persona: str, segundos: float, linea_base: bool, cli: ClienteMQTT | 
         registro = capturar(segundos, ventana, lambda q: estado(estado="midiendo", segundos_restantes=round(q)), camara,
                             revisar_lentes=LENTES_REVISAR,
                             al_lentes=lambda: estado(estado="lentes", mensaje=MENSAJE_LENTES,
-                                                     espera_s=round(LENTES_ESPERA_S)))
+                                                     espera_s=round(LENTES_ESPERA_S)),
+                            al_buscar=lambda mensaje: estado(estado="buscando", mensaje=mensaje))
         r = registro.resultado()
         if r["cara_detectada_pct"] < 20:
             raise ErrorMedicion("No se vio la cara en casi toda la medición.")
@@ -1347,6 +1603,7 @@ def evaluar(persona: str, segundos: float, linea_base: bool, cli: ClienteMQTT | 
 
 def modo_servicio(cli: ClienteMQTT, camara: str | None = None):
     print("Modo servicio: esperando órdenes en apto/control/orden_vision (Ctrl+C para salir)")
+    TRANSMISION.arrancar()
     pendientes: list[dict] = []
     cli.suscribir("apto/control/orden_vision", lambda _t, d: pendientes.append(d))
     try:
@@ -1382,6 +1639,7 @@ def main():
     if args.diagnostico:
         global DIAGNOSTICO
         DIAGNOSTICO = True
+    sin_modo_eficiencia()
 
     if args.listar:
         listar_camaras()

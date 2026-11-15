@@ -87,6 +87,7 @@ def configuracion(local: bool) -> dict:
         "mqtt_puerto": config.get_int("MQTT_PORT", 1883),
         "camara": config.get("CAMARA", "0"),
         "vision_segundos": config.get_int("VISION_SEGUNDOS", 60),
+        "vision_video_puerto": config.get_int("VISION_VIDEO_PUERTO", 8091),  # video en vivo de vision.py
         "ollama_model": config.get("OLLAMA_MODEL"),
         "whisper_model": config.get("WHISPER_MODEL"),
         "mongo_host": host_mongo(),
