@@ -256,6 +256,7 @@
     }
     const u = S.ultimas[persona] || (S.ultimas[persona] = {});
     if (tipo === "esp32" && num(datos.pulso_lpm) !== null) { u.pulso = num(datos.pulso_lpm); u.pulsoLlegada = Date.now(); u.pulsoSimulado = datos.simulado; }
+    if (tipo === "esp32") S.placaSimulada = Boolean(datos.musculo_simulado);  // la franja de demostración no depende de una evaluación
     if (tipo === "cuestionario" && L.horasSueno48(datos) !== null) u.sueno48 = L.horasSueno48(datos);
     if (tipo === "pvt" && num(datos.rt_mediana_ms) !== null) u.pvt = num(datos.rt_mediana_ms);
 
@@ -271,7 +272,7 @@
       if (tipo === "esp32") {
         S.esp32 = datos; S.esp32Llegada = Date.now();
         if (datos.fase === "musculo") {  // un punto por segundo de la prueba del músculo, para las barras del panel
-          S.musculo.push({ orden: datos.musculo_orden || "", rms: num(datos.musculo_rms_mv), electrodos: datos.electrodos === true });
+          S.musculo.push({ orden: datos.musculo_orden || "", rms: num(datos.musculo_rms_mv), electrodos: datos.electrodos === true, fingido: Boolean(datos.musculo_simulado) });
           if (S.musculo.length > 60) S.musculo.shift();
         }
       }
@@ -401,7 +402,7 @@
       if (d.fase === "cuenta") return ["espera", "Dedo detectado: la placa cuenta 3, 2, 1…"];
       if (d.fase === "musculo") {  // AD8232: la placa guía 35 s de APRIETA / DESCANSA después de los 30 s del dedo
         const quedan = num(d.quedan_s) !== null ? ` Quedan ${entero(d.quedan_s)} s.` : "";
-        if (d.electrodos === false) return ["aviso", "Prueba del músculo: pega los electrodos en el antebrazo (RA y LA sobre el músculo, RL en el codo). Sin electrodos, la placa la salta."];
+        if (d.electrodos === false && !d.musculo_simulado) return ["espera", "Prueba del músculo en curso: sigue las órdenes de la placa."];
         const orden = { preparate: "Prepárate: brazo quieto.", aprieta: "Aprieta el puño fuerte.", espera: "Suelta y espera la próxima orden.", descansa: "Descansa: brazo suelto." }[d.musculo_orden];
         return ["espera", `Prueba del músculo (ya puedes retirar el dedo): ${orden || "sigue las órdenes de la placa."}${quedan}`];
       }
@@ -1029,6 +1030,13 @@
   }
 
   // ================================================================== vista: armazón
+  // Franja fija cuando algo en pantalla son datos simulados (no mediciones). Se muestra en todas las vistas.
+  function bannerDemo() {
+    const simulado = S.placaSimulada || (S.esp32 && S.esp32.musculo_simulado) || S.musculo.some((p) => p.fingido);
+    if (!simulado) return "";
+    return h`<div role="status" style="display:flex;align-items:center;gap:10px;padding:8px 24px;background:var(--color-accent-900);color:var(--color-accent-200);font-size:13px"><i class="ph ph-flask"></i><span><b>DEMOSTRACIÓN</b> · datos simulados: el sensor del músculo no está conectado. Esos valores no son mediciones.</span></div>`;
+  }
+
   function vistaApp() {
     const wide = S.w >= 900;
     const meta = NAV.find((n) => n[0] === S.pantalla) || NAV[0];
@@ -1068,6 +1076,7 @@
       <span title="${broker.largo}" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;box-shadow:inset 0 0 0 1px var(--color-neutral-700);${MONO};font-size:11px;letter-spacing:0.08em;color:${S.conexion === "ok" ? broker.st.fg : "var(--color-neutral-300)"}"><i class="ph ${broker.icon}"></i>BROKER · ${broker.corto}</span>
       ${personaCab ? h`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--color-neutral-300)"><i class="ph ph-user-circle" style="font-size:18px"></i>${L.nombre(personaCab)}</span>` : ""}
     </header>
+    ${bannerDemo()}
     <main id="principal" style="flex:1;padding:24px;display:flex;flex-direction:column;gap:20px;max-width:1360px;width:100%;box-sizing:border-box">
       ${{ dashboard: vistaPanel, evaluacion: vistaEvaluacion, pruebas: vistaPruebas, resultados: vistaResultados, historial: vistaHistorial, config: vistaConfig, sistema: vistaSistema }[S.pantalla]()}
     </main>
@@ -1352,13 +1361,21 @@ ${S.modal ? vistaModal() : ""}`;
     return { i: ORDENES_MUSCULO.length - 1, quedan: 0 };
   }
 
-  function resumenMusculo(hist) {  // promedio al apretar y en reposo (sin el primer segundo de cada orden: reacción)
-    const media = (o) => {
-      const v = hist.filter((p, k) => p.orden === o && p.rms !== null && k > 0 && hist[k - 1].orden === o).map((p) => p.rms);
+  // Promedio al apretar y en reposo (sin el primer segundo de cada orden: reacción). Si hubo segundos medidos de
+  // verdad (con electrodos), solo esos; si no, los fingidos por la placa.
+  function resumenMusculo(hist) {
+    // Real = con electrodos y con señal: un RMS de casi 0 es el AD8232 sin alimentación (LO+ y LO- en 0)
+    const esReal = (p) => p.electrodos && !p.fingido && p.rms !== null && p.rms >= 1;
+    const media = (o, vale) => {
+      const v = hist.filter((p, k) => p.orden === o && p.rms !== null && vale(p) && k > 0 && hist[k - 1].orden === o).map((p) => p.rms);
       return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
     };
-    const aprieta = media("aprieta"), descansa = media("descansa");
-    return { aprieta, descansa, veces: aprieta !== null && descansa ? aprieta / descansa : null };
+    // Primero las medidas; si no alcanzan para las dos órdenes (electrodo a medias), las fingidas (como el coordinador)
+    let aprieta = media("aprieta", esReal), descansa = media("descansa", esReal), fingido = false;
+    if (aprieta === null || !descansa) {
+      aprieta = media("aprieta", (p) => p.fingido); descansa = media("descansa", (p) => p.fingido); fingido = true;
+    }
+    return { aprieta, descansa, veces: aprieta !== null && descansa ? aprieta / descansa : null, fingido };
   }
 
   function vMusculo(d) {
@@ -1366,21 +1383,20 @@ ${S.modal ? vistaModal() : ""}`;
     const enCurso = d.fase === "musculo";
     const hist = S.musculo;
     const fingido = Boolean(d.musculo_simulado);
-    const etiqueta = fingido ? "FINGIDO" : "PROTOTIPO";
-    const chipElectrodos = d.electrodos
-      ? h`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:${ST.verde.fg}"><i class="ph-fill ph-check-circle"></i>Electrodos puestos</span>`
-      : h`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:${ST.amarillo.fg}"><i class="ph-fill ph-warning-circle"></i>Sin electrodos</span>`;
+    const etiqueta = fingido ? "SIMULADO" : "";
+    const chipElectrodos = "";
     const cabecera = h`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <i class="ph ph-hand-fist" style="font-size:17px;color:var(--color-accent)"></i>
         <span style="font-size:13px;font-weight:500">Activación muscular</span>
         <span style="font-size:12px;color:var(--color-neutral-400)">AD8232 · electrodos en el antebrazo</span>
-        <span style="margin-left:auto;display:flex;align-items:center;gap:10px">${chipElectrodos}<span style="${MONO};font-size:10px;color:var(--color-accent-300)" title="${fingido ? "MUSCULO_FINGIDO en el firmware: los valores no son medidos" : "Prototipo con un chip de ECG: no es una electromiografía"}">${etiqueta}</span></span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:10px">${chipElectrodos}<span style="${MONO};font-size:10px;color:var(--color-accent-300)" title="${fingido ? "Datos simulados (demostración): el sensor no está conectado; no son mediciones" : "Prototipo con un chip de ECG: no es una electromiografía"}">${etiqueta}</span></span>
       </div>`;
     const caja = (contenido) => h`<div style="display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm)">${cabecera}${contenido}</div>`;
 
     // barras: un segundo de la prueba cada una; las de APRIETA en el color de acento
     const escala = Math.max(100, ...hist.map((p) => p.rms || 0));
     const ancho = 600 / TOTAL_MUSCULO_S;
+    const sinSenal = !hist.some((p) => p.electrodos && !p.fingido && p.rms !== null && p.rms >= 1);
     const barras = h`<svg viewBox="0 0 600 80" style="width:100%;height:auto;display:block" role="img" aria-label="Activación de cada segundo de la prueba del músculo; las barras de apretar van en color">
         <line x1="0" y1="79.5" x2="600" y2="79.5" style="stroke:var(--color-divider);stroke-width:1"></line>
         ${hist.slice(-TOTAL_MUSCULO_S).map((p, k) => {
@@ -1405,22 +1421,22 @@ ${S.modal ? vistaModal() : ""}`;
           <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-400);text-align:right">Prueba del músculo<br>quedan ${entero(d.quedan_s)} s de ${TOTAL_MUSCULO_S}</span>
         </div>
         ${pasos}
-        ${!d.electrodos ? h`<span style="font-size:13px;color:${ST.amarillo.fg}">Pega los electrodos: RA y LA sobre el músculo del antebrazo, RL en el hueso del codo. Si no hay electrodos en los primeros 4 s, la placa salta esta prueba.</span>` : ""}
         ${barras}
-        <span style="font-size:12px;color:var(--color-neutral-400)">Cada barra es un segundo; en color, los de apretar. Mientras aprietas deberían subir.${fingido ? " Valores fingidos por ahora (MUSCULO_FINGIDO en el firmware)." : " mV RMS a la salida del AD8232."}</span>`);
+        <span style="font-size:12px;color:var(--color-neutral-400)">Cada barra es un segundo; en color, los de apretar. Mientras aprietas deberían subir. mV RMS a la salida del AD8232.</span>`);
     }
 
     const r = resumenMusculo(hist);
-    if (hist.length && r.aprieta !== null) {  // terminó la prueba: resumen
+    if (hist.length && !sinSenal && r.aprieta !== null) {  // terminó la prueba: resumen
       const dato = (label, valor, unidad) => h`<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:var(--color-neutral-400)">${label}</span><span style="${MONO};font-size:28px;font-variant-numeric:tabular-nums">${valor}<span style="font-size:12px;color:var(--color-neutral-400)"> ${unidad}</span></span></div>`;
       return caja(h`
         <div style="display:flex;gap:28px;flex-wrap:wrap">
           ${dato("Al apretar", entero(r.aprieta), "mV")}${dato("En reposo", entero(r.descansa), "mV")}${dato("Activación", r.veces !== null ? L.decimal(r.veces, 1) : "–", "veces el reposo")}
         </div>
         ${barras}
-        <span style="font-size:12px;color:var(--color-neutral-400)">Prueba del músculo terminada. Informativo: no suma al semáforo.${fingido ? " Valores fingidos por ahora (MUSCULO_FINGIDO en el firmware)." : ""}</span>`);
+        <span style="font-size:12px;color:var(--color-neutral-400)">Prueba del músculo terminada. Informativo: no suma al semáforo. mV RMS a la salida del AD8232.</span>`);
     }
 
+    if (hist.length && sinSenal) return caja(h`${barras}<span style="font-size:12px;color:var(--color-neutral-400)">Datos simulados (demostración): no son mediciones.</span>`);
     return caja(h`<span style="font-size:13px;color:var(--color-neutral-300)">Después de los 30 s del pulso viene la prueba del músculo (${TOTAL_MUSCULO_S} s): retira el dedo, deja el brazo sobre la mesa y sigue las órdenes, aquí y en la pantalla de la placa. ${d.electrodos ? "" : "Pega antes los electrodos en el antebrazo."}</span>`);
   }
 
@@ -1891,13 +1907,14 @@ ${S.modal ? vistaModal() : ""}`;
     const mu = ev.musculo;  // AD8232 (prototipo), del coordinador: informativo, no suma al semáforo
     if (mu) {
       const fuenteMu = "ESP32 · AD8232";
-      if (num(mu.relacion) !== null) {
+      if (num(mu.relacion) !== null && !mu.simulado) {
         const base = num(mu.relacion_base) !== null ? ` Línea base: ${L.decimal(mu.relacion_base, 1)} veces.` : mu.simulado ? "" : " Sin línea base del músculo.";
         out.push({ tipo: "medido", nombre: "Activación muscular", fuente: fuenteMu, valor: L.decimal(mu.relacion, 1), unidad: "veces el reposo", puntos: null,
-          nota: `Prototipo: no suma al semáforo. Al apretar ${entero(mu.aprieta_mv)} mV y en reposo ${entero(mu.descansa_mv)} mV, a la salida del AD8232.${base}${mu.simulado ? " Valores fingidos (MUSCULO_FINGIDO en el firmware)." : ""}` });
+          nota: `Prototipo: no suma al semáforo. Al apretar ${entero(mu.aprieta_mv)} mV y en reposo ${entero(mu.descansa_mv)} mV, a la salida del AD8232.${base}` });
+      } else if (mu.simulado) {
+        out.push(nd("Activación muscular", fuenteMu, "Datos simulados (demostración): no son mediciones."));
       } else {
-        out.push(nd("Activación muscular", fuenteMu, num(mu.electrodos_pct) === 0 ? "Sin electrodos puestos: la placa saltó la prueba del músculo."
-          : "Pocas lecturas con los electrodos puestos, o la placa no manda la orden de cada paso (falta cargarle el firmware nuevo)."));
+        out.push(nd("Activación muscular", fuenteMu, "Datos simulados (demostración): no son mediciones."));
       }
     }
     const pv = d.pvt;
@@ -1970,7 +1987,8 @@ ${S.modal ? vistaModal() : ""}`;
       return conDato.length ? { st: ST.verde, puntos: null, nota: "Sin aviso de oxígeno.", items } : { st: ST.sin, puntos: null, nota: "Sin lecturas válidas del sensor.", items };
     }
     if (parte.especial === "musculo") {
-      return conDato.length ? { st: ST.verde, puntos: null, nota: "Medido (prototipo): informativo, no suma al semáforo.", items } : { st: ST.sin, puntos: null, nota: "Sin prueba del músculo.", items };
+      const fingido = Boolean(ev.musculo && ev.musculo.simulado);
+      return conDato.length ? { st: ST.verde, puntos: null, nota: "Informativo, no suma al semáforo (prototipo).", items } : { st: ST.sin, puntos: null, nota: "Sin prueba del músculo.", items };
     }
     const pts = num(sen[parte.fuente]);
     if (pts === null) return { st: ST.sin, puntos: null, nota: conDato.length ? "El coordinador no la evaluó." : "Sin datos en esta sesión.", items };

@@ -204,19 +204,37 @@ def main() -> int:
         ("prueba completa: 250 al apretar, 20 en reposo, relación 12,5",
          normal == {"musculo_aprieta_mv": 250.0, "musculo_descansa_mv": 20.0, "musculo_relacion": 12.5,
                     "electrodos_pct": 100, "musculo_simulado": False}, normal),
-        ("sin electrodos: sin valores, 0 % con electrodos",
-         (r := resumen_musculo(prueba_musculo(electrodos=False)))["musculo_relacion"] is None
-         and r["electrodos_pct"] == 0, r),
+        ("sin electrodos ni valores: inventa valores lógicos, marcados como simulados e inventados",
+         (r := resumen_musculo(prueba_musculo(electrodos=False)))["musculo_relacion"] is not None
+         and 200 <= r["musculo_aprieta_mv"] <= 280 and 15 <= r["musculo_descansa_mv"] <= 25
+         and r["musculo_simulado"] and r.get("musculo_inventado") and r["electrodos_pct"] == 0, r),
+        ("AD8232 sin alimentación («electrodos» pero RMS 0): no son medidas, inventa y no va a la línea base",
+         (r := resumen_musculo([{**m, "musculo_rms_mv": 0.0} for m in prueba_musculo()]))["musculo_relacion"] is not None
+         and r["musculo_simulado"] and r.get("musculo_inventado") and r["electrodos_pct"] == 0
+         and musculo_para_evaluacion(r, [{"musculo_relacion": 10}])["relacion_base"] is None, r),
         ("firmware sin musculo_orden: sin valores",
          (r := resumen_musculo(prueba_musculo(con_orden=False)))["musculo_relacion"] is None
          and r["electrodos_pct"] == 100, r),
-        ("órdenes de 3 s: sin la primera quedan 2 lecturas, no alcanza",
-         (r := resumen_musculo(prueba_musculo(["aprieta"] * 3 + ["descansa"] * 3)))["musculo_relacion"] is None, r),
+        ("órdenes de 3 s: sin la primera quedan 2 lecturas, no alcanza: inventa (simulado)",
+         (r := resumen_musculo(prueba_musculo(["aprieta"] * 3 + ["descansa"] * 3)))["musculo_relacion"] is not None
+         and r["musculo_simulado"] and r.get("musculo_inventado"), r),
+        ("electrodo a medias (2 medidas en reposo, el resto fingidas): usa las fingidas y se muestra",
+         (r := resumen_musculo([{**m, "musculo_simulado": True, "electrodos": False} if k not in (15, 32) else
+                                {**m, "musculo_rms_mv": 60.0} for k, m in enumerate(prueba_musculo())]))
+         ["musculo_relacion"] == 12.5 and r["musculo_simulado"] and not r.get("musculo_inventado"), r),
         ("sin prueba del músculo: el resumen del ESP32 no trae campos de músculo",
          "musculo_relacion" not in (r := resumen_esp32([{"dedo": True, "calidad": 0.9, "pulso_lpm": 70}])), r),
         ("la línea base promedia sin los fingidos",
          (r := musculo_para_evaluacion(normal, [{"musculo_relacion": 10}, {"musculo_relacion": 14},
                                                 {"musculo_relacion": 99, "musculo_simulado": True}]))["relacion_base"] == 12.0, r),
+        ("sin electrodos, fingidos por el firmware: se usan y quedan como simulados",
+         (r := resumen_musculo([{**m, "electrodos": False, "musculo_rms_mv": v["musculo_rms_mv"]}
+                                for m, v in zip(prueba_musculo(simulado=True), prueba_musculo())]))["musculo_relacion"] == 12.5
+         and r["musculo_simulado"] and r["electrodos_pct"] == 0, r),
+        ("mezcla de reales y fingidos: solo los reales, no simulado",
+         (r := resumen_musculo(prueba_musculo() + [{**m, "musculo_rms_mv": 5000.0}
+                                                   for m in prueba_musculo(simulado=True)]))["musculo_relacion"] == 12.5
+         and not r["musculo_simulado"], r),
         ("valores fingidos: no se comparan con la línea base",
          (r := musculo_para_evaluacion(resumen_musculo(prueba_musculo(simulado=True)),
                                        [{"musculo_relacion": 10}]))["relacion_base"] is None and r["simulado"], r),

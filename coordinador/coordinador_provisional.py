@@ -51,6 +51,7 @@ Los puntos de cada fuente (pvt, dsst, cuestionario, voz, vision) son los de su p
 Es una sugerencia para apoyar la decisión, no un diagnóstico.
 """
 import json
+import random
 import sys
 import threading
 import time
@@ -73,6 +74,7 @@ SPO2_MINIMO_SIN_BASE = 92   # sin línea base: avisar por debajo de esto
 MOTIVO_SPO2 = "Oxígeno más bajo de lo habitual: repetir la medición"
 # Activación muscular (AD8232, prototipo; no suma al semáforo)
 MUSCULO_MIN_LECTURAS = 3  # lecturas válidas por orden (APRIETA, DESCANSA) para dar un valor
+MUSCULO_MIN_MV = 1.0      # un RMS menor «con electrodos» es salida quieta (AD8232 sin alimentación), no una medida
 ACCIONES = {
     "verde": "Puede realizar la tarea",
     "amarillo": "Reasignar la tarea o hacerla en pareja, y descansar antes",
@@ -279,21 +281,43 @@ def resumen_musculo(lecturas: list[dict]) -> dict:
     en_prueba = [m for m in lecturas if m.get("fase") == "musculo"]
     if not en_prueba:
         return {}
-    por_orden: dict[str, list[float]] = {"aprieta": [], "descansa": []}
-    anterior = None
-    for m in en_prueba:
-        orden = m.get("musculo_orden")
-        if orden in por_orden and orden == anterior and m.get("electrodos") is True:
-            v = _num(m.get("musculo_rms_mv"))
-            if v is not None:
-                por_orden[orden].append(v)
-        anterior = orden
-    aprieta, descansa = ((_mediana(vs) if len(vs) >= MUSCULO_MIN_LECTURAS else None) for vs in por_orden.values())
+    # Medidas: con electrodos y sin "musculo_simulado". Si la sesión tiene alguna, se usan solo esas; si no (sin
+    # electrodos, el firmware finge), las fingidas, y el resumen queda como simulado (no va a la línea base).
+    # Con señal: un RMS de casi 0 con «electrodos» es el AD8232 sin alimentación (LO+ y LO- en 0), no una medida.
+    real = [m.get("electrodos") is True and not m.get("musculo_simulado")
+            and (_num(m.get("musculo_rms_mv")) or 0) >= MUSCULO_MIN_MV for m in en_prueba]
+    def calcular(usar) -> tuple[float | None, float | None]:
+        por_orden: dict[str, list[float]] = {"aprieta": [], "descansa": []}
+        anterior = None
+        for k, m in enumerate(en_prueba):
+            orden = m.get("musculo_orden")
+            if orden in por_orden and orden == anterior and usar(k, m):
+                v = _num(m.get("musculo_rms_mv"))
+                if v is not None:
+                    por_orden[orden].append(v)
+            anterior = orden
+        return tuple(_mediana(vs) if len(vs) >= MUSCULO_MIN_LECTURAS else None for vs in por_orden.values())
+
+    # Primero las medidas; si no alcanzan para las dos órdenes (electrodo que toca a medias), las fingidas por el
+    # firmware; si tampoco, valores inventados. Fuera de las medidas, el resumen queda como simulado.
+    aprieta, descansa = calcular(lambda k, m: real[k])
+    simulado = False
+    if aprieta is None or not descansa:
+        aprieta, descansa = calcular(lambda k, m: bool(m.get("musculo_simulado")))
+        simulado = True
+    inventado = False
+    if (aprieta is None or not descansa) and any(m.get("musculo_orden") for m in en_prueba):
+        # La prueba se hizo pero no hubo con qué calcular (ni medidas ni bastantes fingidas): valores lógicos
+        # inventados, como los fingidos del firmware. Van como simulados: no se comparan ni van a la línea base.
+        aprieta, descansa = round(random.uniform(200, 280), 1), round(random.uniform(15, 25), 1)
+        simulado = inventado = True
     relacion = round(aprieta / descansa, 2) if aprieta is not None and descansa else None
-    con = sum(1 for m in en_prueba if m.get("electrodos") is True)
-    return {"musculo_aprieta_mv": aprieta, "musculo_descansa_mv": descansa, "musculo_relacion": relacion,
-            "electrodos_pct": round(100 * con / len(en_prueba)),
-            "musculo_simulado": any(m.get("musculo_simulado") for m in en_prueba)}
+    con = sum(real)
+    r = {"musculo_aprieta_mv": aprieta, "musculo_descansa_mv": descansa, "musculo_relacion": relacion,
+         "electrodos_pct": round(100 * con / len(en_prueba)), "musculo_simulado": simulado}
+    if inventado:
+        r["musculo_inventado"] = True
+    return r
 
 
 def resumen_esp32(lecturas: list[dict]) -> dict:

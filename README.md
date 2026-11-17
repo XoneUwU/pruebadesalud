@@ -350,18 +350,18 @@ Publica `apto/{persona}/vision` (ver la tabla de la sección 4) y guarda cada me
 ## 9. ESP32: luces y respaldo sin Wi-Fi
 
 Firmware en `firmware\apto_esp32\`. El cableado, las librerías y cómo subirlo están en `firmware/README.md`. El
-ESP32 muestra el semáforo en un **LED RGB**, en la pantalla OLED y con el zumbador:
-- **LED RGB:** rojo en GPIO 25, verde en GPIO 26 y azul en GPIO 27, cada canal con 220 Ω (cátodo común a GND; con
-  ánodo común, `LED_ANODO_COMUN 1`). **Nunca se encienden los tres canales a la vez**, para no forzarlo.
+ESP32 muestra el semáforo en **3 LED** (rojo, amarillo y verde), en la pantalla OLED y con el zumbador:
+- **LED:** rojo en GPIO 27, amarillo en GPIO 25 y verde en GPIO 26, cada uno con 220 Ω y la pata corta (cátodo) a GND
+  (si van al revés, a 3V3, `LED_ANODO_COMUN 1`).
 - **Zumbador:** suena con un tono de 2 kHz, así que sirve uno activo o uno pasivo; da 3 pitidos al pasar a rojo.
 
 | LED | Significa |
 |---|---|
-| Verde, amarillo (rojo + verde) o rojo | El resultado **final** de la evaluación en curso (`apto/{persona}/semaforo` de esa sesión) |
-| **Azul fijo** | Evaluación en curso (midiendo o esperando el resultado), o **sin conexión al broker** |
-| Azul parpadeando | Modo local: «repite» (hubo poca señal buena) |
+| Verde, amarillo o rojo fijo | El resultado **final** de la evaluación en curso (`apto/{persona}/semaforo` de esa sesión) |
+| **Amarillo parpadeando** | Evaluación en curso (midiendo o esperando el resultado), o **sin conexión al broker** |
+| Rojo parpadeando | Modo local: «repite» (hubo poca señal buena) |
 | Apagado | En reposo, o evaluación cancelada |
-| Al arrancar: rojo, verde y azul, de a uno, y un pitido | Prueba del cableado |
+| Al arrancar: rojo, amarillo y verde, 1 s cada uno, y un pitido | Prueba del cableado (el monitor serie dice cuál debería estar encendido) |
 
 **Con Wi-Fi, la placa sigue la evaluación de la estación** y la OLED anuncia cada paso:
 
