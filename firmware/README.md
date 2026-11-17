@@ -1,7 +1,7 @@
 # Firmware del ESP32 (`firmware\apto_esp32\`)
 
 Lee el pulso, la variabilidad del pulso (HRV, RMSSD de 30 s) y el oxígeno en sangre (SpO2) con el MAX30102, el
-movimiento con el MPU6050, la activación muscular con el AD8232 (prototipo), y muestra el semáforo en un LED RGB, en la pantalla OLED y con 3 pitidos si es rojo. Con Wi-Fi sigue la evaluación de
+movimiento con el MPU6050, la activación muscular con el AD8232 (prototipo), y muestra el semáforo en 3 LED (rojo, amarillo, verde), en la pantalla OLED y con 3 pitidos si es rojo. Con Wi-Fi sigue la evaluación de
 la estación con una secuencia guiada en la OLED (ver la sección 9 del README principal).
 
 | Tema MQTT | Qué |
@@ -24,8 +24,8 @@ Placa: **ESP32 Dev Module** (a confirmar con la placa de Danilo). Pines en `conf
 | MAX30102 (0x57) | VIN · GND · SDA · SCL | 3V3 · GND · GPIO 21 · GPIO 22 |
 | MPU6050 (0x68) | VCC · GND · SDA · SCL · AD0 | 3V3 · GND · GPIO 21 · GPIO 22 · GND (dirección 0x68) |
 | OLED SSD1306 128x64 (0x3C) | VCC · GND · SDA · SCL | 3V3 · GND · GPIO 21 · GPIO 22 |
-| LED RGB | R · G · B, cada canal con una resistencia de 220 Ω | GPIO 25 · GPIO 26 · GPIO 27 |
-| LED RGB | común (pata larga) | GND si es de **cátodo común** (por defecto); 3V3 si es de **ánodo común** y `LED_ANODO_COMUN 1` |
+| LED rojo · amarillo · verde | pata larga (ánodo), cada uno con una resistencia de 220 Ω | GPIO 27 · GPIO 25 · GPIO 26 |
+| LED rojo · amarillo · verde | pata corta (cátodo) | GND (si los conectan al revés, a 3V3, `LED_ANODO_COMUN 1`) |
 | Zumbador (activo o pasivo) | + · − | 5V (VIN) · colector de un NPN (2N2222 o BC547) |
 | Transistor NPN | base · emisor | GPIO 4 con una resistencia de 1 kΩ · GND (HIGH en GPIO 4 = suena) |
 | AD8232 | 3.3v · GND · OUTPUT · LO− · LO+ · SDN | 3V3 · GND · GPIO 34 · GPIO 35 · GPIO 32 · sin conectar |
@@ -83,11 +83,15 @@ del codo.
 | `musculo_pico_mv` | pico de la envolvente (suavizada ~100 ms) en el último segundo: la contracción más fuerte |
 | `musculo_orden` | solo en la prueba guiada (`"fase": "musculo"`): `preparate`, `aprieta`, `espera` o `descansa`. La estación la muestra y el coordinador separa lo medido al apretar y en reposo |
 
-- **Por ahora los valores publicados son fingidos** (`MUSCULO_FINGIDO 1` en `config.h`) y el mensaje lleva
-  `"musculo_simulado": true`: suben mientras la prueba guiada dice APRIETA. `electrodos` sí es real. En la prueba
-  del 15/11 la señal real no servía: con la laptop enchufada al cargador, el 72 % era zumbido de 50 Hz. Los valores
-  reales siguen en el monitor serie (`real rms=… pico=…`) para seguir con eso. Con `MUSCULO_FINGIDO 0` se publican
-  los reales.
+- **Reales con electrodos, fingidos sin ellos** (`MUSCULO_FINGIDO 1` en `config.h`). Si la placa detecta los
+  electrodos, `musculo_rms_mv` y `musculo_pico_mv` son los medidos (filtrados): el registrador los guarda en la base,
+  la estación los muestra en «Activación muscular» como MEDIDO y el coordinador los usa (también para la línea
+  base). Si no los detecta, la prueba sigue igual con valores fingidos (suben al apretar), `"musculo_simulado": true`
+  y `electrodos: false`; la estación los marca FINGIDO y no van a la línea base. Si en una sesión hay segundos
+  medidos y fingidos, la estación y el coordinador usan solo los medidos. `MUSCULO_FINGIDO 0` = nunca finge;
+  `2` = siempre finge (los reales van aparte en `musculo_real_rms_mv` / `musculo_real_pico_mv` durante la prueba).
+  El monitor serie muestra los dos (`real rms=… | publicado rms=…`). En la prueba del 15/11 con la laptop enchufada
+  al cargador, la señal real era casi toda zumbido de 50 Hz: midan con la laptop a batería.
 - **Prueba guiada (35 s)**: con red, después de los 30 s del dedo la OLED sigue con el músculo (`"fase": "musculo"`,
   con `quedan_s`). `medicion_lista` llega al final de las dos. Cada orden tiene una pausa de 2 s para reaccionar:
   PREPARATE 5 s → APRIETA 5 → ESPERA 2 → DESCANSA 6 → ESPERA 2 → APRIETA 5 → ESPERA 2 → DESCANSA 8. Dos pitidos =
@@ -129,7 +133,7 @@ puestos, la laptop va desenchufada del cargador**, para que no haya un camino a 
 Con `WIFI_SSID ""` en `secrets.h` el ESP32 no usa Wi-Fi ni MQTT y hace una medición guiada él solo:
 
 1. OLED «Coloca tu dedo». Al poner el dedo: cuenta 3-2-1 (pitido corto en cada número).
-2. Mide `MEDICION_S` (30 s, la ventana de la HRV) con cuenta regresiva, pulso en vivo y el **LED en azul**. Si se retira
+2. Mide `MEDICION_S` (30 s, la ventana de la HRV) con cuenta regresiva, pulso en vivo y el **LED amarillo parpadeando**. Si se retira
    el dedo: «Dedo retirado: repite».
 3. Resultado (mediana del pulso con calidad ≥ 0,5; mismas reglas que el coordinador sin línea base):
 
@@ -138,7 +142,7 @@ Con `WIFI_SSID ""` en `secrets.h` el ESP32 no usa Wi-Fi ni MQTT y hace una medic
 | VERDE | pulso 50–99 | verde | 1 pitido corto |
 | AMARILLO | pulso 100–119 («Pulso en reposo alto») o 40–49 («Pulso bajo») | amarillo | 1 pitido |
 | ROJO | pulso ≥ 120, o < 40 («Pulso muy bajo») | rojo | 3 pitidos |
-| REPITE | menos de 10 s de señal buena | azul parpadeando | 2 pitidos largos |
+| REPITE | menos de 10 s de señal buena | rojo parpadeando | 2 pitidos largos |
 
 El SpO2 < 92 solo agrega «Oxigeno bajo» en la OLED, sin cambiar el color. La HRV se muestra pero no se
 juzga sin línea base. Para otra medición: retirar el dedo y volver a ponerlo. Probar los colores sin sensor:
@@ -152,7 +156,7 @@ El zumbador suena con un tono de 2 kHz (`TONO_ZUMBADOR_HZ` en `config.h`): así 
 como uno activo. Con `0`, HIGH fijo (solo activo).
 
 Monitor serie a 115200: dice qué sensores encontró y, cada 5 s, las lecturas y el estado de Wi-Fi y MQTT.
-**LED azul fijo** = evaluación en curso o sin conexión al broker (nunca se encienden los tres canales a la vez). `MQTT ... estado -2`: no llega a la IP (revisen la IP, la red y el
+**LED amarillo parpadeando** = evaluación en curso o sin conexión al broker. Al arrancar se prenden rojo, amarillo y verde (1 s cada uno): si alguno no prende, revisen ese LED (pata larga al pin, corta a GND) y su resistencia. `MQTT ... estado -2`: no llega a la IP (revisen la IP, la red y el
 firewall, puerto 1883); `estado 5`: usuario o clave incorrectos.
 
 Ajustes en `config.h`: `UMBRAL_DEDO` (si no detecta el dedo o lo detecta sin dedo), `BRILLO_LED_SENSOR` (si la

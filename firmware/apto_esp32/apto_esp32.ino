@@ -68,7 +68,11 @@ float calidad = 0;
 float musculoRmsMv = NAN, musculoPicoMv = NAN;  // AD8232 (activación muscular, prototipo): último segundo
 bool electrodosOk = false;
 float musculoRealRmsMv = NAN, musculoRealPicoMv = NAN;  // los medidos de verdad (con MUSCULO_FINGIDO se publican otros)
-const bool FINGIR_MUSCULO = MODO_SIMULADO || (MUSCULO_FINGIDO && !PRUEBA_MUSCULO);
+// Fingir: siempre (modo simulado o MUSCULO_FINGIDO 2) o solo sin electrodos (MUSCULO_FINGIDO 1). En la prueba
+// PRUEBA_MUSCULO, nunca. musculoFingido dice si los valores del último segundo son fingidos.
+const bool FINGIR_SIEMPRE = MODO_SIMULADO || (MUSCULO_FINGIDO == 2 && !PRUEBA_MUSCULO);
+const bool FINGIR_SIN_ELECTRODOS = MUSCULO_FINGIDO == 1 && !PRUEBA_MUSCULO;
+bool musculoFingido = FINGIR_SIEMPRE;
 bool musculoApretando = false;      // la prueba guiada está en APRIETA (desde 0,5 s después de la orden)
 bool musculoConElectrodos = false;  // en la prueba guiada ya se vieron los electrodos puestos
 int faseMusculoAntes = -2;
@@ -100,23 +104,22 @@ String resMotivo = "";
 bool resAvisoSpo2 = false;
 
 // ================================================================ utilidades
-// LED RGB. Para no forzarlo, nunca se encienden los tres canales a la vez (como mucho dos: el amarillo).
-void escribirLed(bool r, bool g, bool b) {
-  if (r && g && b) b = false;
+// Semáforo de 3 LED: rojo, amarillo y verde, cada uno en su pin.
+void escribirLed(bool rojo, bool amarillo, bool verde) {
   bool encendido = LED_ANODO_COMUN ? LOW : HIGH;
-  digitalWrite(PIN_LED_R, r ? encendido : !encendido);
-  digitalWrite(PIN_LED_G, g ? encendido : !encendido);
-  digitalWrite(PIN_LED_B, b ? encendido : !encendido);
+  digitalWrite(PIN_LED_ROJO, rojo ? encendido : !encendido);
+  digitalWrite(PIN_LED_AMARILLO, amarillo ? encendido : !encendido);
+  digitalWrite(PIN_LED_VERDE, verde ? encendido : !encendido);
 }
 
 void mostrarColorEnLed() {
   bool parpadeo = (millis() / 400) % 2;
-  if (colorSemaforo == "verde") escribirLed(false, true, false);
-  else if (colorSemaforo == "amarillo") escribirLed(true, true, false);
+  if (colorSemaforo == "verde") escribirLed(false, false, true);
+  else if (colorSemaforo == "amarillo") escribirLed(false, true, false);
   else if (colorSemaforo == "rojo") escribirLed(true, false, false);
-  else if (colorSemaforo == "medir" || colorSemaforo == "evaluando") escribirLed(false, false, true);  // azul: midiendo
-  else if (colorSemaforo == "repetir") escribirLed(false, false, parpadeo);        // azul parpadeando: repite
-  else if (!SIN_RED && !mqtt.connected()) escribirLed(false, false, true);  // azul: sin conexión al broker
+  else if (colorSemaforo == "medir" || colorSemaforo == "evaluando") escribirLed(false, parpadeo, false);  // midiendo
+  else if (colorSemaforo == "repetir") escribirLed(parpadeo, false, false);  // rojo parpadeando: repite
+  else if (!SIN_RED && !mqtt.connected()) escribirLed(false, parpadeo, false);  // sin conexión al broker
   else escribirLed(false, false, false);
 }
 
@@ -239,9 +242,9 @@ void alMensaje(char *tema, byte *carga, unsigned int largo) {
       sesion = nueva;
       inicioSesionMs = millis();
       sinBrokerDesde = 0;
-      colorSemaforo = "evaluando";  // azul hasta que el coordinador publique el resultado de ESTA sesión
+      colorSemaforo = "evaluando";  // amarillo parpadeando hasta que el coordinador publique el resultado de ESTA sesión
       mostrarColorEnLed();
-      Serial.printf("[esp32] Evaluacion en curso (sesion %s): LED azul hasta el resultado\n", sesion.c_str());
+      Serial.printf("[esp32] Evaluacion en curso (sesion %s): LED amarillo hasta el resultado\n", sesion.c_str());
       avisoEspera = "";
       medicionHecha = false;
       cambiarEstado(ANUNCIO);  // OLED: INICIAR ANALISIS -> nombre -> dedo -> 3-2-1 -> 30 s -> analizando -> resultado
@@ -627,12 +630,20 @@ void publicarDatos() {
   doc["electrodos"] = electrodosOk;
   ponerNumero(doc, "musculo_rms_mv", musculoRmsMv, 1);
   ponerNumero(doc, "musculo_pico_mv", musculoPicoMv, 1);
-  if (FINGIR_MUSCULO) doc["musculo_simulado"] = true;  // los dos valores de músculo son fingidos
+  if (musculoFingido) {
+    doc["musculo_simulado"] = true;  // los dos valores de músculo son fingidos
+    // ...pero en la prueba del músculo también van los reales (el registrador los guarda en la base). Solo en esa
+    // fase: en las demás el mensaje ya está cerca de los 512 bytes.
+    if (estado == MUSCULO && electrodosOk) {
+      ponerNumero(doc, "musculo_real_rms_mv", musculoRealRmsMv, 1);
+      ponerNumero(doc, "musculo_real_pico_mv", musculoRealPicoMv, 1);
+    }
+  }
   if (MODO_SIMULADO) doc["simulado"] = true;
   char ts[25];
   if (horaIso(ts, sizeof(ts))) doc["ts"] = ts;
   doc["fuente"] = "esp32";
-  char buf[512];
+  char buf[600];
   size_t n = serializeJson(doc, buf, sizeof(buf));
   mqtt.publish(temaDatos.c_str(), (const uint8_t *)buf, n, false);
 }
@@ -765,7 +776,7 @@ void cuidarMedicion() {
       uint32_t enFase;
       int f = faseMusculo(t, quedan, enFase);
       if (electrodosOk) musculoConElectrodos = true;
-      if (f < 0 || (t >= 4000 && !musculoConElectrodos)) {
+      if (f < 0 || (t >= 4000 && !musculoConElectrodos && !FINGIR_SIEMPRE && !FINGIR_SIN_ELECTRODOS)) {
         if (!musculoConElectrodos) Serial.println("[esp32] Musculo: sin electrodos, se omite");
         terminarMusculo();
         break;
@@ -815,7 +826,7 @@ void empezarMusculo() {
   }
   musculoConElectrodos = false;
   faseMusculoAntes = -2;
-  colorSemaforo = SIN_RED ? "medir" : "evaluando";  // azul
+  colorSemaforo = SIN_RED ? "medir" : "evaluando";  // amarillo parpadeando
   mostrarColorEnLed();
   cambiarEstado(MUSCULO);
 }
@@ -962,24 +973,27 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.printf("\n[esp32] Esta apto hoy - %s\n", MODO_SIMULADO ? "MODO SIMULADO (sin sensores)" : "sensores");
-  pinMode(PIN_LED_R, OUTPUT);
-  pinMode(PIN_LED_G, OUTPUT);
-  pinMode(PIN_LED_B, OUTPUT);
+  pinMode(PIN_LED_ROJO, OUTPUT);
+  pinMode(PIN_LED_AMARILLO, OUTPUT);
+  pinMode(PIN_LED_VERDE, OUTPUT);
   pinMode(PIN_ZUMBADOR, OUTPUT);
   digitalWrite(PIN_ZUMBADOR, LOW);
-  // Prueba del cableado al arrancar: rojo, verde y azul de a uno (nunca juntos) y un pitido corto
+  // Prueba del cableado al arrancar: rojo, amarillo y verde de a uno (1 s cada uno) y un pitido corto
+  Serial.println("[esp32] Prueba del LED: ROJO (D27)");
   escribirLed(true, false, false);
-  delay(400);
+  delay(1000);
+  Serial.println("[esp32] Prueba del LED: AMARILLO (D25)");
   escribirLed(false, true, false);
-  delay(400);
+  delay(1000);
+  Serial.println("[esp32] Prueba del LED: VERDE (D26)");
   escribirLed(false, false, true);
-  delay(400);
+  delay(1000);
   escribirLed(false, false, false);
   zumbador(true);
   delay(150);
   zumbador(false);
   delay(200);
-  escribirLed(false, false, !SIN_RED);  // azul (sin broker) solo si hay red configurada
+  escribirLed(false, !SIN_RED, false);  // amarillo (sin broker) solo si hay red configurada
   if (SIN_RED) Serial.println("[esp32] Modo local: WIFI_SSID vacio, sin Wi-Fi ni MQTT");
 
   Wire.begin(PIN_SDA, PIN_SCL);
@@ -1013,7 +1027,7 @@ void setup() {
   WiFi.setAutoReconnect(true);
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(alMensaje);
-  mqtt.setBufferSize(512);
+  mqtt.setBufferSize(640);
   mqtt.setKeepAlive(15);
   mqtt.setSocketTimeout(MQTT_ESPERA_S);
   iniciarMusculo();  // AD8232: la tarea de 500 lecturas por segundo
@@ -1031,6 +1045,7 @@ bool loMasAhora = false, loMenosAhora = false;
 // Del último segundo, para la prueba: lecturas con LO+ / LO- en alto, en el tope, y la salida mínima y máxima
 int muscLoMasSeg = 0, muscLoMenosSeg = 0, muscTopeSeg = 0;
 uint32_t muscMinSeg = 0, muscMaxSeg = 0;
+bool musculoPlano = false, planoVisto = false;  // la salida del AD8232 quieta: sin alimentación o sin OUTPUT
 volatile bool loMasVisto = false, loMenosVisto = false, topeVisto = false;  // desde la última vez que se dibujó
 
 #if !MODO_SIMULADO
@@ -1048,7 +1063,7 @@ uint32_t muscMin = UINT32_MAX, muscMax = 0;
 // 45 Hz (4.º orden), el 92 % de lo que queda está entre 10 y 45 Hz (lo único que deja pasar la placa del AD8232).
 const float FS_MUSCULO = 1000.0f / MUSCULO_CADA_MS;
 const float RED_HZ = MUSCULO_RED_HZ > 0 ? MUSCULO_RED_HZ : 50;
-Biquad filtroAltos = pasaAltos(10, FS_MUSCULO), filtroRed = notch(RED_HZ, FS_MUSCULO, 4),
+Biquad filtroAltos = pasaAltos(MUSCULO_PASA_ALTOS_HZ, FS_MUSCULO), filtroRed = notch(RED_HZ, FS_MUSCULO, 4),
        filtroRed2 = notch(2 * RED_HZ, FS_MUSCULO, 4), filtroBajos = pasaBajos(45, FS_MUSCULO),
        filtroBajos2 = pasaBajos(45, FS_MUSCULO);
 
@@ -1076,7 +1091,7 @@ void leerMusculo() {
     muscAsentando = MUSCULO_ASENTAR_MS / MUSCULO_CADA_MS;
   } else {
     if (isnan(muscBase)) muscBase = mv;  // se resta la primera lectura: así el pasa altos no arranca con un salto
-    ac = filtroAltos.paso(mv - muscBase);  // desde 10 Hz: sin deriva ni movimiento lento
+    ac = filtroAltos.paso(mv - muscBase);  // desde MUSCULO_PASA_ALTOS_HZ: sin deriva ni movimiento lento
     if (MUSCULO_RED_HZ > 0) ac = filtroRed2.paso(filtroRed.paso(ac));  // sin el zumbido de la red (50 y 100 Hz)
     ac = filtroBajos2.paso(filtroBajos.paso(ac));  // hasta 45 Hz: fuera los armónicos de 150, 200 y 250 Hz
     muscEnv += MUSCULO_ENVOLVENTE * (fabsf(ac) - muscEnv);
@@ -1144,11 +1159,18 @@ void calcularMusculo() {
   muscMin = UINT32_MAX, muscMax = 0;
   portEXIT_CRITICAL(&candadoMusculo);
   muscMuestrasSeg = n;
-  electrodosOk = n > 0 && despegadas * 2 < n;
-  bool hayValores = electrodosOk && buenas * 2 >= n;
+  // Sin alimentación (3V3 o GND sueltos) u OUTPUT desconectado, LO+ y LO- quedan en 0 y parece «pegado», pero la
+  // salida no se mueve (se vio quieta en 142 mV y RMS 0). Plano = sin señal: cuenta como sin electrodos, así con
+  // MUSCULO_FINGIDO 1 se publican los fingidos en vez de ceros, y la OLED avisa.
+  musculoPlano = n > 0 && muscMaxSeg - muscMinSeg < MUSCULO_PLANO_MV;
+  if (musculoPlano) planoVisto = true;
+  electrodosOk = n > 0 && despegadas * 2 < n && !musculoPlano;
+  bool hayValores = electrodosOk && buenas * 4 >= n;  // con 1/4 s de señal asentada ya hay valor (antes 1/2)
   musculoRealRmsMv = musculoRmsMv = hayValores ? sqrtf(suma2 / buenas) : NAN;
   musculoRealPicoMv = musculoPicoMv = hayValores ? pico : NAN;
-  if (FINGIR_MUSCULO && electrodosOk) fingirMusculo();  // electrodos reales; los valores publicados, fingidos
+  // electrodos reales; los valores publicados, los medidos o (sin electrodos con MUSCULO_FINGIDO 1) fingidos
+  musculoFingido = FINGIR_SIEMPRE || (FINGIR_SIN_ELECTRODOS && !electrodosOk);
+  if (musculoFingido) fingirMusculo();
 }
 #else  // MODO_SIMULADO: sin AD8232, electrodos siempre puestos y valores fingidos
 void iniciarMusculo() {}
@@ -1162,17 +1184,27 @@ void calcularMusculo() {
 
 // Valores fingidos (se publican con "musculo_simulado": true): suben mientras la prueba guiada dice APRIETA
 void fingirMusculo() {
-  musculoRmsMv = musculoApretando ? 200 + random(0, 80) : 15 + random(0, 10);
-  musculoPicoMv = musculoRmsMv * (1.4f + random(0, 30) / 100.0f);
+  // Valores de referencia sin saltos: se acercan de a poco (más o menos 1 s para subir o bajar) a un nivel que
+  // varía apenas, en vez de sortear un número nuevo cada segundo.
+  static float nivel = 20, objetivo = 20;
+  static bool antes = false;
+  if (musculoApretando != antes || random(0, 4) == 0) {
+    objetivo = musculoApretando ? 225 + random(0, 30) : 18 + random(0, 5);
+    antes = musculoApretando;
+  }
+  nivel += 0.55f * (objetivo - nivel);
+  musculoRmsMv = roundf((nivel + random(-15, 16) / 10.0f) * 10) / 10;
+  musculoPicoMv = roundf(musculoRmsMv * 1.5f * 10) / 10;
 }
 
 // Aviso de la OLED desde el último dibujo. nivel: 0 = bien, 1 = salida en el tope, 2 = electrodo despegado.
 // Por la norma del ECG (derivación I): LO+ = LA (amarillo), LO- = RA (rojo); los dos a la vez suele ser RL (verde).
 const char *avisoMusculo(int &nivel) {
-  bool pierdeMas = loMasVisto, pierdeMenos = loMenosVisto, enTope = topeVisto;
-  loMasVisto = loMenosVisto = topeVisto = false;
-  nivel = pierdeMas || pierdeMenos ? 2 : enTope ? 1 : 0;
-  return pierdeMas && pierdeMenos ? "Pierden 2: mira RL"
+  bool pierdeMas = loMasVisto, pierdeMenos = loMenosVisto, enTope = topeVisto, plano = planoVisto;
+  loMasVisto = loMenosVisto = topeVisto = planoVisto = false;
+  nivel = pierdeMas || pierdeMenos || plano ? 2 : enTope ? 1 : 0;
+  return plano                    ? "SIN SENAL: mira 3V3"
+         : pierdeMas && pierdeMenos ? "Pierden 2: mira RL"
          : pierdeMas              ? "Pierde LA amarillo"
          : pierdeMenos            ? "Pierde RA rojo"
          : enTope                 ? "TOPE: aprieta electr."
@@ -1183,7 +1215,7 @@ const char *avisoMusculo(int &nivel) {
 float maxEnvBarra = 100;
 float barraMusculo() {
 #if !MODO_SIMULADO
-  if (!FINGIR_MUSCULO) {
+  if (!musculoFingido) {
     float env = isnan(muscEnv) ? 0 : muscEnv;
     maxEnvBarra = max(maxEnvBarra, env);
     return env / maxEnvBarra;
@@ -1250,7 +1282,7 @@ void cuidarPrueba() {
   ultimoDibujoPrueba = millis();
   int nivel;
   const char *aviso = avisoMusculo(nivel);
-  escribirLed(nivel > 0, nivel < 2, false);  // verde, amarillo (tope) o rojo (despegado)
+  escribirLed(nivel == 2, nivel == 1, nivel == 0);  // verde, amarillo (tope) o rojo (despegado)
   if (!hayPantalla) return;
   pantalla.clearDisplay();
   pantalla.setTextColor(SSD1306_WHITE);
@@ -1287,8 +1319,9 @@ void loop() {
   if (millis() - ultimaPantalla >= CADA_PANTALLA_MS) {
     ultimaPantalla = millis();
     dibujarPantalla();
-    // azul mientras no hay conexión; en modo local, en «repite» parpadea
-    if (!colorSemaforo.length() || colorSemaforo == "repetir") mostrarColorEnLed();
+    // los estados que parpadean: sin conexión, midiendo / evaluando y «repite»
+    if (!colorSemaforo.length() || colorSemaforo == "repetir" || colorSemaforo == "medir" || colorSemaforo == "evaluando")
+      mostrarColorEnLed();
   }
   if (millis() - ultimoResumen >= 5000) {
     ultimoResumen = millis();
@@ -1298,8 +1331,9 @@ void loop() {
     // AD8232: lecturas del último segundo (500), LO+ y LO- (1 = despegado) y la salida ahora (~1650 mV en reposo)
     // (real = medido de verdad; publicado = lo que va por MQTT, fingido con MUSCULO_FINGIDO)
     Serial.printf("[esp32] musculo electrodos=%d real rms=%.1f pico=%.1f | publicado rms=%.1f pico=%.1f mV "
-                  "lecturas/s=%d lo+=%d lo-=%d salida=%lu mV\n",
+                  "lecturas/s=%d lo+=%d lo-=%d salida=%lu mV%s\n",
                   electrodosOk, musculoRealRmsMv, musculoRealPicoMv, musculoRmsMv, musculoPicoMv, muscMuestrasSeg,
-                  loMasAhora, loMenosAhora, (unsigned long)muscMvAhora);
+                  loMasAhora, loMenosAhora, (unsigned long)muscMvAhora,
+                  musculoPlano ? "  <- SALIDA QUIETA: AD8232 sin 3V3/GND o sin OUTPUT en GPIO 34" : "");
   }
 }

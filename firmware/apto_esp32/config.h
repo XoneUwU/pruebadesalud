@@ -11,10 +11,10 @@
 // ---------------------------------------------------------------- pines (ESP32 Dev Module, a confirmar con la placa)
 #define PIN_SDA 21             // I2C: MAX30102 (0x57), MPU6050 (0x68) y OLED SSD1306 (0x3C)
 #define PIN_SCL 22
-#define PIN_LED_R 25           // LED RGB: cada canal con su resistencia de 220 Ω. Nunca se encienden los tres a la vez:
-#define PIN_LED_G 26           // verde = G, amarillo = R + G, rojo = R; azul fijo = midiendo o sin broker;
-#define PIN_LED_B 27           // azul parpadeando = repite
-#define LED_ANODO_COMUN 0      // 0 = cátodo común (el común a GND, HIGH enciende); 1 = ánodo común (común a 3V3, LOW enciende)
+#define PIN_LED_ROJO 27        // semáforo de 3 LED (cada uno con su resistencia de 220 Ω): rojo D27, amarillo D25, verde D26.
+#define PIN_LED_AMARILLO 25    // Resultado: el LED de su color fijo. Amarillo parpadeando = midiendo / evaluando / sin broker;
+#define PIN_LED_VERDE 26       // rojo parpadeando = repite.
+#define LED_ANODO_COMUN 0      // 0 = cada LED con el cátodo (pata corta) a GND, HIGH enciende; 1 = ánodo a 3V3, LOW enciende
 #define PIN_ZUMBADOR 4         // zumbador a través de un transistor NPN (base con 1 kΩ)
 #define TONO_ZUMBADOR_HZ 2000  // tono de 2 kHz: suena con zumbador pasivo o activo; 0 = HIGH fijo (solo activo)
 
@@ -48,15 +48,21 @@
 #define PIN_LO_MENOS 35        // LO-: en alto = electrodo despegado (GPIO 35 no tiene pull-up interno)
 #define PIN_LO_MAS 32          // LO+: en alto = electrodo despegado (con pull-up: sin el módulo también da «despegado»)
 #define MUSCULO_CADA_MS 2      // 500 lecturas por segundo, en una tarea aparte (la OLED y el MQTT no la frenan)
-#define MUSCULO_ENVOLVENTE 0.02f  // suavizado de |señal| (~100 ms a 500/s): la «fuerza» de la contracción
-#define MUSCULO_ASENTAR_MS 1000   // al pegar los electrodos, 1 s sin contar: la salida del AD8232 se está acomodando
-#define MUSCULO_DESPEGADO_MS 50   // LO+ o LO- en alto al menos 50 ms seguidos = despegado (pulsos más cortos: ruido)
-#define MUSCULO_TOPE_MV 3050     // salida >= esto o <= 100 mV: el AD8232 está en el tope (saturado), no hay señal útil
+#define MUSCULO_ENVOLVENTE 0.04f  // suavizado de |señal| (~50 ms a 500/s): la «fuerza» de la contracción (antes 0,02)
+// Sensibilidad (15/11): con el electrodo LA tocando a medias, LO+ parpadeaba, cada parpadeo de 50 ms rehacía los
+// filtros y tiraba 1 s, y casi todos los segundos salían sin valor. Ahora un parpadeo tiene que durar 250 ms para
+// contar como despegado y después se esperan 300 ms.
+#define MUSCULO_ASENTAR_MS 300    // al pegar los electrodos, 0,3 s sin contar: la salida del AD8232 se acomoda (antes 1 s)
+#define MUSCULO_DESPEGADO_MS 250  // LO+ o LO- en alto al menos 250 ms seguidos = despegado (antes 50 ms)
+#define MUSCULO_PASA_ALTOS_HZ 5   // desde aquí se mide (antes 10): más sensible a la contracción y al movimiento del brazo
+#define MUSCULO_PLANO_MV 15      // si en 1 s la salida varía menos que esto, no hay señal (AD8232 sin alimentación)
+#define MUSCULO_TOPE_MV 3050    // salida >= esto o <= 100 mV: el AD8232 está en el tope (saturado), no hay señal útil
 #define MUSCULO_RED_HZ 50         // frecuencia de la red eléctrica (Bolivia: 50 Hz); se quita ella y su armónico. 0 = sin filtro
 #define MUSCULO_EN_EVALUACION 1   // 1 = después de los 30 s del dedo, la OLED guía la prueba del músculo (35 s)
-// 1 = los valores de músculo que se PUBLICAN son fingidos (suben al apretar en la prueba guiada) y van con
-// "musculo_simulado": true; los reales siguen en el monitor serie. Hasta que la señal real sirva (con la laptop
-// enchufada al cargador, el zumbido de 50 Hz la tapa).
+// Valores de músculo que se publican:
+//   0 = siempre los reales (sin electrodos van en null)
+//   1 = los reales si hay electrodos puestos; sin electrodos, fingidos (suben al apretar) con "musculo_simulado": true
+//   2 = siempre fingidos (los reales van aparte en musculo_real_rms_mv / musculo_real_pico_mv durante la prueba)
 #define MUSCULO_FINGIDO 1
 // 1 = solo la prueba guiada del AD8232 en la OLED (sin Wi-Fi, MQTT ni pulso). También al compilar: -DPRUEBA_MUSCULO=1
 #ifndef PRUEBA_MUSCULO
